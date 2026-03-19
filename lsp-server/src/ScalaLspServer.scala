@@ -112,3 +112,4 @@ class ScalaLspServer(projectPath: String) extends LanguageServer with LanguageCl
   override def getTextDocumentService: TextDocumentService = textDocumentService
 
   override def getWorkspaceService: WorkspaceService = workspaceService
+

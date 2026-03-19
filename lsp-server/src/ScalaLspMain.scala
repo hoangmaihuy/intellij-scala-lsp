@@ -1,8 +1,5 @@
 package org.jetbrains.scalalsP
 
-import org.eclipse.lsp4j.jsonrpc.Launcher
-import org.eclipse.lsp4j.services.LanguageClient
-
 import java.io.{InputStream, OutputStream}
 
 /**
@@ -38,18 +35,9 @@ object ScalaLspMain:
   private def startLspServer(projectPath: String, in: InputStream, out: OutputStream): Unit =
     val server = new ScalaLspServer(projectPath)
 
-    val launcher = new Launcher.Builder[LanguageClient]()
-      .setLocalService(server)
-      .setRemoteInterface(classOf[LanguageClient])
-      .setInput(in)
-      .setOutput(out)
-      .create()
-
-    val client = launcher.getRemoteProxy
-    server.connect(client)
-
-    System.err.println("[ScalaLsp] LSP server started, listening on stdin/stdout")
-    launcher.startListening().get()
+    // Create Launcher in Java to avoid Scala 3 bridge method annotation duplication
+    // that causes "Duplicate RPC method" errors in lsp4j ServiceEndpoints scanning
+    LspLauncher.startAndAwait(server, in, out)
 
     System.err.println("[ScalaLsp] LSP connection closed")
     System.exit(0)
