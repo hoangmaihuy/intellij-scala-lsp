@@ -3,23 +3,13 @@ package org.jetbrains.scalalsP.intellij
 import munit.FunSuite
 
 // Tests for hover content markdown generation.
-// Since buildHoverContent is private, we test via a package-accessible helper.
+// buildHoverContent is private[intellij], accessible from this test package.
 class HoverContentTest extends FunSuite:
 
-  // Re-implement the logic here for testing since it's private.
-  // This ensures the formatting logic is correct independently.
+  private val hoverProvider = HoverProvider(IntellijProjectManager())
+
   private def buildHoverContent(typeInfo: Option[String], docInfo: Option[String]): String =
-    val parts = Seq.newBuilder[String]
-
-    typeInfo.foreach: t =>
-      parts += s"```scala\n$t\n```"
-
-    docInfo.foreach: d =>
-      val clean = d.replaceAll("<[^>]+>", "").trim
-      if clean.nonEmpty then
-        parts += clean
-
-    parts.result().mkString("\n\n---\n\n")
+    hoverProvider.buildHoverContent(typeInfo, docInfo)
 
   test("hover with type info only"):
     val result = buildHoverContent(Some("Int"), None)

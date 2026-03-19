@@ -2,13 +2,15 @@ package org.jetbrains.scalalsP.intellij
 
 import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.fileEditor.FileDocumentManager
+import com.intellij.navigation.{ChooseByNameContributor, ChooseByNameContributorEx, NavigationItem}
 import com.intellij.psi.*
-import com.intellij.psi.search.{GlobalSearchScope, PsiSearchHelper}
+import com.intellij.psi.search.GlobalSearchScope
+import com.intellij.util.indexing.FindSymbolParameters
 import org.eclipse.lsp4j.{DocumentSymbol, SymbolInformation, SymbolKind, Location as LspLocation}
 
 import scala.jdk.CollectionConverters.*
 
-/** Implements textDocument/documentSymbol and workspace/symbol. */
+// Implements textDocument/documentSymbol and workspace/symbol.
 class SymbolProvider(projectManager: IntellijProjectManager):
 
   // --- textDocument/documentSymbol ---
@@ -24,34 +26,33 @@ class SymbolProvider(projectManager: IntellijProjectManager):
 
       result.getOrElse(Seq.empty)
 
-  private def collectSymbols(element: PsiElement, document: com.intellij.openapi.editor.Document): Seq[DocumentSymbol] =
-    val children = element.getChildren
+  // Recursively collect symbols from PSI children.
+  // Each significant element becomes a DocumentSymbol with its own children.
+  // Non-significant elements are transparent — their children are promoted
+  // to be children of the nearest significant ancestor.
+  private def collectSymbols(parent: PsiElement, document: com.intellij.openapi.editor.Document): Seq[DocumentSymbol] =
     val result = Seq.newBuilder[DocumentSymbol]
-    for child <- children do
-      elementToSymbol(child, document) match
-        case Some(sym) => result += sym
-        case None =>
-          // Even if this element isn't significant, its children might be
+    for child <- parent.getChildren do
+      child match
+        case named: PsiNamedElement if isSignificantElement(named) =>
+          val name = Option(named.getName).getOrElse("<anonymous>")
+          val kind = getSymbolKind(named)
+          val range = PsiUtils.elementToRange(document, child)
+          val selectionRange = PsiUtils.nameElementToRange(document, child)
+          val symbol = new DocumentSymbol(name, kind, range, selectionRange)
+
+          // Recurse into this significant element for its children
+          val childSymbols = collectSymbols(child, document)
+          if childSymbols.nonEmpty then
+            symbol.setChildren(childSymbols.asJava)
+
+          result += symbol
+
+        case _ =>
+          // Non-significant element: promote its significant descendants
+          // as siblings at this level
           result ++= collectSymbols(child, document)
     result.result()
-
-  private def elementToSymbol(element: PsiElement, document: com.intellij.openapi.editor.Document): Option[DocumentSymbol] =
-    element match
-      case named: PsiNamedElement if isSignificantElement(named) =>
-        val name = Option(named.getName).getOrElse("<anonymous>")
-        val kind = getSymbolKind(named)
-        val range = PsiUtils.elementToRange(document, element)
-        val selectionRange = PsiUtils.nameElementToRange(document, element)
-        val symbol = new DocumentSymbol(name, kind, range, selectionRange)
-
-        val childSymbols = collectSymbols(element, document)
-        if childSymbols.nonEmpty then
-          symbol.setChildren(childSymbols.asJava)
-
-        Some(symbol)
-
-      case _ =>
-        None
 
   private def isSignificantElement(element: PsiNamedElement): Boolean =
     val name = element.getName
@@ -89,48 +90,87 @@ class SymbolProvider(projectManager: IntellijProjectManager):
 
     ReadAction.compute[Seq[SymbolInformation], RuntimeException]: () =>
       val project = projectManager.getProject
-      searchViaStubs(project, query)
+      searchViaContributors(project, query)
 
-  private def searchViaStubs(project: com.intellij.openapi.project.Project, query: String): Seq[SymbolInformation] =
+  // Use IntelliJ's GotoClassContributor and GotoSymbolContributor extension points.
+  // These support prefix/fuzzy matching via processNames + processElementsWithName.
+  private def searchViaContributors(project: com.intellij.openapi.project.Project, query: String): Seq[SymbolInformation] =
     try
       val results = Seq.newBuilder[SymbolInformation]
       val scope = GlobalSearchScope.projectScope(project)
+      val lowerQuery = query.toLowerCase
 
-      val helper = PsiSearchHelper.getInstance(project)
+      // Collect from both CLASS and SYMBOL extension points
+      val contributors =
+        ChooseByNameContributor.CLASS_EP_NAME.getExtensionList.asScala ++
+        ChooseByNameContributor.SYMBOL_EP_NAME.getExtensionList.asScala
 
-      // Use word index to find files containing the query
-      val matchingFiles = scala.collection.mutable.Set[PsiFile]()
-      helper.processAllFilesWithWord(
-        query,
-        scope,
-        ((file: PsiFile) => { matchingFiles += file; true }): com.intellij.util.Processor[PsiFile],
-        true
-      )
+      val seen = scala.collection.mutable.Set[String]() // dedup by name+location
 
-      for file <- matchingFiles do
-        collectNamedElements(file, query).foreach: (elem, kind) =>
-          PsiUtils.elementToLocation(elem).foreach: loc =>
-            val containerName = getContainerName(elem)
-            results += new SymbolInformation(elem.asInstanceOf[PsiNamedElement].getName, kind, loc, containerName)
+      for contributor <- contributors do
+        contributor match
+          case ex: ChooseByNameContributorEx =>
+            // Collect names that match the query prefix
+            val matchingNames = scala.collection.mutable.ArrayBuffer[String]()
+            ex.processNames(
+              ((name: String) => {
+                if name != null && name.toLowerCase.contains(lowerQuery) then
+                  matchingNames += name
+                true
+              }): com.intellij.util.Processor[String],
+              scope,
+              null
+            )
+
+            // For each matching name, collect the navigation items
+            val params = FindSymbolParameters.wrap(query, project, false)
+            for name <- matchingNames.take(100) do // limit to avoid overwhelming results
+              ex.processElementsWithName(
+                name,
+                ((item: NavigationItem) => {
+                  item match
+                    case psi: PsiElement =>
+                      psi match
+                        case named: PsiNamedElement if isSignificantElement(named) =>
+                          PsiUtils.elementToLocation(psi).foreach: loc =>
+                            val key = s"${named.getName}@${loc.getUri}:${loc.getRange.getStart.getLine}"
+                            if !seen.contains(key) then
+                              seen += key
+                              val kind = getSymbolKind(named)
+                              val containerName = getContainerName(psi)
+                              results += new SymbolInformation(named.getName, kind, loc, containerName)
+                        case _ => ()
+                    case _ => ()
+                  true
+                }): com.intellij.util.Processor[NavigationItem],
+                params
+              )
+
+          case legacy =>
+            // Fallback for non-Ex contributors: use getNames/getItemsByName
+            try
+              val names = legacy.getNames(project, false)
+              if names != null then
+                for name <- names if name != null && name.toLowerCase.contains(lowerQuery) do
+                  val items = legacy.getItemsByName(name, query, project, false)
+                  if items != null then
+                    for item <- items.take(20) do
+                      item match
+                        case psi: PsiNamedElement if isSignificantElement(psi) =>
+                          PsiUtils.elementToLocation(psi).foreach: loc =>
+                            val key = s"${psi.getName}@${loc.getUri}:${loc.getRange.getStart.getLine}"
+                            if !seen.contains(key) then
+                              seen += key
+                              results += new SymbolInformation(psi.getName, getSymbolKind(psi), loc, getContainerName(psi))
+                        case _ => ()
+            catch
+              case _: Exception => ()
 
       results.result()
     catch
       case e: Exception =>
         System.err.println(s"[SymbolProvider] Error searching workspace symbols: ${e.getMessage}")
         Seq.empty
-
-  private def collectNamedElements(element: PsiElement, query: String): Seq[(PsiElement, SymbolKind)] =
-    val results = Seq.newBuilder[(PsiElement, SymbolKind)]
-
-    def visit(elem: PsiElement): Unit =
-      elem match
-        case named: PsiNamedElement if isSignificantElement(named) && named.getName == query =>
-          results += ((named, getSymbolKind(named)))
-        case _ => ()
-      elem.getChildren.foreach(visit)
-
-    visit(element)
-    results.result()
 
   private def getContainerName(element: PsiElement): String =
     var parent = element.getParent
