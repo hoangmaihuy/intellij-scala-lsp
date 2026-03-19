@@ -47,6 +47,18 @@ public final class IntellijBootstrap {
         System.setProperty("java.awt.headless", "true");
         System.setProperty("idea.is.internal", "false");
 
+        // Set JNA boot library path if not already set (needed for native file watching etc.)
+        if (System.getProperty("jna.boot.library.path") == null) {
+            String homePath = com.intellij.openapi.application.PathManager.getHomePath();
+            String arch = System.getProperty("os.arch").contains("aarch64") || System.getProperty("os.arch").contains("arm64")
+                ? "aarch64" : "amd64";
+            String jnaPath = homePath + "/lib/jna/" + arch;
+            if (new java.io.File(jnaPath).isDirectory()) {
+                System.setProperty("jna.boot.library.path", jnaPath);
+                System.err.println("[IntellijBootstrap] JNA native library path: " + jnaPath);
+            }
+        }
+
         // Step 2: Set headless test mode (sets 3 internal boolean flags)
         AppMode.setHeadlessInTestMode(true);
 

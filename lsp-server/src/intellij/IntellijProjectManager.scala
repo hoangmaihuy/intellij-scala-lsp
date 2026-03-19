@@ -1,11 +1,14 @@
 package org.jetbrains.scalalsP.intellij
 
 import com.intellij.openapi.application.{ApplicationManager, ReadAction}
+import com.intellij.openapi.externalSystem.importing.ImportSpecBuilder
+import com.intellij.openapi.externalSystem.model.ProjectSystemId
+import com.intellij.openapi.externalSystem.util.ExternalSystemUtil
 import com.intellij.openapi.project.{DumbService, Project, ProjectManager}
 import com.intellij.openapi.vfs.{LocalFileSystem, VirtualFile}
 import com.intellij.psi.{PsiDocumentManager, PsiFile, PsiManager}
 
-import java.nio.file.Path
+import java.nio.file.{Files, Path}
 
 /**
  * Manages the IntelliJ project lifecycle: open, index, close.
@@ -44,6 +47,37 @@ class IntellijProjectManager:
       throw RuntimeException(s"Failed to open project at $projectPath")
 
     System.err.println(s"[ProjectManager] Project opened: ${project.getName}")
+
+    // Auto-import BSP project if .bsp directory exists
+    if Files.isDirectory(path.resolve(".bsp")) then
+      linkBspProject(path)
+
+  private def linkBspProject(projectPath: Path): Unit =
+    System.err.println("[ProjectManager] BSP configuration detected, linking BSP project...")
+    try
+      // Use reflection to call BspOpenProjectProvider.doLinkProject()
+      // because BSP classes are in the Scala plugin, not on compile classpath
+      val bspProviderClass = Class.forName("org.jetbrains.bsp.project.importing.BspOpenProjectProvider")
+      val provider = bspProviderClass.getDeclaredConstructor().newInstance()
+
+      val vf = LocalFileSystem.getInstance().findFileByPath(projectPath.toString)
+      if vf == null then
+        System.err.println(s"[ProjectManager] Cannot find virtual file for $projectPath")
+        return
+
+      // doLinkProject(VirtualFile, Project) triggers BSP import
+      val doLinkMethod = bspProviderClass.getMethod("doLinkProject",
+        classOf[VirtualFile], classOf[Project])
+      ApplicationManager.getApplication.invokeAndWait: () =>
+        doLinkMethod.invoke(provider, vf, project)
+
+      System.err.println("[ProjectManager] BSP project linked and import triggered")
+    catch
+      case e: ClassNotFoundException =>
+        System.err.println("[ProjectManager] BSP support not available (Scala plugin not loaded?)")
+      case e: Exception =>
+        System.err.println(s"[ProjectManager] BSP auto-import failed: ${e.getMessage}")
+        e.printStackTrace(System.err)
 
   def waitForSmartMode(): Unit =
     val p = getProject

@@ -118,7 +118,11 @@ else:
     app_package = idea_home
 
 def resolve(s):
-    return s.replace("$APP_PACKAGE/Contents", idea_home).replace("$APP_PACKAGE", app_package)
+    return (s
+        .replace("$APP_PACKAGE/Contents", idea_home)
+        .replace("$APP_PACKAGE", app_package)
+        .replace("%IDE_HOME%", idea_home)
+        .replace("$IDE_HOME", idea_home))
 
 # Boot classpath
 boot_jars = launch.get("bootClassPathJarNames", [])
@@ -224,6 +228,7 @@ for arg in "${SPLIT_ARGS[@]}"; do
 done
 
 # Override paths for isolation
+JVM_ARGS+=("-Didea.home.path=$IDEA_HOME")
 JVM_ARGS+=("-Didea.config.path=$CONFIG_DIR")
 JVM_ARGS+=("-Didea.system.path=$SYSTEM_DIR")
 JVM_ARGS+=("-Didea.log.path=$SYSTEM_DIR/log")
