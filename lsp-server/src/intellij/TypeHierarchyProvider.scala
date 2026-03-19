@@ -55,7 +55,7 @@ class TypeHierarchyProvider(projectManager: IntellijProjectManager):
   private def resolveToTypeElement(psiFile: com.intellij.psi.PsiFile, offset: Int): Option[PsiElement] =
     PsiUtils.findReferenceElementAt(psiFile, offset).flatMap: element =>
       val ref = element.getReference
-      val resolved = if ref != null then Option(ref.resolve()) else Some(element)
+      val resolved = if ref != null then Option(ref.resolve()).orElse(Some(element)) else Some(element)
       resolved.flatMap: el =>
         // Walk up to find the nearest type (class/trait/object)
         var current = el
