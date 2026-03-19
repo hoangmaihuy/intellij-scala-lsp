@@ -60,6 +60,20 @@ class ScalaLspServer(projectPath: String) extends LanguageServer with LanguageCl
         CompletionOptions(false, java.util.List.of(".", " "))
       )
 
+      // Rename
+      val renameOptions = RenameOptions()
+      renameOptions.setPrepareProvider(true)
+      capabilities.setRenameProvider(renameOptions)
+
+      // Type hierarchy
+      capabilities.setTypeHierarchyProvider(true)
+
+      // Execute commands
+      val executeCommandOptions = ExecuteCommandOptions(
+        java.util.List.of("scala.organizeImports", "scala.reformat")
+      )
+      capabilities.setExecuteCommandProvider(executeCommandOptions)
+
       // Code actions
       val codeActionOptions = CodeActionOptions(
         java.util.List.of(

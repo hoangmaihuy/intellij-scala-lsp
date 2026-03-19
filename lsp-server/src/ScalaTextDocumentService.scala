@@ -1,7 +1,7 @@
 package org.jetbrains.scalalsP
 
 import org.eclipse.lsp4j.*
-import org.eclipse.lsp4j.jsonrpc.messages.{Either as LspEither}
+import org.eclipse.lsp4j.jsonrpc.messages.{Either as LspEither, Either3 as LspEither3}
 import org.eclipse.lsp4j.services.{LanguageClient, TextDocumentService}
 import org.jetbrains.scalalsP.intellij.*
 
@@ -28,6 +28,8 @@ class ScalaTextDocumentService(projectManager: IntellijProjectManager) extends T
   private val inlayHintProvider = InlayHintProvider(projectManager)
   private val completionProvider = CompletionProvider(projectManager)
   private val codeActionProvider = CodeActionProvider(projectManager)
+  private val renameProvider = RenameProvider(projectManager)
+  private val typeHierarchyProvider = TypeHierarchyProvider(projectManager)
 
   def connect(client: LanguageClient): Unit =
     this.client = client
@@ -158,3 +160,39 @@ class ScalaTextDocumentService(projectManager: IntellijProjectManager) extends T
         params.getRange,
         params.getContext
       ).map(ca => LspEither.forRight[Command, CodeAction](ca)).asJava
+
+  // --- Rename ---
+
+  override def prepareRename(params: PrepareRenameParams): CompletableFuture[LspEither3[Range, PrepareRenameResult, PrepareRenameDefaultBehavior]] =
+    CompletableFuture.supplyAsync: () =>
+      val result = renameProvider.prepareRename(
+        params.getTextDocument.getUri,
+        params.getPosition
+      )
+      if result != null then LspEither3.forSecond(result)
+      else null
+
+  override def rename(params: RenameParams): CompletableFuture[WorkspaceEdit] =
+    CompletableFuture.supplyAsync: () =>
+      renameProvider.rename(
+        params.getTextDocument.getUri,
+        params.getPosition,
+        params.getNewName
+      )
+
+  // --- Type Hierarchy ---
+
+  override def prepareTypeHierarchy(params: TypeHierarchyPrepareParams): CompletableFuture[util.List[TypeHierarchyItem]] =
+    CompletableFuture.supplyAsync: () =>
+      typeHierarchyProvider.prepare(
+        params.getTextDocument.getUri,
+        params.getPosition
+      ).asJava
+
+  override def typeHierarchySupertypes(params: TypeHierarchySupertypesParams): CompletableFuture[util.List[TypeHierarchyItem]] =
+    CompletableFuture.supplyAsync: () =>
+      typeHierarchyProvider.supertypes(params.getItem).asJava
+
+  override def typeHierarchySubtypes(params: TypeHierarchySubtypesParams): CompletableFuture[util.List[TypeHierarchyItem]] =
+    CompletableFuture.supplyAsync: () =>
+      typeHierarchyProvider.subtypes(params.getItem).asJava
