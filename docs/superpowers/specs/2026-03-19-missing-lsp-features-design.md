@@ -19,14 +19,14 @@ All three follow the existing provider pattern: one provider class per feature, 
 ### Implementation
 
 **`RenameProvider` class:**
-- `prepareRename(filePath, position)`: Find `PsiNamedElement` at position via `PsiUtils.findElementAtOffset`. Return the element's name and text range, or null if not renameable.
-- `rename(filePath, position, newName)`: Use IntelliJ's `RenameProcessor` / `RefactoringFactory` to compute all renames across the project. Collect changed files and their text edits. Return a `WorkspaceEdit` with `TextEdit` entries grouped by document URI.
+- `prepareRename(filePath, position)`: Find `PsiNamedElement` at position via `PsiUtils.findElementAtOffset`. Return the element's name and text range, or null if not renameable. Uses `ReadAction`.
+- `rename(filePath, position, newName)`: In a `ReadAction`, find the `PsiNamedElement` at position, then use `ReferencesSearch.search()` (same API already used by `ReferencesProvider`) to find all usages across the project. Build a `WorkspaceEdit` containing `TextEdit` entries for each usage location plus the declaration itself, grouped by document URI. **No PSI mutation** — the client applies the edits.
 
-**Scope:** Local variables, method names, class/trait/object names, parameters, type aliases. Cross-file renames handled automatically by IntelliJ's rename infrastructure.
+**Scope:** Local variables, method names, class/trait/object names, parameters, type aliases. Cross-file renames are found by `ReferencesSearch` automatically.
 
-**Threading:** `prepareRename` uses `ReadAction`. `rename` uses `WriteCommandAction` since it mutates PSI.
+**Threading:** Both `prepareRename` and `rename` use `ReadAction` only. No write actions needed — the server computes edits and returns them for the client to apply.
 
-**Registration:** Add `renameProvider` with `prepareProvider: true` to server capabilities in `ScalaLspServer`.
+**Registration:** Add `RenameOptions` with `prepareProvider = true` to server capabilities via `capabilities.setRenameProvider(renameOptions)`.
 
 ## Feature 2: Type Hierarchy
 
@@ -38,11 +38,11 @@ All three follow the existing provider pattern: one provider class per feature, 
 ### Implementation
 
 **`TypeHierarchyProvider` class:**
-- `prepare(filePath, position)`: Find class/trait/object at position. Return a `TypeHierarchyItem` with name, symbol kind, URI, range, and selection range.
-- `supertypes(item)`: Resolve the PSI element from the item, walk `getSupers()` or equivalent to collect direct supertypes (extended class, mixed-in traits). Return list of `TypeHierarchyItem`.
+- `prepare(filePath, position)`: Find class/trait/object at position. Return a `TypeHierarchyItem` with name, symbol kind, URI, range, selection range, and a `data` field encoding URI + position for later resolution (following the same pattern as `CallHierarchyProvider.findElementFromItem`).
+- `supertypes(item)`: Resolve the PSI element from the item's `data` field. For Scala types, use reflection to access the extends block / template parents (e.g., reflective access to `getExtendsBlock` or `getSupers` on the underlying `PsiClass`). For Java PSI classes that Scala types may extend, use `PsiClass.getSupers()` directly. Return list of `TypeHierarchyItem`.
 - `subtypes(item)`: Use `DefinitionsScopedSearch` (same approach as `ImplementationProvider`) to find direct subtypes/implementors. Return list of `TypeHierarchyItem`.
 
-**Scala specifics:** Reflection-based detection for `ScClass`, `ScTrait`, `ScObject` following the existing `className.contains(...)` pattern. Handles Scala's mixin linearization by reporting all direct supertypes.
+**Scala specifics:** Reflection-based detection for `ScClass`, `ScTrait`, `ScObject` following the existing `className.contains(...)` pattern. For supertype resolution, try reflection on `getSupers()` first (available on `PsiClass` which Scala PSI classes implement), then fall back to extends block inspection. Handles Scala's mixin linearization by reporting all direct supertypes.
 
 **Threading:** All methods use `ReadAction`.
 
@@ -62,10 +62,10 @@ All three follow the existing provider pattern: one provider class per feature, 
 **Command dispatch in `ScalaWorkspaceService`:**
 - `executeCommand(command, arguments)`: Route by command name to the appropriate handler.
 - Arguments: `JsonArray` where the first element is the file URI.
-- Both commands use `WriteCommandAction` to apply changes to the PSI/document.
-- `scala.organizeImports`: Invoke `OptimizeImportsProcessor` on the PsiFile.
+- **Threading:** Both commands require EDT + write action. Use `ApplicationManager.getApplication.invokeAndWait { WriteCommandAction.runWriteCommandAction { ... } }` following the same pattern as `DocumentSyncManager`.
+- `scala.organizeImports`: Invoke `OptimizeImportsProcessor` on the PsiFile. Also wire as the command behind code actions with `kind: source.organizeImports` (connecting to existing `CodeActionProvider` categorization).
 - `scala.reformat`: Invoke `CodeStyleManager.reformat()` on the PsiFile.
-- Return null on success (edits applied directly to the document; diagnostics will re-publish).
+- **Client sync:** After server-side mutation, the document content has changed. Use `workspace/applyEdit` to send the resulting changes back to the client so it stays in sync, or capture the document state before/after and compute a diff to return.
 
 **Error handling:** Return error response for unknown commands or missing/invalid arguments.
 
@@ -76,13 +76,14 @@ All three follow the existing provider pattern: one provider class per feature, 
 ### Integration Tests (BasePlatformTestCase)
 
 **`RenameProviderIntegrationTest`:**
-- Rename local variable — verify all usages updated
-- Rename method — verify call sites updated
-- Rename class — verify cross-file references updated
+- Rename local variable — verify all usages in returned WorkspaceEdit
+- Rename method — verify call sites in returned WorkspaceEdit
+- Rename class — verify cross-file references in returned WorkspaceEdit
 - Prepare rename on non-renameable element — returns null
+- Rename with name conflict — verify graceful handling
 
 **`TypeHierarchyProviderIntegrationTest`:**
-- Prepare on class/trait — returns correct item
+- Prepare on class/trait — returns correct item with data field
 - Supertypes of class extending trait — returns parent chain
 - Subtypes of trait — returns implementors
 - Prepare on non-type element — returns null
@@ -93,7 +94,7 @@ All three follow the existing provider pattern: one provider class per feature, 
 - Unknown command — returns error
 
 ### Unit Tests
-- Rename: edge cases (keywords, built-in symbols)
+- Rename: edge cases (keywords, built-in symbols, name conflicts)
 - Type hierarchy: no supers (implicit `Any`), multiple trait mixins
 - Execute command: argument validation
 
@@ -102,9 +103,9 @@ All three follow the existing provider pattern: one provider class per feature, 
 ### New Files
 - `lsp-server/src/intellij/RenameProvider.scala`
 - `lsp-server/src/intellij/TypeHierarchyProvider.scala`
-- `lsp-server/test/integration/RenameProviderIntegrationTest.scala`
-- `lsp-server/test/integration/TypeHierarchyProviderIntegrationTest.scala`
-- `lsp-server/test/integration/ExecuteCommandIntegrationTest.scala`
+- `lsp-server/test/src/integration/RenameProviderIntegrationTest.scala`
+- `lsp-server/test/src/integration/TypeHierarchyProviderIntegrationTest.scala`
+- `lsp-server/test/src/integration/ExecuteCommandIntegrationTest.scala`
 
 ### Modified Files
 - `lsp-server/src/ScalaLspServer.scala` — register new capabilities
