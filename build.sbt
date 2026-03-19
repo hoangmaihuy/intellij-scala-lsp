@@ -4,7 +4,7 @@ import org.jetbrains.sbtidea.packaging.PackagingKeys._
 // IntelliJ Platform settings (must be ThisBuild-scoped for sbt-idea-plugin)
 ThisBuild / intellijPluginName := "intellij-scala-lsp"
 ThisBuild / intellijBuild := "253.32098.37"
-ThisBuild / intellijPlatform := IntelliJPlatform.IdeaUltimate
+ThisBuild / intellijPlatform := IntelliJPlatform.IdeaCommunity
 
 Global / excludeLintKeys ++= Set(intellijPlugins)
 
