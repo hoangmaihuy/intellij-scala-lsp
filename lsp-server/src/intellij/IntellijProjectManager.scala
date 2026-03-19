@@ -39,18 +39,13 @@ class IntellijProjectManager:
     System.err.println(s"[ProjectManager] Opening project at: $projectPath")
     val path = Path.of(projectPath)
 
-    // Open project on EDT
-    ApplicationManager.getApplication.invokeAndWait: () =>
-      project = ProjectManager.getInstance().loadAndOpenProject(path.toString)
+    // Open project — loadAndOpenProject handles EDT internally
+    project = ProjectManager.getInstance().loadAndOpenProject(path.toString)
 
     if project == null then
       throw RuntimeException(s"Failed to open project at $projectPath")
 
     System.err.println(s"[ProjectManager] Project opened: ${project.getName}")
-
-    // Auto-import BSP project if .bsp directory exists
-    if Files.isDirectory(path.resolve(".bsp")) then
-      linkBspProject(path)
 
   private def linkBspProject(projectPath: Path): Unit =
     System.err.println("[ProjectManager] BSP configuration detected, linking BSP project...")

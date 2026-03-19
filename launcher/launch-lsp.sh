@@ -201,6 +201,10 @@ done
 for jar in "$SCALA_PLUGIN_DIR/lib/"*.jar; do
   CLASSPATH="${CLASSPATH:+$CLASSPATH:}$jar"
 done
+# JUnit plugin JARs (needed by TestApplicationManager bootstrap)
+for jar in "$IDEA_HOME/plugins/junit/lib/"*.jar; do
+  CLASSPATH="${CLASSPATH:+$CLASSPATH:}$jar"
+done
 for jar in "$LSP_LIB_DIR/"*.jar; do
   CLASSPATH="${CLASSPATH:+$CLASSPATH:}$jar"
 done

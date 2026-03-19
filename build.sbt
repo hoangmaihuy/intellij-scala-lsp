@@ -36,10 +36,16 @@ lazy val `lsp-server` = project.in(file("lsp-server"))
 
     // Test dependencies
     libraryDependencies ++= Seq(
-      "junit" % "junit" % "4.13.2" % Test,
+      // JUnit 4 needed at runtime for TestApplicationManager bootstrap (not just tests)
+      "junit" % "junit" % "4.13.2",
       "com.github.sbt" % "junit-interface" % "0.13.3" % Test,
       "org.opentest4j" % "opentest4j" % "1.3.0" % Test,
     ),
+
+    // Add testFramework.jar to compile classpath (IntellijBootstrap uses TestApplicationManager)
+    Compile / unmanagedJars += {
+      (ThisBuild / intellijBaseDirectory).value / "lib" / "testFramework.jar"
+    },
 
     // Add Java plugin JARs to test classpath (needed by Scala plugin)
     Test / unmanagedJars ++= {
