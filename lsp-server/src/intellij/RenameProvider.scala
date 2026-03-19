@@ -76,7 +76,10 @@ class RenameProvider(projectManager: IntellijProjectManager):
             (declUri, TextEdit(range, newName))
           ).toSeq
 
+          // Deduplicate by (uri, range) to avoid double-editing the declaration
+          // if ReferencesSearch also returns it
           val allEdits = (declEdits ++ refEdits)
+            .distinctBy((uri, edit) => (uri, edit.getRange.getStart.getLine, edit.getRange.getStart.getCharacter))
             .groupBy(_._1)
             .map((fileUri, edits) => fileUri -> edits.map(_._2).asJava)
             .asJava
