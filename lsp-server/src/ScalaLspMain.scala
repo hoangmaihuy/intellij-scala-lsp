@@ -11,16 +11,14 @@ import java.io.{InputStream, OutputStream}
 object ScalaLspMain:
 
   def main(args: Array[String]): Unit =
-    args.headOption match
-      case None =>
-        System.err.println("[ScalaLsp] ERROR: No project path provided. Usage: scala-lsp <projectPath>")
-        System.exit(1)
-      case Some(projectPath) =>
-        run(projectPath)
+    // Project path is optional as CLI arg — if not provided, the LSP client
+    // sends it in the initialize request's rootUri parameter
+    val projectPath = args.headOption.getOrElse("")
 
-  private def run(projectPath: String): Unit =
-
-    System.err.println(s"[ScalaLsp] Starting IntelliJ Scala LSP server for project: $projectPath")
+    if projectPath.nonEmpty then
+      System.err.println(s"[ScalaLsp] Starting IntelliJ Scala LSP server for project: $projectPath")
+    else
+      System.err.println("[ScalaLsp] Starting IntelliJ Scala LSP server (project path from LSP initialize)")
 
     try
       IntellijBootstrap.initialize()
