@@ -24,6 +24,7 @@ class ScalaTextDocumentService(projectManager: IntellijProjectManager) extends T
   private val diagnosticsProvider = DiagnosticsProvider(projectManager)
   private val foldingRangeProvider = FoldingRangeProvider(projectManager)
   private val selectionRangeProvider = SelectionRangeProvider(projectManager)
+  private val callHierarchyProvider = CallHierarchyProvider(projectManager)
 
   def connect(client: LanguageClient): Unit =
     this.client = client
@@ -108,3 +109,20 @@ class ScalaTextDocumentService(projectManager: IntellijProjectManager) extends T
     CompletableFuture.supplyAsync: () =>
       val positions = params.getPositions.asScala.toSeq
       selectionRangeProvider.getSelectionRanges(params.getTextDocument.getUri, positions).asJava
+
+  // --- Call Hierarchy ---
+
+  override def prepareCallHierarchy(params: CallHierarchyPrepareParams): CompletableFuture[util.List[CallHierarchyItem]] =
+    CompletableFuture.supplyAsync: () =>
+      callHierarchyProvider.prepare(
+        params.getTextDocument.getUri,
+        params.getPosition
+      ).asJava
+
+  override def callHierarchyIncomingCalls(params: CallHierarchyIncomingCallsParams): CompletableFuture[util.List[CallHierarchyIncomingCall]] =
+    CompletableFuture.supplyAsync: () =>
+      callHierarchyProvider.incomingCalls(params.getItem).asJava
+
+  override def callHierarchyOutgoingCalls(params: CallHierarchyOutgoingCallsParams): CompletableFuture[util.List[CallHierarchyOutgoingCall]] =
+    CompletableFuture.supplyAsync: () =>
+      callHierarchyProvider.outgoingCalls(params.getItem).asJava

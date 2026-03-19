@@ -18,6 +18,7 @@ Metals (the existing Scala LSP) uses its own compiler infrastructure, which dive
 | `textDocument/publishDiagnostics` | Errors and warnings from IntelliJ's analysis engine |
 | `textDocument/documentSymbol` | Outline of classes, traits, objects, methods, vals |
 | `workspace/symbol` | Search symbols across the project |
+| `callHierarchy/prepare,incomingCalls,outgoingCalls` | Call hierarchy (who calls this, what does this call) |
 | `textDocument/foldingRange` | Code folding regions from language-specific `FoldingBuilder` |
 | `textDocument/selectionRange` | Structural selection ranges by walking PSI tree |
 | `textDocument/didOpen,didChange,didClose,didSave` | Full text document synchronization |
@@ -60,7 +61,7 @@ chmod +x mill
 # Compile
 ./mill lsp-server.compile
 
-# Run tests (105 tests)
+# Run tests (109 tests)
 ./mill lsp-server.test
 
 # Build assembly JAR
@@ -126,13 +127,14 @@ intellij-scala-lsp/
 │   │   │   ├── ReferencesProvider.scala        # Find references
 │   │   │   ├── HoverProvider.scala             # Hover (type + docs)
 │   │   │   ├── DiagnosticsProvider.scala       # Publish diagnostics via DaemonListener
+│   │   │   ├── CallHierarchyProvider.scala    # Call hierarchy (incoming + outgoing)
 │   │   │   ├── FoldingRangeProvider.scala     # Code folding ranges
 │   │   │   ├── SelectionRangeProvider.scala   # Structural selection ranges
 │   │   │   ├── SymbolProvider.scala            # Document + workspace symbols
 │   │   │   └── PsiUtils.scala                  # Offset <-> Position conversion
 │   │   └── protocol/
 │   │       └── LspConversions.scala            # IntelliJ <-> LSP type conversions
-│   ├── test/src/                               # 105 tests (munit)
+│   ├── test/src/                               # 109 tests (munit)
 │   └── resources/META-INF/plugin.xml           # IntelliJ plugin descriptor
 ├── launcher/
 │   └── launch-lsp.sh                           # Runtime launcher (auto-download, classpath)

@@ -50,6 +50,7 @@ class ScalaLspServer(projectPath: String) extends LanguageServer with LanguageCl
       capabilities.setWorkspaceSymbolProvider(true)
       capabilities.setFoldingRangeProvider(true)
       capabilities.setSelectionRangeProvider(true)
+      capabilities.setCallHierarchyProvider(true)
 
       System.err.println("[ScalaLsp] Server capabilities configured")
 
