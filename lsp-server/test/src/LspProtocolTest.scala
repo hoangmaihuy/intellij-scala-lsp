@@ -72,6 +72,8 @@ class LspProtocolTest extends FunSuite:
       assert(capabilities.getReferencesProvider.getLeft.booleanValue())
       assert(capabilities.getDocumentSymbolProvider.getLeft.booleanValue())
       assert(capabilities.getWorkspaceSymbolProvider.getLeft.booleanValue())
+      assert(capabilities.getFoldingRangeProvider.getLeft.booleanValue())
+      assert(capabilities.getSelectionRangeProvider.getLeft.booleanValue())
 
       // Check sync mode
       assertEquals(capabilities.getTextDocumentSync.getLeft, TextDocumentSyncKind.Full)

@@ -31,27 +31,40 @@ class DiagnosticsProviderTest extends FunSuite:
 
     provider.connect(client)
 
-    // Without IntelliJ running, this will publish an empty diagnostics list
     try
       provider.publishDiagnostics("file:///nonexistent/Foo.scala")
-      // If it runs, we should have received a publish call (possibly empty)
       if received.nonEmpty then
         assertEquals(received.head.getUri, "file:///nonexistent/Foo.scala")
     catch
       case _: Exception => ()
 
-  test("toLspSeverity maps correctly"):
-    // Test the severity mapping logic independently
-    import com.intellij.lang.annotation.HighlightSeverity
-    val errorSev = HighlightSeverity.ERROR
-    val warnSev = HighlightSeverity.WARNING
-    val weakWarnSev = HighlightSeverity.WEAK_WARNING
-    val infoSev = HighlightSeverity.INFORMATION
+  test("trackOpen and trackClose manage file tracking"):
+    val manager = IntellijProjectManager()
+    val provider = DiagnosticsProvider(manager)
 
-    // Verify severity ordering (IntelliJ uses compareTo)
-    assert(errorSev.compareTo(HighlightSeverity.ERROR) >= 0)
-    assert(warnSev.compareTo(HighlightSeverity.WARNING) >= 0)
-    assert(warnSev.compareTo(HighlightSeverity.ERROR) < 0)
-    assert(weakWarnSev.compareTo(HighlightSeverity.WEAK_WARNING) >= 0)
-    assert(weakWarnSev.compareTo(HighlightSeverity.WARNING) < 0)
-    assert(infoSev.compareTo(HighlightSeverity.WEAK_WARNING) < 0)
+    val received = scala.collection.mutable.ArrayBuffer[PublishDiagnosticsParams]()
+    val client = new org.jetbrains.scalalsP.TestLanguageClient:
+      override def publishDiagnostics(params: PublishDiagnosticsParams): Unit =
+        received += params
+
+    provider.connect(client)
+
+    // trackClose should send empty diagnostics to clear
+    provider.trackOpen("file:///test/Foo.scala")
+    provider.trackClose("file:///test/Foo.scala")
+
+    // Should have received a clear (empty diagnostics list)
+    if received.nonEmpty then
+      val last = received.last
+      assertEquals(last.getUri, "file:///test/Foo.scala")
+      assert(last.getDiagnostics.isEmpty)
+
+  test("toLspSeverity maps correctly"):
+    import com.intellij.lang.annotation.HighlightSeverity
+    val manager = IntellijProjectManager()
+    val provider = DiagnosticsProvider(manager)
+
+    assertEquals(provider.toLspSeverity(HighlightSeverity.ERROR), DiagnosticSeverity.Error)
+    assertEquals(provider.toLspSeverity(HighlightSeverity.WARNING), DiagnosticSeverity.Warning)
+    assertEquals(provider.toLspSeverity(HighlightSeverity.WEAK_WARNING), DiagnosticSeverity.Information)
+    assertEquals(provider.toLspSeverity(HighlightSeverity.INFORMATION), DiagnosticSeverity.Hint)

@@ -22,44 +22,36 @@ class ScalaTextDocumentService(projectManager: IntellijProjectManager) extends T
   private val typeDefinitionProvider = TypeDefinitionProvider(projectManager)
   private val implementationProvider = ImplementationProvider(projectManager)
   private val diagnosticsProvider = DiagnosticsProvider(projectManager)
+  private val foldingRangeProvider = FoldingRangeProvider(projectManager)
+  private val selectionRangeProvider = SelectionRangeProvider(projectManager)
 
   def connect(client: LanguageClient): Unit =
     this.client = client
     diagnosticsProvider.connect(client)
+
+  def registerDaemonListener(): Unit =
+    diagnosticsProvider.registerDaemonListener()
 
   // --- Document Synchronization ---
 
   override def didOpen(params: DidOpenTextDocumentParams): Unit =
     val uri = params.getTextDocument.getUri
     documentSync.didOpen(uri, params.getTextDocument.getText)
-    scheduleDiagnostics(uri)
+    diagnosticsProvider.trackOpen(uri)
 
   override def didChange(params: DidChangeTextDocumentParams): Unit =
     val uri = params.getTextDocument.getUri
     val changes = params.getContentChanges.asScala.toSeq
-    // We use Full sync, so there's always one change with the full text
     changes.headOption.foreach: change =>
       documentSync.didChange(uri, change.getText)
-    scheduleDiagnostics(uri)
 
   override def didClose(params: DidCloseTextDocumentParams): Unit =
-    documentSync.didClose(params.getTextDocument.getUri)
+    val uri = params.getTextDocument.getUri
+    documentSync.didClose(uri)
+    diagnosticsProvider.trackClose(uri)
 
   override def didSave(params: DidSaveTextDocumentParams): Unit =
-    val uri = params.getTextDocument.getUri
-    documentSync.didSave(uri)
-    scheduleDiagnostics(uri)
-
-  private def scheduleDiagnostics(uri: String): Unit =
-    // Publish diagnostics asynchronously after a short delay to let IntelliJ analyze
-    CompletableFuture.runAsync: () =>
-      try
-        Thread.sleep(500) // Allow IntelliJ's daemon analyzer to process changes
-        diagnosticsProvider.publishDiagnostics(uri)
-      catch
-        case _: InterruptedException => ()
-        case e: Exception =>
-          System.err.println(s"[DiagnosticsProvider] Error publishing diagnostics: ${e.getMessage}")
+    documentSync.didSave(params.getTextDocument.getUri)
 
   // --- Navigation ---
 
@@ -107,3 +99,12 @@ class ScalaTextDocumentService(projectManager: IntellijProjectManager) extends T
       symbolProvider.documentSymbols(params.getTextDocument.getUri)
         .map(ds => LspEither.forRight[SymbolInformation, DocumentSymbol](ds))
         .asJava
+
+  override def foldingRange(params: FoldingRangeRequestParams): CompletableFuture[util.List[FoldingRange]] =
+    CompletableFuture.supplyAsync: () =>
+      foldingRangeProvider.getFoldingRanges(params.getTextDocument.getUri).asJava
+
+  override def selectionRange(params: SelectionRangeParams): CompletableFuture[util.List[SelectionRange]] =
+    CompletableFuture.supplyAsync: () =>
+      val positions = params.getPositions.asScala.toSeq
+      selectionRangeProvider.getSelectionRanges(params.getTextDocument.getUri, positions).asJava

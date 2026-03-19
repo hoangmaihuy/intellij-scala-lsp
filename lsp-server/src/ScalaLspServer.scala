@@ -48,6 +48,8 @@ class ScalaLspServer(projectPath: String) extends LanguageServer with LanguageCl
       capabilities.setHoverProvider(true)
       capabilities.setDocumentSymbolProvider(true)
       capabilities.setWorkspaceSymbolProvider(true)
+      capabilities.setFoldingRangeProvider(true)
+      capabilities.setSelectionRangeProvider(true)
 
       System.err.println("[ScalaLsp] Server capabilities configured")
 
@@ -58,6 +60,8 @@ class ScalaLspServer(projectPath: String) extends LanguageServer with LanguageCl
     System.err.println("[ScalaLsp] Client confirmed initialization")
     // Wait for indexing to complete
     projectManager.waitForSmartMode()
+    // Register daemon listener for push-based diagnostics
+    textDocumentService.registerDaemonListener()
     System.err.println("[ScalaLsp] Project indexing complete, ready for requests")
 
   override def shutdown(): CompletableFuture[AnyRef] =
