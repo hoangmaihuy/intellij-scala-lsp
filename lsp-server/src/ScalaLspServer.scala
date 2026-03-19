@@ -42,6 +42,8 @@ class ScalaLspServer(projectPath: String) extends LanguageServer with LanguageCl
 
       // Navigation capabilities
       capabilities.setDefinitionProvider(true)
+      capabilities.setTypeDefinitionProvider(true)
+      capabilities.setImplementationProvider(true)
       capabilities.setReferencesProvider(true)
       capabilities.setHoverProvider(true)
       capabilities.setDocumentSymbolProvider(true)

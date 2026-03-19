@@ -67,6 +67,8 @@ class LspProtocolTest extends FunSuite:
       // Check all navigation capabilities are enabled
       assert(capabilities.getHoverProvider.getLeft.booleanValue())
       assert(capabilities.getDefinitionProvider.getLeft.booleanValue())
+      assert(capabilities.getTypeDefinitionProvider.getLeft.booleanValue())
+      assert(capabilities.getImplementationProvider.getLeft.booleanValue())
       assert(capabilities.getReferencesProvider.getLeft.booleanValue())
       assert(capabilities.getDocumentSymbolProvider.getLeft.booleanValue())
       assert(capabilities.getWorkspaceSymbolProvider.getLeft.booleanValue())

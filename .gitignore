@@ -2,6 +2,8 @@
 *.log
 out/
 .bsp/
+.idea/
+.claude/
 local/
 
 # Mill bootstrap script (downloaded, not tracked)

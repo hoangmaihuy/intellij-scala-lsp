@@ -11,8 +11,11 @@ Metals (the existing Scala LSP) uses its own compiler infrastructure, which dive
 | LSP Method | Description |
 |---|---|
 | `textDocument/definition` | Go to definition via PSI reference resolution |
+| `textDocument/typeDefinition` | Go to the type's definition (e.g. from a variable to its type's class) |
+| `textDocument/implementation` | Find all implementations of a trait, class, or abstract method |
 | `textDocument/references` | Find all references via `ReferencesSearch` |
 | `textDocument/hover` | Type info + ScalaDoc documentation |
+| `textDocument/publishDiagnostics` | Errors and warnings from IntelliJ's analysis engine |
 | `textDocument/documentSymbol` | Outline of classes, traits, objects, methods, vals |
 | `workspace/symbol` | Search symbols across the project |
 | `textDocument/didOpen,didChange,didClose,didSave` | Full text document synchronization |
@@ -55,7 +58,7 @@ chmod +x mill
 # Compile
 ./mill lsp-server.compile
 
-# Run tests (89 tests)
+# Run tests (99 tests)
 ./mill lsp-server.test
 
 # Build assembly JAR
@@ -116,13 +119,16 @@ intellij-scala-lsp/
 │   │   │   ├── IntellijProjectManager.scala    # Project lifecycle (open/close/index)
 │   │   │   ├── DocumentSyncManager.scala       # LSP <-> IntelliJ VFS/Document sync
 │   │   │   ├── DefinitionProvider.scala        # Go to definition
+│   │   │   ├── TypeDefinitionProvider.scala   # Go to type definition
+│   │   │   ├── ImplementationProvider.scala   # Find implementations
 │   │   │   ├── ReferencesProvider.scala        # Find references
 │   │   │   ├── HoverProvider.scala             # Hover (type + docs)
+│   │   │   ├── DiagnosticsProvider.scala       # Publish diagnostics (errors/warnings)
 │   │   │   ├── SymbolProvider.scala            # Document + workspace symbols
 │   │   │   └── PsiUtils.scala                  # Offset <-> Position conversion
 │   │   └── protocol/
 │   │       └── LspConversions.scala            # IntelliJ <-> LSP type conversions
-│   ├── test/src/                               # 89 tests (munit)
+│   ├── test/src/                               # 99 tests (munit)
 │   └── resources/META-INF/plugin.xml           # IntelliJ plugin descriptor
 ├── launcher/
 │   └── launch-lsp.sh                           # Runtime launcher (auto-download, classpath)
