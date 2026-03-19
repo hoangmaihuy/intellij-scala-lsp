@@ -42,6 +42,7 @@ class RenameProvider(projectManager: IntellijProjectManager):
         case None => null
 
   def rename(uri: String, position: Position, newName: String): WorkspaceEdit | Null =
+    if newName == null || newName.isBlank then return null
     ReadAction.compute[WorkspaceEdit | Null, RuntimeException]: () =>
       val named = findNamedElementAt(uri, position)
       named match
@@ -79,7 +80,7 @@ class RenameProvider(projectManager: IntellijProjectManager):
           // Deduplicate by (uri, range) to avoid double-editing the declaration
           // if ReferencesSearch also returns it
           val allEdits = (declEdits ++ refEdits)
-            .distinctBy((uri, edit) => (uri, edit.getRange.getStart.getLine, edit.getRange.getStart.getCharacter))
+            .distinctBy((uri, edit) => (uri, edit.getRange.getStart.getLine, edit.getRange.getStart.getCharacter, edit.getRange.getEnd.getLine, edit.getRange.getEnd.getCharacter))
             .groupBy(_._1)
             .map((fileUri, edits) => fileUri -> edits.map(_._2).asJava)
             .asJava
