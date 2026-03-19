@@ -50,6 +50,10 @@ find_scala_plugin() {
   if [ -d "$IDEA_HOME/plugins/Scala/lib" ]; then
     echo "$IDEA_HOME/plugins/Scala"; return 0
   fi
+  # sbt-idea-plugin SDK layout
+  if [ -d "$IDEA_HOME/custom-plugins/Scala/lib" ]; then
+    echo "$IDEA_HOME/custom-plugins/Scala"; return 0
+  fi
   # macOS JetBrains config
   for d in $(ls -dt "$HOME/Library/Application Support/JetBrains"/*/plugins/Scala 2>/dev/null); do
     if [ -d "$d/lib" ]; then echo "$d"; return 0; fi
