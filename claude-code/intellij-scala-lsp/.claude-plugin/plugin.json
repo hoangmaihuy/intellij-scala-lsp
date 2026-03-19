@@ -1,0 +1,19 @@
+{
+  "name": "intellij-scala-lsp",
+  "description": "Scala code intelligence powered by IntelliJ IDEA's analysis engine",
+  "version": "0.5.0",
+  "lspServers": {
+    "intellij-scala": {
+      "command": "bash",
+      "args": ["/Users/hoangmei/Work/intellij-scala-lsp/launcher/launch-lsp.sh"],
+      "env": {
+        "INTELLIJ_HOME": "/Users/hoangmei/.intellij-scala-lspPluginIC/sdk/253.32098.37"
+      },
+      "extensionToLanguage": {
+        ".scala": "scala",
+        ".sc": "scala"
+      },
+      "startupTimeout": 300000
+    }
+  }
+}
