@@ -1,23 +1,20 @@
 package org.jetbrains.scalalsP.intellij
 
-import munit.FunSuite
+import org.junit.Assert.*
+import org.junit.Test
 import org.eclipse.lsp4j.*
 
-class CallHierarchyProviderTest extends FunSuite:
+class CallHierarchyProviderTest:
 
-  test("prepare returns empty for nonexistent file"):
+  @Test def testPrepareReturnsEmptyForNonexistentFile(): Unit =
     val manager = IntellijProjectManager()
     val provider = CallHierarchyProvider(manager)
     try
-      val result = provider.prepare(
-        "file:///nonexistent/Foo.scala",
-        new Position(0, 0)
-      )
-      assertEquals(result, Seq.empty)
-    catch
-      case _: Exception => ()
+      val result = provider.prepare("file:///nonexistent/Foo.scala", new Position(0, 0))
+      assertEquals(Seq.empty, result)
+    catch case _: Exception => ()
 
-  test("incomingCalls returns empty for invalid item"):
+  @Test def testIncomingCallsReturnsEmptyForInvalidItem(): Unit =
     val manager = IntellijProjectManager()
     val provider = CallHierarchyProvider(manager)
     val item = new CallHierarchyItem(
@@ -28,11 +25,10 @@ class CallHierarchyProviderTest extends FunSuite:
     )
     try
       val result = provider.incomingCalls(item)
-      assertEquals(result, Seq.empty)
-    catch
-      case _: Exception => ()
+      assertEquals(Seq.empty, result)
+    catch case _: Exception => ()
 
-  test("outgoingCalls returns empty for invalid item"):
+  @Test def testOutgoingCallsReturnsEmptyForInvalidItem(): Unit =
     val manager = IntellijProjectManager()
     val provider = CallHierarchyProvider(manager)
     val item = new CallHierarchyItem(
@@ -43,11 +39,8 @@ class CallHierarchyProviderTest extends FunSuite:
     )
     try
       val result = provider.outgoingCalls(item)
-      assertEquals(result, Seq.empty)
-    catch
-      case _: Exception => ()
+      assertEquals(Seq.empty, result)
+    catch case _: Exception => ()
 
-  test("provider construction succeeds"):
-    val manager = IntellijProjectManager()
-    val provider = CallHierarchyProvider(manager)
-    assert(provider != null)
+  @Test def testProviderConstruction(): Unit =
+    assertNotNull(CallHierarchyProvider(IntellijProjectManager()))

@@ -1,95 +1,94 @@
 package org.jetbrains.scalalsP.intellij
 
-import munit.FunSuite
+import org.junit.Assert.*
+import org.junit.Test
 import org.eclipse.lsp4j.Position
 import org.jetbrains.scalalsP.test.MockDocument
 
-class PsiUtilsTest extends FunSuite:
+class PsiUtilsTest:
 
   // --- positionToOffset ---
 
-  test("positionToOffset at start of document"):
+  @Test def testPositionToOffsetAtStartOfDocument(): Unit =
     val doc = MockDocument("hello\nworld\n")
-    assertEquals(PsiUtils.positionToOffset(doc, Position(0, 0)), 0)
+    assertEquals(0, PsiUtils.positionToOffset(doc, Position(0, 0)))
 
-  test("positionToOffset at middle of first line"):
+  @Test def testPositionToOffsetAtMiddleOfFirstLine(): Unit =
     val doc = MockDocument("hello\nworld\n")
-    assertEquals(PsiUtils.positionToOffset(doc, Position(0, 3)), 3)
+    assertEquals(3, PsiUtils.positionToOffset(doc, Position(0, 3)))
 
-  test("positionToOffset at start of second line"):
+  @Test def testPositionToOffsetAtStartOfSecondLine(): Unit =
     val doc = MockDocument("hello\nworld\n")
-    assertEquals(PsiUtils.positionToOffset(doc, Position(1, 0)), 6)
+    assertEquals(6, PsiUtils.positionToOffset(doc, Position(1, 0)))
 
-  test("positionToOffset at middle of second line"):
+  @Test def testPositionToOffsetAtMiddleOfSecondLine(): Unit =
     val doc = MockDocument("hello\nworld\n")
-    assertEquals(PsiUtils.positionToOffset(doc, Position(1, 3)), 9)
+    assertEquals(9, PsiUtils.positionToOffset(doc, Position(1, 3)))
 
-  test("positionToOffset clamps to end of line"):
+  @Test def testPositionToOffsetClampsToEndOfLine(): Unit =
     val doc = MockDocument("hello\nworld\n")
-    // Character 100 on line 0 should clamp to end of line 0
-    assertEquals(PsiUtils.positionToOffset(doc, Position(0, 100)), 5)
+    assertEquals(5, PsiUtils.positionToOffset(doc, Position(0, 100)))
 
-  test("positionToOffset clamps line to max"):
+  @Test def testPositionToOffsetClampsLineToMax(): Unit =
     val doc = MockDocument("hello\nworld\n")
-    // Line 100 should clamp to last line
     val offset = PsiUtils.positionToOffset(doc, Position(100, 0))
-    assert(offset >= 0 && offset <= doc.getTextLength)
+    assertTrue(offset >= 0 && offset <= doc.getTextLength)
 
-  test("positionToOffset with empty document"):
+  @Test def testPositionToOffsetWithEmptyDocument(): Unit =
     val doc = MockDocument("")
-    assertEquals(PsiUtils.positionToOffset(doc, Position(0, 0)), 0)
+    assertEquals(0, PsiUtils.positionToOffset(doc, Position(0, 0)))
 
-  test("positionToOffset with single line no newline"):
+  @Test def testPositionToOffsetWithSingleLineNoNewline(): Unit =
     val doc = MockDocument("hello")
-    assertEquals(PsiUtils.positionToOffset(doc, Position(0, 5)), 5)
+    assertEquals(5, PsiUtils.positionToOffset(doc, Position(0, 5)))
 
   // --- offsetToPosition ---
 
-  test("offsetToPosition at start of document"):
+  @Test def testOffsetToPositionAtStartOfDocument(): Unit =
     val doc = MockDocument("hello\nworld\n")
     val pos = PsiUtils.offsetToPosition(doc, 0)
-    assertEquals(pos.getLine, 0)
-    assertEquals(pos.getCharacter, 0)
+    assertEquals(0, pos.getLine)
+    assertEquals(0, pos.getCharacter)
 
-  test("offsetToPosition at middle of first line"):
+  @Test def testOffsetToPositionAtMiddleOfFirstLine(): Unit =
     val doc = MockDocument("hello\nworld\n")
     val pos = PsiUtils.offsetToPosition(doc, 3)
-    assertEquals(pos.getLine, 0)
-    assertEquals(pos.getCharacter, 3)
+    assertEquals(0, pos.getLine)
+    assertEquals(3, pos.getCharacter)
 
-  test("offsetToPosition at start of second line"):
+  @Test def testOffsetToPositionAtStartOfSecondLine(): Unit =
     val doc = MockDocument("hello\nworld\n")
     val pos = PsiUtils.offsetToPosition(doc, 6)
-    assertEquals(pos.getLine, 1)
-    assertEquals(pos.getCharacter, 0)
+    assertEquals(1, pos.getLine)
+    assertEquals(0, pos.getCharacter)
 
-  test("offsetToPosition at end of document"):
+  @Test def testOffsetToPositionAtEndOfDocument(): Unit =
     val doc = MockDocument("hello\nworld\n")
     val pos = PsiUtils.offsetToPosition(doc, 12)
-    assertEquals(pos.getLine, 2)
-    assertEquals(pos.getCharacter, 0)
+    assertEquals(2, pos.getLine)
+    assertEquals(0, pos.getCharacter)
 
-  test("offsetToPosition clamps negative offset"):
+  @Test def testOffsetToPositionClampsNegativeOffset(): Unit =
     val doc = MockDocument("hello\nworld\n")
     val pos = PsiUtils.offsetToPosition(doc, -5)
-    assertEquals(pos.getLine, 0)
-    assertEquals(pos.getCharacter, 0)
+    assertEquals(0, pos.getLine)
+    assertEquals(0, pos.getCharacter)
 
-  test("offsetToPosition clamps beyond document length"):
+  @Test def testOffsetToPositionClampsBeyondDocumentLength(): Unit =
     val doc = MockDocument("hello\nworld\n")
     val pos = PsiUtils.offsetToPosition(doc, 999)
-    assert(pos.getLine >= 0)
-    assert(pos.getCharacter >= 0)
+    assertTrue(pos.getLine >= 0)
+    assertTrue(pos.getCharacter >= 0)
 
-  test("offsetToPosition with empty document"):
+  @Test def testOffsetToPositionWithEmptyDocument(): Unit =
     val doc = MockDocument("")
     val pos = PsiUtils.offsetToPosition(doc, 0)
-    assertEquals(pos.getLine, 0)
-    assertEquals(pos.getCharacter, 0)
+    assertEquals(0, pos.getLine)
+    assertEquals(0, pos.getCharacter)
 
   // --- roundtrip tests ---
 
-  test("positionToOffset and offsetToPosition roundtrip"):
+  @Test def testPositionToOffsetAndOffsetToPositionRoundtrip(): Unit =
     val doc = MockDocument("package org.example\n\nobject Main:\n  def hello = 42\n")
     for
       line <- 0 until doc.getLineCount
@@ -98,37 +97,29 @@ class PsiUtilsTest extends FunSuite:
       val pos = Position(line, char)
       val offset = PsiUtils.positionToOffset(doc, pos)
       val roundtrip = PsiUtils.offsetToPosition(doc, offset)
-      assertEquals(roundtrip.getLine, line, s"line mismatch at ($line, $char)")
-      assertEquals(roundtrip.getCharacter, char, s"char mismatch at ($line, $char)")
+      assertEquals(s"line mismatch at ($line, $char)", line, roundtrip.getLine)
+      assertEquals(s"char mismatch at ($line, $char)", char, roundtrip.getCharacter)
 
-  test("offsetToPosition and positionToOffset roundtrip"):
+  @Test def testOffsetToPositionAndPositionToOffsetRoundtrip(): Unit =
     val text = "package org.example\n\nobject Main:\n  def hello = 42\n"
     val doc = MockDocument(text)
     for offset <- 0 until text.length do
       val pos = PsiUtils.offsetToPosition(doc, offset)
       val roundtrip = PsiUtils.positionToOffset(doc, pos)
-      assertEquals(roundtrip, offset, s"offset mismatch at offset $offset -> ($pos)")
-
-  // --- vfToUri ---
-
-  // vfToUri is tested via LspConversionsTest
+      assertEquals(s"offset mismatch at offset $offset -> ($pos)", offset, roundtrip)
 
   // --- Multi-line document tests ---
 
-  test("positionToOffset with tabs"):
+  @Test def testPositionToOffsetWithTabs(): Unit =
     val doc = MockDocument("\tclass Foo:\n\t\tdef bar = 1\n")
-    // Tab is just 1 character in offset terms
-    assertEquals(PsiUtils.positionToOffset(doc, Position(0, 1)), 1)
-    assertEquals(PsiUtils.positionToOffset(doc, Position(1, 2)), 14)
+    assertEquals(1, PsiUtils.positionToOffset(doc, Position(0, 1)))
+    assertEquals(14, PsiUtils.positionToOffset(doc, Position(1, 2)))
 
-  test("positionToOffset with unicode"):
+  @Test def testPositionToOffsetWithUnicode(): Unit =
     val doc = MockDocument("val x = \"héllo\"\n")
-    // Each unicode char is still 1 char in Java
-    assertEquals(PsiUtils.positionToOffset(doc, Position(0, 10)), 10)
+    assertEquals(10, PsiUtils.positionToOffset(doc, Position(0, 10)))
 
-  test("positionToOffset with CRLF"):
+  @Test def testPositionToOffsetWithCRLF(): Unit =
     val doc = MockDocument("hello\r\nworld\r\n")
-    // \r\n — \r counts as a character, \n starts new line
-    assertEquals(PsiUtils.positionToOffset(doc, Position(0, 0)), 0)
-    // Line 1 starts after \r\n = offset 7
-    assertEquals(PsiUtils.positionToOffset(doc, Position(1, 0)), 7)
+    assertEquals(0, PsiUtils.positionToOffset(doc, Position(0, 0)))
+    assertEquals(7, PsiUtils.positionToOffset(doc, Position(1, 0)))

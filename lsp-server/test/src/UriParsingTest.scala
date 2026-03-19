@@ -1,12 +1,9 @@
 package org.jetbrains.scalalsP.intellij
 
-import munit.FunSuite
+import org.junit.Assert.*
+import org.junit.Test
 
-// Tests for URI parsing logic used across multiple classes.
-class UriParsingTest extends FunSuite:
-
-  // The URI parsing logic is duplicated in IntellijProjectManager and LspConversions.
-  // Test it thoroughly here.
+class UriParsingTest:
 
   private def uriToPath(uri: String): String =
     if uri.startsWith("file://") then
@@ -14,37 +11,34 @@ class UriParsingTest extends FunSuite:
     else
       uri
 
-  test("standard file URI"):
-    assertEquals(uriToPath("file:///home/user/src/Main.scala"), "/home/user/src/Main.scala")
+  @Test def testStandardFileUri(): Unit =
+    assertEquals("/home/user/src/Main.scala", uriToPath("file:///home/user/src/Main.scala"))
 
-  test("file URI with encoded spaces"):
-    assertEquals(uriToPath("file:///home/user/my%20project/Main.scala"), "/home/user/my project/Main.scala")
+  @Test def testFileUriWithEncodedSpaces(): Unit =
+    assertEquals("/home/user/my project/Main.scala", uriToPath("file:///home/user/my%20project/Main.scala"))
 
-  test("file URI with encoded special chars"):
-    assertEquals(uriToPath("file:///home/user/%23test/Main.scala"), "/home/user/#test/Main.scala")
+  @Test def testFileUriWithEncodedSpecialChars(): Unit =
+    assertEquals("/home/user/#test/Main.scala", uriToPath("file:///home/user/%23test/Main.scala"))
 
-  test("plain path passthrough"):
-    assertEquals(uriToPath("/home/user/src/Main.scala"), "/home/user/src/Main.scala")
+  @Test def testPlainPathPassthrough(): Unit =
+    assertEquals("/home/user/src/Main.scala", uriToPath("/home/user/src/Main.scala"))
 
-  test("file URI root"):
-    assertEquals(uriToPath("file:///"), "/")
+  @Test def testFileUriRoot(): Unit =
+    assertEquals("/", uriToPath("file:///"))
 
-  test("file URI with single component"):
-    assertEquals(uriToPath("file:///tmp"), "/tmp")
+  @Test def testFileUriWithSingleComponent(): Unit =
+    assertEquals("/tmp", uriToPath("file:///tmp"))
 
-  test("Windows file URI"):
+  @Test def testWindowsFileUri(): Unit =
     val path = uriToPath("file:///C:/Users/user/project/Main.scala")
-    // On all platforms, URI.getPath returns /C:/Users/...
-    assert(path.endsWith("Users/user/project/Main.scala"))
+    assertTrue(path.endsWith("Users/user/project/Main.scala"))
 
-  test("deeply nested path"):
-    val uri = "file:///a/b/c/d/e/f/g/h/Main.scala"
-    assertEquals(uriToPath(uri), "/a/b/c/d/e/f/g/h/Main.scala")
+  @Test def testDeeplyNestedPath(): Unit =
+    assertEquals("/a/b/c/d/e/f/g/h/Main.scala", uriToPath("file:///a/b/c/d/e/f/g/h/Main.scala"))
 
-  test("path with dots"):
-    assertEquals(uriToPath("file:///home/user/../other/Main.scala"), "/home/user/../other/Main.scala")
+  @Test def testPathWithDots(): Unit =
+    assertEquals("/home/user/../other/Main.scala", uriToPath("file:///home/user/../other/Main.scala"))
 
-  test("path with unicode"):
-    val uri = "file:///home/user/%E4%B8%AD%E6%96%87/Main.scala"
-    val path = uriToPath(uri)
-    assert(path.contains("中文"))
+  @Test def testPathWithUnicode(): Unit =
+    val path = uriToPath("file:///home/user/%E4%B8%AD%E6%96%87/Main.scala")
+    assertTrue(path.contains("中文"))

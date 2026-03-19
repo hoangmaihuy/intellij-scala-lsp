@@ -1,58 +1,33 @@
 package org.jetbrains.scalalsP
 
-import munit.FunSuite
+import org.junit.Assert.*
+import org.junit.Test
 import org.eclipse.lsp4j.*
-import org.eclipse.lsp4j.jsonrpc.Launcher
 import org.eclipse.lsp4j.services.LanguageClient
 
-import java.io.{ByteArrayInputStream, ByteArrayOutputStream, PipedInputStream, PipedOutputStream}
-import java.nio.charset.StandardCharsets
 import java.util.concurrent.{CompletableFuture, TimeUnit}
 
-// Integration test that verifies the LSP JSON-RPC protocol works correctly.
-// Due to lsp4j 0.23 duplicate RPC method issues with piped launchers,
-// we test the protocol via manual JSON-RPC messages instead.
-class LspProtocolTest extends FunSuite:
+class LspProtocolTest:
 
-  private def buildInitializeRequest(id: Int, rootUri: String): String =
-    val json = s"""{"jsonrpc":"2.0","id":$id,"method":"initialize","params":{"rootUri":"$rootUri","capabilities":{}}}"""
-    s"Content-Length: ${json.getBytes(StandardCharsets.UTF_8).length}\r\n\r\n$json"
-
-  private def buildShutdownRequest(id: Int): String =
-    val json = s"""{"jsonrpc":"2.0","id":$id,"method":"shutdown"}"""
-    s"Content-Length: ${json.getBytes(StandardCharsets.UTF_8).length}\r\n\r\n$json"
-
-  private def readResponse(out: ByteArrayOutputStream, timeoutMs: Long = 5000): Option[String] =
-    val deadline = System.currentTimeMillis() + timeoutMs
-    while out.size() == 0 && System.currentTimeMillis() < deadline do
-      Thread.sleep(50)
-    if out.size() > 0 then
-      val raw = out.toString(StandardCharsets.UTF_8)
-      // Extract JSON body after Content-Length header
-      val bodyStart = raw.indexOf("\r\n\r\n")
-      if bodyStart >= 0 then Some(raw.substring(bodyStart + 4))
-      else Some(raw)
-    else None
-
-  test("getTextDocumentService returns non-null"):
+  @Test def testGetTextDocumentServiceReturnsNonNull(): Unit =
     val server = new ScalaLspServer("/tmp/test")
-    assert(server.getTextDocumentService != null)
+    assertNotNull(server.getTextDocumentService)
 
-  test("getWorkspaceService returns non-null"):
+  @Test def testGetWorkspaceServiceReturnsNonNull(): Unit =
     val server = new ScalaLspServer("/tmp/test")
-    assert(server.getWorkspaceService != null)
+    assertNotNull(server.getWorkspaceService)
 
-  test("server returns correct service types"):
+  @Test def testServerReturnsCorrectServiceTypes(): Unit =
     val server = new ScalaLspServer("/tmp/test")
-    assert(server.getTextDocumentService.isInstanceOf[ScalaTextDocumentService])
-    assert(server.getWorkspaceService.isInstanceOf[ScalaWorkspaceService])
+    assertTrue(server.getTextDocumentService.isInstanceOf[ScalaTextDocumentService])
+    assertTrue(server.getWorkspaceService.isInstanceOf[ScalaWorkspaceService])
 
-  test("connect does not throw"):
+  @Test def testConnectDoesNotThrow(): Unit =
     val server = new ScalaLspServer("/tmp/test")
-    val client = new TestLanguageClient()
+    val client = TestLanguageClient()
     server.connect(client)
 
-  test("initialize returns capabilities via CompletableFuture"):
+  @Test def testInitializeReturnsCapabilities(): Unit =
     val server = new ScalaLspServer("/tmp/test")
     val params = new InitializeParams()
     params.setRootUri("file:///tmp/test-project")
@@ -62,80 +37,58 @@ class LspProtocolTest extends FunSuite:
     try
       val result = future.get(10, TimeUnit.SECONDS)
       val capabilities = result.getCapabilities
-      assertNotEquals(capabilities, null)
+      assertNotNull(capabilities)
 
-      // Check all navigation capabilities are enabled
-      assert(capabilities.getHoverProvider.getLeft.booleanValue())
-      assert(capabilities.getDefinitionProvider.getLeft.booleanValue())
-      assert(capabilities.getTypeDefinitionProvider.getLeft.booleanValue())
-      assert(capabilities.getImplementationProvider.getLeft.booleanValue())
-      assert(capabilities.getReferencesProvider.getLeft.booleanValue())
-      assert(capabilities.getDocumentSymbolProvider.getLeft.booleanValue())
-      assert(capabilities.getWorkspaceSymbolProvider.getLeft.booleanValue())
-      assert(capabilities.getFoldingRangeProvider.getLeft.booleanValue())
-      assert(capabilities.getSelectionRangeProvider.getLeft.booleanValue())
-      assert(capabilities.getCallHierarchyProvider.getLeft.booleanValue())
+      assertTrue(capabilities.getHoverProvider.getLeft.booleanValue())
+      assertTrue(capabilities.getDefinitionProvider.getLeft.booleanValue())
+      assertTrue(capabilities.getTypeDefinitionProvider.getLeft.booleanValue())
+      assertTrue(capabilities.getImplementationProvider.getLeft.booleanValue())
+      assertTrue(capabilities.getReferencesProvider.getLeft.booleanValue())
+      assertTrue(capabilities.getDocumentSymbolProvider.getLeft.booleanValue())
+      assertTrue(capabilities.getWorkspaceSymbolProvider.getLeft.booleanValue())
+      assertTrue(capabilities.getFoldingRangeProvider.getLeft.booleanValue())
+      assertTrue(capabilities.getSelectionRangeProvider.getLeft.booleanValue())
+      assertTrue(capabilities.getCallHierarchyProvider.getLeft.booleanValue())
 
-      // Check sync mode
-      assertEquals(capabilities.getTextDocumentSync.getLeft, TextDocumentSyncKind.Full)
+      assertEquals(TextDocumentSyncKind.Full, capabilities.getTextDocumentSync.getLeft)
 
-      // Check server info
-      assertEquals(result.getServerInfo.getName, "intellij-scala-lsp")
-      assertEquals(result.getServerInfo.getVersion, "0.1.0")
+      assertEquals("intellij-scala-lsp", result.getServerInfo.getName)
+      assertEquals("0.1.0", result.getServerInfo.getVersion)
     catch
-      // Expected: IntelliJ platform not available, project open fails
       case _: java.util.concurrent.ExecutionException => ()
 
-  test("shutdown returns null"):
+  @Test def testShutdownReturnsNull(): Unit =
     val server = new ScalaLspServer("/tmp/test")
-    val future = server.shutdown()
     try
-      val result = future.get(5, TimeUnit.SECONDS)
-      assertEquals(result, null)
+      val result = server.shutdown().get(5, TimeUnit.SECONDS)
+      assertNull(result)
     catch
       case _: Exception => ()
 
-  test("initialize extracts path from file URI"):
-    // Verify the URI parsing logic in initialize
+  @Test def testInitializeExtractsPathFromFileUri(): Unit =
     val server = new ScalaLspServer("/tmp/fallback")
     val params = new InitializeParams()
     params.setRootUri("file:///home/user/my-project")
     params.setCapabilities(new ClientCapabilities())
+    try server.initialize(params).get(5, TimeUnit.SECONDS)
+    catch case _: java.util.concurrent.ExecutionException => ()
 
-    // The initialize call will try to open the project at /home/user/my-project
-    // which will fail, but the URI parsing should work
-    val future = server.initialize(params)
-    try
-      future.get(5, TimeUnit.SECONDS)
-    catch
-      case _: java.util.concurrent.ExecutionException => ()
-
-  test("initialize uses rootPath as fallback"):
+  @Test def testInitializeUsesRootPathAsFallback(): Unit =
     val server = new ScalaLspServer("/tmp/fallback")
     val params = new InitializeParams()
     params.setRootPath("/home/user/project")
     params.setCapabilities(new ClientCapabilities())
+    try server.initialize(params).get(5, TimeUnit.SECONDS)
+    catch case _: java.util.concurrent.ExecutionException => ()
 
-    val future = server.initialize(params)
-    try
-      future.get(5, TimeUnit.SECONDS)
-    catch
-      case _: java.util.concurrent.ExecutionException => ()
-
-  test("initialize uses constructor path as last fallback"):
+  @Test def testInitializeUsesConstructorPathAsLastFallback(): Unit =
     val server = new ScalaLspServer("/tmp/constructor-path")
     val params = new InitializeParams()
-    // No rootUri or rootPath set
     params.setCapabilities(new ClientCapabilities())
-
-    val future = server.initialize(params)
-    try
-      future.get(5, TimeUnit.SECONDS)
-    catch
-      case _: java.util.concurrent.ExecutionException => ()
+    try server.initialize(params).get(5, TimeUnit.SECONDS)
+    catch case _: java.util.concurrent.ExecutionException => ()
 
 
-// Minimal LanguageClient implementation for testing
 class TestLanguageClient extends LanguageClient:
   val diagnostics = scala.collection.mutable.ArrayBuffer[PublishDiagnosticsParams]()
   val logMessages = scala.collection.mutable.ArrayBuffer[MessageParams]()

@@ -95,6 +95,16 @@ object IntellijSdk {
       .toSeq
   }
 
+  def testFrameworkJars(): Seq[PathRef] = {
+    val sdkDir = findIntellijHome()
+    val libDir = sdkDir / "lib"
+    val testJarNames = Set("testFramework.jar")
+    os.list(libDir)
+      .filter(p => testJarNames.contains(p.last))
+      .map(p => PathRef(p))
+      .toSeq
+  }
+
   def scalaPluginJars(): Seq[PathRef] = {
     val pluginDir = findScalaPluginDir()
     val libDir = pluginDir / "lib"

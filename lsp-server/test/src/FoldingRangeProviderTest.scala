@@ -1,19 +1,17 @@
 package org.jetbrains.scalalsP.intellij
 
-import munit.FunSuite
+import org.junit.Assert.*
+import org.junit.Test
 
-class FoldingRangeProviderTest extends FunSuite:
+class FoldingRangeProviderTest:
 
-  test("getFoldingRanges returns empty for nonexistent file"):
+  @Test def testGetFoldingRangesReturnsEmptyForNonexistentFile(): Unit =
     val manager = IntellijProjectManager()
     val provider = FoldingRangeProvider(manager)
     try
       val result = provider.getFoldingRanges("file:///nonexistent/Foo.scala")
-      assertEquals(result, Seq.empty)
-    catch
-      case _: Exception => ()
+      assertEquals(Seq.empty, result)
+    catch case _: Exception => ()
 
-  test("provider construction succeeds"):
-    val manager = IntellijProjectManager()
-    val provider = FoldingRangeProvider(manager)
-    assert(provider != null)
+  @Test def testProviderConstruction(): Unit =
+    assertNotNull(FoldingRangeProvider(IntellijProjectManager()))

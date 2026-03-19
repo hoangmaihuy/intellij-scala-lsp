@@ -1,42 +1,42 @@
 package org.jetbrains.scalalsP.protocol
 
-import munit.FunSuite
+import org.junit.Assert.*
+import org.junit.Test
 
-class LspConversionsTest extends FunSuite:
+class LspConversionsTest:
 
-  test("uriToPath converts file URI to path"):
+  @Test def testUriToPathConvertsFileUri(): Unit =
     assertEquals(
-      LspConversions.uriToPath("file:///home/user/project/src/Main.scala"),
-      "/home/user/project/src/Main.scala"
+      "/home/user/project/src/Main.scala",
+      LspConversions.uriToPath("file:///home/user/project/src/Main.scala")
     )
 
-  test("uriToPath converts file URI with spaces"):
+  @Test def testUriToPathConvertsFileUriWithSpaces(): Unit =
     assertEquals(
-      LspConversions.uriToPath("file:///home/user/my%20project/src/Main.scala"),
-      "/home/user/my project/src/Main.scala"
+      "/home/user/my project/src/Main.scala",
+      LspConversions.uriToPath("file:///home/user/my%20project/src/Main.scala")
     )
 
-  test("uriToPath passes through non-URI paths"):
+  @Test def testUriToPathPassesThroughNonUriPaths(): Unit =
     assertEquals(
-      LspConversions.uriToPath("/home/user/project/src/Main.scala"),
-      "/home/user/project/src/Main.scala"
+      "/home/user/project/src/Main.scala",
+      LspConversions.uriToPath("/home/user/project/src/Main.scala")
     )
 
-  test("pathToUri converts path to file URI"):
+  @Test def testPathToUriConvertsPathToFileUri(): Unit =
     assertEquals(
-      LspConversions.pathToUri("/home/user/project/src/Main.scala"),
-      "file:///home/user/project/src/Main.scala"
+      "file:///home/user/project/src/Main.scala",
+      LspConversions.pathToUri("/home/user/project/src/Main.scala")
     )
 
-  test("uriToPath and pathToUri roundtrip"):
+  @Test def testUriToPathAndPathToUriRoundtrip(): Unit =
     val path = "/home/user/project/src/Main.scala"
-    assertEquals(LspConversions.uriToPath(LspConversions.pathToUri(path)), path)
+    assertEquals(path, LspConversions.uriToPath(LspConversions.pathToUri(path)))
 
-  test("uriToPath handles Windows-style file URIs"):
-    // Windows URI: file:///C:/Users/user/project/Main.scala
+  @Test def testUriToPathHandlesWindowsStyleFileUris(): Unit =
     val uri = "file:///C:/Users/user/project/Main.scala"
     val path = LspConversions.uriToPath(uri)
-    assert(path.contains("Users/user/project/Main.scala"))
+    assertTrue(path.contains("Users/user/project/Main.scala"))
 
-  test("uriToPath handles empty path"):
-    assertEquals(LspConversions.uriToPath("file:///"), "/")
+  @Test def testUriToPathHandlesEmptyPath(): Unit =
+    assertEquals("/", LspConversions.uriToPath("file:///"))

@@ -1,65 +1,59 @@
 package org.jetbrains.scalalsP.intellij
 
-import munit.FunSuite
+import org.junit.Assert.*
+import org.junit.Test
 
-// Tests for hover content markdown generation.
-// buildHoverContent is private[intellij], accessible from this test package.
-class HoverContentTest extends FunSuite:
+class HoverContentTest:
 
   private val hoverProvider = HoverProvider(IntellijProjectManager())
 
   private def buildHoverContent(typeInfo: Option[String], docInfo: Option[String]): String =
     hoverProvider.buildHoverContent(typeInfo, docInfo)
 
-  test("hover with type info only"):
-    val result = buildHoverContent(Some("Int"), None)
-    assertEquals(result, "```scala\nInt\n```")
+  @Test def testHoverWithTypeInfoOnly(): Unit =
+    assertEquals("```scala\nInt\n```", buildHoverContent(Some("Int"), None))
 
-  test("hover with doc info only"):
-    val result = buildHoverContent(None, Some("Returns the sum"))
-    assertEquals(result, "Returns the sum")
+  @Test def testHoverWithDocInfoOnly(): Unit =
+    assertEquals("Returns the sum", buildHoverContent(None, Some("Returns the sum")))
 
-  test("hover with both type and doc"):
+  @Test def testHoverWithBothTypeAndDoc(): Unit =
     val result = buildHoverContent(Some("def foo: Int"), Some("Does stuff"))
-    assert(result.contains("```scala\ndef foo: Int\n```"))
-    assert(result.contains("Does stuff"))
-    assert(result.contains("---"))
+    assertTrue(result.contains("```scala\ndef foo: Int\n```"))
+    assertTrue(result.contains("Does stuff"))
+    assertTrue(result.contains("---"))
 
-  test("hover with empty type and empty doc"):
-    val result = buildHoverContent(None, None)
-    assertEquals(result, "")
+  @Test def testHoverWithEmptyTypeAndEmptyDoc(): Unit =
+    assertEquals("", buildHoverContent(None, None))
 
-  test("hover strips HTML from documentation"):
-    val result = buildHoverContent(None, Some("<p>Hello <b>world</b></p>"))
-    assertEquals(result, "Hello world")
+  @Test def testHoverStripsHtmlFromDocumentation(): Unit =
+    assertEquals("Hello world", buildHoverContent(None, Some("<p>Hello <b>world</b></p>")))
 
-  test("hover with empty HTML doc produces empty"):
-    val result = buildHoverContent(None, Some("<p></p>"))
-    assertEquals(result, "")
+  @Test def testHoverWithEmptyHtmlDocProducesEmpty(): Unit =
+    assertEquals("", buildHoverContent(None, Some("<p></p>")))
 
-  test("hover with complex type signature"):
+  @Test def testHoverWithComplexTypeSignature(): Unit =
     val result = buildHoverContent(
       Some("def map[B](f: A => B): List[B]"),
       Some("Applies f to each element")
     )
-    assert(result.contains("def map[B](f: A => B): List[B]"))
-    assert(result.contains("Applies f to each element"))
+    assertTrue(result.contains("def map[B](f: A => B): List[B]"))
+    assertTrue(result.contains("Applies f to each element"))
 
-  test("hover separates sections with horizontal rule"):
+  @Test def testHoverSeparatesSectionsWithHorizontalRule(): Unit =
     val result = buildHoverContent(Some("String"), Some("A string value"))
     val parts = result.split("\n\n---\n\n")
-    assertEquals(parts.length, 2)
+    assertEquals(2, parts.length)
 
-  test("hover with multiline documentation"):
+  @Test def testHoverWithMultilineDocumentation(): Unit =
     val doc = "<p>First line</p><p>Second line</p>"
     val result = buildHoverContent(Some("Int"), Some(doc))
-    assert(result.contains("First line"))
-    assert(result.contains("Second line"))
+    assertTrue(result.contains("First line"))
+    assertTrue(result.contains("Second line"))
 
-  test("hover doc with nested HTML tags"):
+  @Test def testHoverDocWithNestedHtmlTags(): Unit =
     val doc = "<div><code>val x = 1</code><br/>Some description</div>"
     val result = buildHoverContent(None, Some(doc))
-    assert(result.contains("val x = 1"))
-    assert(result.contains("Some description"))
-    assert(!result.contains("<div>"))
-    assert(!result.contains("<code>"))
+    assertTrue(result.contains("val x = 1"))
+    assertTrue(result.contains("Some description"))
+    assertFalse(result.contains("<div>"))
+    assertFalse(result.contains("<code>"))

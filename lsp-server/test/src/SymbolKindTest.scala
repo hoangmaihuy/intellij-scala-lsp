@@ -1,26 +1,22 @@
 package org.jetbrains.scalalsP.intellij
 
-import munit.FunSuite
+import org.junit.Assert.*
+import org.junit.Test
 import org.eclipse.lsp4j.SymbolKind
-import org.jetbrains.scalalsP.protocol.LspConversions
 
-// Tests for symbol kind classification based on class names.
-// The SymbolProvider and LspConversions both use class-name-based detection.
-class SymbolKindTest extends FunSuite:
+class SymbolKindTest:
 
-  // Simulate the classification logic used in SymbolProvider.getSymbolKind
   private def classifyByName(className: String): SymbolKind =
     if className.contains("ScClass") || className.contains("PsiClass") then SymbolKind.Class
     else if className.contains("ScTrait") then SymbolKind.Interface
     else if className.contains("ScObject") then SymbolKind.Module
     else if className.contains("ScFunction") || className.contains("PsiMethod") then SymbolKind.Method
     else if className.contains("ScVariable") then SymbolKind.Variable
-    else if className.contains("ScValue") then SymbolKind.Field
+    else if className.contains("ScValue") || className.contains("PsiField") then SymbolKind.Field
     else if className.contains("ScTypeAlias") then SymbolKind.TypeParameter
     else if className.contains("ScPackaging") then SymbolKind.Package
     else SymbolKind.Variable
 
-  // Simulate the significance check
   private def isSignificant(className: String): Boolean =
     className.contains("ScTypeDefinition") ||
     className.contains("ScClass") ||
@@ -34,73 +30,63 @@ class SymbolKindTest extends FunSuite:
     className.contains("PsiClass") ||
     className.contains("PsiMethod")
 
-  test("ScClass maps to Class"):
-    assertEquals(classifyByName("org.jetbrains.plugins.scala.lang.psi.impl.toplevel.typedef.ScClassImpl"), SymbolKind.Class)
+  @Test def testScClassMapsToClass(): Unit =
+    assertEquals(SymbolKind.Class, classifyByName("org.jetbrains.plugins.scala.lang.psi.impl.toplevel.typedef.ScClassImpl"))
 
-  test("ScTrait maps to Interface"):
-    assertEquals(classifyByName("org.jetbrains.plugins.scala.lang.psi.impl.toplevel.typedef.ScTraitImpl"), SymbolKind.Interface)
+  @Test def testScTraitMapsToInterface(): Unit =
+    assertEquals(SymbolKind.Interface, classifyByName("org.jetbrains.plugins.scala.lang.psi.impl.toplevel.typedef.ScTraitImpl"))
 
-  test("ScObject maps to Module"):
-    assertEquals(classifyByName("org.jetbrains.plugins.scala.lang.psi.impl.toplevel.typedef.ScObjectImpl"), SymbolKind.Module)
+  @Test def testScObjectMapsToModule(): Unit =
+    assertEquals(SymbolKind.Module, classifyByName("org.jetbrains.plugins.scala.lang.psi.impl.toplevel.typedef.ScObjectImpl"))
 
-  test("ScFunction maps to Method"):
-    assertEquals(classifyByName("org.jetbrains.plugins.scala.lang.psi.impl.statements.ScFunctionDefinitionImpl"), SymbolKind.Method)
+  @Test def testScFunctionMapsToMethod(): Unit =
+    assertEquals(SymbolKind.Method, classifyByName("org.jetbrains.plugins.scala.lang.psi.impl.statements.ScFunctionDefinitionImpl"))
 
-  test("ScValue maps to Field"):
-    assertEquals(classifyByName("org.jetbrains.plugins.scala.lang.psi.impl.statements.ScValueDeclarationImpl"), SymbolKind.Field)
+  @Test def testScValueMapsToField(): Unit =
+    assertEquals(SymbolKind.Field, classifyByName("org.jetbrains.plugins.scala.lang.psi.impl.statements.ScValueDeclarationImpl"))
 
-  test("ScVariable maps to Variable"):
-    assertEquals(classifyByName("org.jetbrains.plugins.scala.lang.psi.impl.statements.ScVariableDefinitionImpl"), SymbolKind.Variable)
+  @Test def testScVariableMapsToVariable(): Unit =
+    assertEquals(SymbolKind.Variable, classifyByName("org.jetbrains.plugins.scala.lang.psi.impl.statements.ScVariableDefinitionImpl"))
 
-  test("ScTypeAlias maps to TypeParameter"):
-    assertEquals(classifyByName("org.jetbrains.plugins.scala.lang.psi.impl.statements.ScTypeAliasDefinitionImpl"), SymbolKind.TypeParameter)
+  @Test def testScTypeAliasMapsToTypeParameter(): Unit =
+    assertEquals(SymbolKind.TypeParameter, classifyByName("org.jetbrains.plugins.scala.lang.psi.impl.statements.ScTypeAliasDefinitionImpl"))
 
-  test("ScPackaging maps to Package"):
-    assertEquals(classifyByName("org.jetbrains.plugins.scala.lang.psi.impl.ScPackagingImpl"), SymbolKind.Package)
+  @Test def testScPackagingMapsToPackage(): Unit =
+    assertEquals(SymbolKind.Package, classifyByName("org.jetbrains.plugins.scala.lang.psi.impl.ScPackagingImpl"))
 
-  test("PsiClass maps to Class"):
-    assertEquals(classifyByName("com.intellij.psi.impl.source.PsiClassImpl"), SymbolKind.Class)
+  @Test def testPsiClassMapsToClass(): Unit =
+    assertEquals(SymbolKind.Class, classifyByName("com.intellij.psi.impl.source.PsiClassImpl"))
 
-  test("PsiMethod maps to Method"):
-    assertEquals(classifyByName("com.intellij.psi.impl.source.PsiMethodImpl"), SymbolKind.Method)
+  @Test def testPsiMethodMapsToMethod(): Unit =
+    assertEquals(SymbolKind.Method, classifyByName("com.intellij.psi.impl.source.PsiMethodImpl"))
 
-  test("unknown element maps to Variable"):
-    assertEquals(classifyByName("org.jetbrains.something.Unknown"), SymbolKind.Variable)
+  @Test def testUnknownElementMapsToVariable(): Unit =
+    assertEquals(SymbolKind.Variable, classifyByName("org.jetbrains.something.Unknown"))
 
-  // Significance checks
+  @Test def testScTypeDefinitionIsSignificant(): Unit =
+    assertTrue(isSignificant("ScTypeDefinitionImpl"))
 
-  test("ScTypeDefinition is significant"):
-    assert(isSignificant("ScTypeDefinitionImpl"))
+  @Test def testScClassIsSignificant(): Unit =
+    assertTrue(isSignificant("ScClassImpl"))
 
-  test("ScClass is significant"):
-    assert(isSignificant("ScClassImpl"))
+  @Test def testScFunctionIsSignificant(): Unit =
+    assertTrue(isSignificant("ScFunctionImpl"))
 
-  test("ScFunction is significant"):
-    assert(isSignificant("ScFunctionImpl"))
+  @Test def testScValueIsSignificant(): Unit =
+    assertTrue(isSignificant("ScValueDeclarationImpl"))
 
-  test("ScValue is significant"):
-    assert(isSignificant("ScValueDeclarationImpl"))
+  @Test def testScVariableIsSignificant(): Unit =
+    assertTrue(isSignificant("ScVariableDefinitionImpl"))
 
-  test("ScVariable is significant"):
-    assert(isSignificant("ScVariableDefinitionImpl"))
+  @Test def testScTypeAliasIsSignificant(): Unit =
+    assertTrue(isSignificant("ScTypeAliasDefinitionImpl"))
 
-  test("ScTypeAlias is significant"):
-    assert(isSignificant("ScTypeAliasDefinitionImpl"))
+  @Test def testRandomElementIsNotSignificant(): Unit =
+    assertFalse(isSignificant("ScImportExprImpl"))
 
-  test("random element is not significant"):
-    assert(!isSignificant("ScImportExprImpl"))
+  @Test def testScReferenceIsNotSignificant(): Unit =
+    assertFalse(isSignificant("ScReferenceExpressionImpl"))
 
-  test("ScReference is not significant"):
-    assert(!isSignificant("ScReferenceExpressionImpl"))
-
-  test("whitespace/comment PSI nodes are not significant"):
-    assert(!isSignificant("PsiWhiteSpaceImpl"))
-    assert(!isSignificant("PsiCommentImpl"))
-
-  // LspConversions.toSymbolKind follows the same logic
-  test("LspConversions classifies same as SymbolProvider for ScClass"):
-    // Both use class name contains checks, verify they agree
-    val className = "org.jetbrains.plugins.scala.lang.psi.impl.toplevel.typedef.ScClassImpl"
-    val providerKind = classifyByName(className)
-    // LspConversions uses the same logic
-    assertEquals(providerKind, SymbolKind.Class)
+  @Test def testWhitespaceCommentPsiNodesAreNotSignificant(): Unit =
+    assertFalse(isSignificant("PsiWhiteSpaceImpl"))
+    assertFalse(isSignificant("PsiCommentImpl"))

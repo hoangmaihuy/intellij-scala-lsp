@@ -1,61 +1,42 @@
 package org.jetbrains.scalalsP
 
-import munit.FunSuite
+import org.junit.Assert.*
+import org.junit.Test
 import org.eclipse.lsp4j.*
 
-import java.util.concurrent.CompletableFuture
+import java.util.concurrent.TimeUnit
 
-// Unit tests for ScalaLspServer that don't require IntelliJ platform.
-class ScalaLspServerTest extends FunSuite:
+class ScalaLspServerTest:
 
-  test("server initializes with file URI root"):
+  @Test def testServerInitializesWithFileUriRoot(): Unit =
     val server = new ScalaLspServer("/tmp/fallback")
-    val params = InitializeParams()
+    val params = new InitializeParams()
     params.setRootUri("file:///home/user/project")
-    params.setCapabilities(ClientCapabilities())
+    params.setCapabilities(new ClientCapabilities())
+    try server.initialize(params).get(2, TimeUnit.SECONDS)
+    catch case _: java.util.concurrent.ExecutionException => ()
 
-    // Will fail due to no IntelliJ platform, but we test the URI parsing
-    val future = server.initialize(params)
-    try
-      future.get(2, java.util.concurrent.TimeUnit.SECONDS)
-    catch
-      // Expected: IntelliJ platform not running
-      case _: java.util.concurrent.ExecutionException => ()
-
-  test("server initializes with plain path root"):
+  @Test def testServerInitializesWithPlainPathRoot(): Unit =
     val server = new ScalaLspServer("/tmp/fallback")
-    val params = InitializeParams()
+    val params = new InitializeParams()
     params.setRootPath("/home/user/project")
-    params.setCapabilities(ClientCapabilities())
+    params.setCapabilities(new ClientCapabilities())
+    try server.initialize(params).get(2, TimeUnit.SECONDS)
+    catch case _: java.util.concurrent.ExecutionException => ()
 
-    val future = server.initialize(params)
-    try
-      future.get(2, java.util.concurrent.TimeUnit.SECONDS)
-    catch
-      case _: java.util.concurrent.ExecutionException => ()
-
-  test("server uses projectPath as fallback when no root provided"):
+  @Test def testServerUsesProjectPathAsFallback(): Unit =
     val server = new ScalaLspServer("/tmp/my-project")
-    val params = InitializeParams()
-    // No rootUri or rootPath
-    params.setCapabilities(ClientCapabilities())
+    val params = new InitializeParams()
+    params.setCapabilities(new ClientCapabilities())
+    try server.initialize(params).get(2, TimeUnit.SECONDS)
+    catch case _: java.util.concurrent.ExecutionException => ()
 
-    val future = server.initialize(params)
-    try
-      future.get(2, java.util.concurrent.TimeUnit.SECONDS)
-    catch
-      case _: java.util.concurrent.ExecutionException => ()
-
-  test("server returns correct service instances"):
+  @Test def testServerReturnsCorrectServiceInstances(): Unit =
     val server = new ScalaLspServer("/tmp/test")
-    val tds = server.getTextDocumentService
-    val ws = server.getWorkspaceService
+    assertTrue(server.getTextDocumentService.isInstanceOf[ScalaTextDocumentService])
+    assertTrue(server.getWorkspaceService.isInstanceOf[ScalaWorkspaceService])
 
-    assert(tds.isInstanceOf[ScalaTextDocumentService])
-    assert(ws.isInstanceOf[ScalaWorkspaceService])
-
-  test("connect sets client on services"):
+  @Test def testConnectSetsClientOnServices(): Unit =
     val server = new ScalaLspServer("/tmp/test")
     val mockClient = TestLanguageClient()
     server.connect(mockClient)
-    // If connect didn't throw, it worked

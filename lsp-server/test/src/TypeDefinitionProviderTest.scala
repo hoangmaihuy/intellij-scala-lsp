@@ -1,24 +1,17 @@
 package org.jetbrains.scalalsP.intellij
 
-import munit.FunSuite
+import org.junit.Assert.*
+import org.junit.Test
 
-class TypeDefinitionProviderTest extends FunSuite:
+class TypeDefinitionProviderTest:
 
-  test("getTypeDefinition returns empty for nonexistent file"):
+  @Test def testGetTypeDefinitionReturnsEmptyForNonexistentFile(): Unit =
     val manager = IntellijProjectManager()
     val provider = TypeDefinitionProvider(manager)
     try
-      val result = provider.getTypeDefinition(
-        "file:///nonexistent/Foo.scala",
-        org.eclipse.lsp4j.Position(0, 0)
-      )
-      assertEquals(result, Seq.empty)
-    catch
-      case _: Exception => ()
+      val result = provider.getTypeDefinition("file:///nonexistent/Foo.scala", org.eclipse.lsp4j.Position(0, 0))
+      assertEquals(Seq.empty, result)
+    catch case _: Exception => ()
 
-  test("extractClassFromType handles null gracefully"):
-    // The reflection-based type extraction should not throw on unexpected input
-    val manager = IntellijProjectManager()
-    val provider = TypeDefinitionProvider(manager)
-    // Provider is constructed without errors
-    assert(provider != null)
+  @Test def testProviderConstruction(): Unit =
+    assertNotNull(TypeDefinitionProvider(IntellijProjectManager()))

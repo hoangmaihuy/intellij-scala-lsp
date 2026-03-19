@@ -1,41 +1,29 @@
 package org.jetbrains.scalalsP.intellij
 
-import munit.FunSuite
+import org.junit.Test
 
-// Tests for DocumentSyncManager behavior.
-// Full integration requires IntelliJ platform; these test the interface contract.
-class DocumentSyncManagerTest extends FunSuite:
+class DocumentSyncManagerTest:
 
-  test("didOpen for nonexistent file logs warning"):
+  @Test def testDidOpenForNonexistentFile(): Unit =
     val manager = IntellijProjectManager()
     val sync = DocumentSyncManager(manager)
-    // Without IntelliJ running, this should handle the missing file gracefully
-    try
-      sync.didOpen("file:///nonexistent/Foo.scala", "object Foo")
-    catch
-      // Expected: IntelliJ platform not running
-      case _: Exception => ()
+    try sync.didOpen("file:///nonexistent/Foo.scala", "object Foo")
+    catch case _: Exception => ()
 
-  test("didChange for nonexistent file logs warning"):
+  @Test def testDidChangeForNonexistentFile(): Unit =
     val manager = IntellijProjectManager()
     val sync = DocumentSyncManager(manager)
-    try
-      sync.didChange("file:///nonexistent/Foo.scala", "object Foo { val x = 1 }")
-    catch
-      case _: Exception => ()
+    try sync.didChange("file:///nonexistent/Foo.scala", "object Foo { val x = 1 }")
+    catch case _: Exception => ()
 
-  test("didClose for nonexistent file is no-op"):
+  @Test def testDidCloseForNonexistentFile(): Unit =
     val manager = IntellijProjectManager()
     val sync = DocumentSyncManager(manager)
-    try
-      sync.didClose("file:///nonexistent/Foo.scala")
-    catch
-      case _: Exception => ()
+    try sync.didClose("file:///nonexistent/Foo.scala")
+    catch case _: Exception => ()
 
-  test("didSave for nonexistent file is no-op"):
+  @Test def testDidSaveForNonexistentFile(): Unit =
     val manager = IntellijProjectManager()
     val sync = DocumentSyncManager(manager)
-    try
-      sync.didSave("file:///nonexistent/Foo.scala")
-    catch
-      case _: Exception => ()
+    try sync.didSave("file:///nonexistent/Foo.scala")
+    catch case _: Exception => ()

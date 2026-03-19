@@ -33,9 +33,40 @@ object `lsp-server` extends ScalaModule {
     PathRef(dest)
   }
 
-  object test extends ScalaTests with TestModule.Munit {
+  object test extends ScalaTests with TestModule.Junit4 {
     def mvnDeps = Seq(
-      mvn"org.scalameta::munit:1.1.0"
+      mvn"junit:junit:4.13.2",
+      mvn"com.github.sbt:junit-interface:0.13.3",
+      mvn"org.opentest4j:opentest4j:1.3.0"
+    )
+
+    def testFrameworkJars: T[Seq[PathRef]] = Task {
+      IntellijSdk.testFrameworkJars()
+    }
+
+    def unmanagedClasspath = Task {
+      super.unmanagedClasspath() ++ testFrameworkJars()
+    }
+
+    // IntelliJ test framework requires --add-opens for JDK internals
+    def forkArgs = Seq(
+      "--add-opens=java.base/java.lang=ALL-UNNAMED",
+      "--add-opens=java.base/java.lang.reflect=ALL-UNNAMED",
+      "--add-opens=java.base/java.io=ALL-UNNAMED",
+      "--add-opens=java.base/java.net=ALL-UNNAMED",
+      "--add-opens=java.base/java.nio=ALL-UNNAMED",
+      "--add-opens=java.base/java.util=ALL-UNNAMED",
+      "--add-opens=java.base/java.util.concurrent=ALL-UNNAMED",
+      "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED",
+      "--add-opens=java.base/sun.security.ssl=ALL-UNNAMED",
+      "--add-opens=java.desktop/java.awt=ALL-UNNAMED",
+      "--add-opens=java.desktop/sun.awt=ALL-UNNAMED",
+      "--add-opens=java.desktop/sun.font=ALL-UNNAMED",
+      "--add-opens=java.desktop/java.awt.event=ALL-UNNAMED",
+      "--add-opens=java.desktop/javax.swing=ALL-UNNAMED",
+      "-Djava.awt.headless=true",
+      "-Didea.home.path=" + IntellijSdk.findIntellijHome().toString,
+      "-Didea.force.use.core.classloader=true",
     )
   }
 }
