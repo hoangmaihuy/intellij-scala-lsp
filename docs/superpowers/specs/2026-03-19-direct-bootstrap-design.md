@@ -1,13 +1,13 @@
 # Direct IntelliJ Platform Bootstrap for LSP Server
 
 **Date:** 2026-03-19
-**Status:** Draft
+**Status:** Implemented
 
 ## Problem
 
 IntelliJ 2025.3 maintains a hardcoded list of "well-known commands" in `WellKnownCommands.kt`. Commands not in this list are treated as `CommandType.GUI`. Our `scala-lsp` command is not in this list, so IntelliJ rejects it in headless mode.
 
-The current launch path is:
+The previous launch path was:
 ```
 launch-lsp.sh → java ... com.intellij.idea.Main scala-lsp <projectPath>
   → AppMode.setFlags() → WellKnownCommands.getCommandFor("scala-lsp") → null → treated as GUI
@@ -16,118 +16,90 @@ launch-lsp.sh → java ... com.intellij.idea.Main scala-lsp <projectPath>
 
 ## Solution
 
-Bypass `com.intellij.idea.Main` entirely. Bootstrap IntelliJ's `ApplicationImpl` directly in `ScalaLspMain`, using the same approach as IntelliJ's test framework (`testApplication.kt`). Then start the LSP server on the already-initialized platform.
+Bypass `com.intellij.idea.Main` entirely. Bootstrap IntelliJ's `ApplicationImpl` directly via `IntellijBootstrap.java`, called from `ScalaLspMain.scala`. The bootstrap mirrors IntelliJ's test framework (`testApplication.kt`), adapted for production use.
 
-## Design
+## Implementation
 
-### Bootstrap Sequence (ScalaLspMain)
+### Architecture
 
-The new `ScalaLspMain.main()` performs these steps in order:
-
-1. **Set system properties** — `java.awt.headless=true`, `idea.is.internal=false`
-2. **Set AppMode flags** — `AppMode.setHeadlessInTestMode(true)` (sets `isHeadless=true`, `isCommandLine=true`, `isLightEdit=false`). This is a `@TestOnly` API but only sets 3 boolean flags. Acceptable for our non-standard headless launch.
-3. **Setup ForkJoin pool** — `IdeaForkJoinWorkerThreadFactory.setupForkJoinCommonPool(true)` to configure IntelliJ's custom ForkJoinPool worker thread factory.
-4. **Schedule plugin loading** — `PluginManagerCore.scheduleDescriptorLoading(GlobalScope)`. Note: `PluginManagerCore.isUnitTestMode` is left as `false` (the default) since this is a production server, not tests.
-5. **Create ApplicationImpl** — Using the **production constructor**: `ApplicationImpl(CoroutineScope, isInternal=false)`. The production constructor reads `AppMode.isHeadless()` (set in step 2) and does NOT set `myTestModeFlag` or disable saving. We create a simple `CoroutineScope(SupervisorJob() + Dispatchers.Default)` — no Fleet kernel needed since IntelliJ Community doesn't use it.
-6. **Register components** — Wait for plugin loading to complete (with 60-second timeout), then `app.registerComponents(pluginSet.getEnabledModules(), app)`. Verify `ApplicationManager.getApplication()` is non-null after this.
-7. **Initialize services** — In order:
-   - `initConfigurationStore(app, emptyList())`
-   - `RegistryManager.getInstance()` then `Registry.markAsLoaded()` (needed for `Registry.is()`/`Registry.get()` calls throughout IntelliJ)
-   - `preloadCriticalServices(...)` + call `AppInitializedListener` callbacks
-8. **Set loading state** — `LoadingState.setCurrentState(LoadingState.COMPONENTS_LOADED)` then `LoadingState.setCurrentState(LoadingState.APP_STARTED)`
-9. **Start LSP server** — Extract project path from args, create `ScalaLspServer`, wire up lsp4j `Launcher`, block on `launcher.startListening().get()`
-
-### Code Structure
-
-```scala
-object ScalaLspMain:
-  def main(args: Array[String]): Unit =
-    val projectPath = args.headOption.getOrElse {
-      System.err.println("[ScalaLsp] ERROR: No project path. Usage: scala-lsp <projectPath>")
-      System.exit(1); return
-    }
-
-    // 1-2. System properties and AppMode
-    System.setProperty("java.awt.headless", "true")
-    System.setProperty("idea.is.internal", "false")
-    AppMode.setHeadlessInTestMode(true)
-
-    // 3. ForkJoin pool
-    IdeaForkJoinWorkerThreadFactory.setupForkJoinCommonPool(true)
-
-    // 4. Plugin loading
-    PluginManagerCore.scheduleDescriptorLoading(GlobalScope)
-
-    // 5-8. Bootstrap ApplicationImpl
-    bootstrapIntellijPlatform()
-
-    // 9. Start LSP
-    startLspServer(projectPath, System.in, System.out)
-
-  private def startLspServer(projectPath: String, in: InputStream, out: OutputStream): Unit =
-    // Moved from ScalaLspApplicationStarter — creates ScalaLspServer,
-    // wires lsp4j Launcher, blocks on startListening().get()
-    ...
+```
+ScalaLspMain.scala (entry point)
+  → IntellijBootstrap.java (platform bootstrap)
+  → LspLauncher.java (JSON-RPC setup, works around Scala 3 bridge methods)
+  → ScalaLspServer.scala (LSP protocol handler)
 ```
 
-The `bootstrapIntellijPlatform()` method mirrors `loadAppInUnitTestMode()` from `testApplication.kt`, with these differences from the test version:
-- Uses **production** `ApplicationImpl(CoroutineScope, isInternal)` constructor (not test constructor)
-- Skips test-specific code: EDT busy thread, `PluginManagerCore.isUnitTestMode`, `Disposer.setDebugMode`, `Logger.setUnitTestMode`, `BundleBase.assertOnMissedKeys`, `RecursionManager.assertOnMissedCache`, `PersistentFS.cleanPersistedContents`
-- Adds `RegistryManager.getInstance()` + `Registry.markAsLoaded()` between config store init and service preloading
+The bootstrap is written in Java because it calls Kotlin suspend functions (`initConfigurationStore`) and avoids Scala 3 bridge method issues. The LSP Launcher is also in Java to work around lsp4j's reflection-based method scanning which conflicts with Scala 3's annotated bridge methods.
 
-The `startLspServer` method is moved from `ScalaLspApplicationStarter` into `ScalaLspMain` (or extracted to a shared utility).
+### Bootstrap Sequence (IntellijBootstrap.java)
 
-### Launcher Script Change
+1. **Set system properties** — `java.awt.headless=true`, `idea.is.internal=false`, `jna.boot.library.path`
+2. **Set AppMode flags** — `AppMode.setHeadlessInTestMode(true)`. `@TestOnly` API that sets 3 boolean flags.
+3. **Setup ForkJoin pool** — `IdeaForkJoinWorkerThreadFactory.setupForkJoinCommonPool(true)`
+4. **Seal P3 support** — `P3SupportInstaller.seal()` (required before `initConfigurationStore`)
+5. **Start Fleet kernel** — `startServerKernel(GlobalScope)` provides the rhizomedb transactor on the coroutine context. Required by `ClientSessionImpl` during component registration.
+6. **Create coroutine scope** — `CoroutineScope(SupervisorJob() + Dispatchers.Default + kernelContext)`
+7. **Schedule plugin loading** — `PluginManagerCore.scheduleDescriptorLoading(appScope)`
+8. **Create ApplicationImpl** — Production constructor: `ApplicationImpl(appScope, isInternal=false)`. Reads `AppMode.isHeadless()` from step 2.
+9. **Register components** — Wait for plugins (60s timeout), `app.registerComponents(pluginSet.getEnabledModules(), app)`
+10. **Set ApplicationManager** — `ApplicationManager.setApplication(app)`
+11. **Initialize config store** — `initConfigurationStore(app, emptyList())` (Kotlin suspend, called via `runBlocking`)
+12. **Initialize Registry** — `RegistryManager.getInstance()` + `Registry.markAsLoaded()`
+13. **Preload services** — `preloadCriticalServices(app, appScope, app.getCoroutineScope(), completedJob, null)`
+14. **Call listeners** — `callAppInitialized(appScope, getAppInitializedListeners(app))`
+15. **Set loading state** — `COMPONENTS_LOADED` then `APP_STARTED`
 
-```bash
-# Before:
-exec "$JAVA" "${JVM_ARGS[@]}" -cp "$CLASSPATH" "$MAIN_CLASS" scala-lsp "$@"
+### Key Differences from Original Spec
 
-# After:
-exec "$JAVA" "${JVM_ARGS[@]}" -cp "$CLASSPATH" org.jetbrains.scalalsP.ScalaLspMain "$@"
-```
+| Spec Assumption | Actual Implementation |
+|---|---|
+| Fleet kernel not needed | **Required** — `ClientSessionImpl` needs rhizomedb transactor on coroutine context |
+| Kotlin bootstrap helper | **Java** — avoids sbt Kotlin compilation setup and suspend function interop issues |
+| Simple `Launcher.Builder` | **Custom LspLauncher.java** — wraps server in Java class to avoid Scala 3 bridge method annotation duplication |
+| `P3SupportInstaller.seal()` not mentioned | **Required** — called before `initConfigurationStore` |
+| `idea.home.path` not set | **Required** — launcher must set it for JNA and other path resolution |
 
-The `$MAIN_CLASS` variable (read from `product-info.json`) and the `scala-lsp` command prefix are no longer needed.
+### Scala 3 Bridge Method Issue (LspLauncher.java)
 
-### ScalaLspApplicationStarter
+Scala 3 generates bridge methods for inherited default interface methods that copy `@JsonNotification`/`@JsonRequest` annotations. When lsp4j's `ServiceEndpoints` scans a Scala class via reflection, it finds duplicate RPC method names (e.g., `window/workDoneProgress/cancel` on both the bridge method and the original interface method).
 
-Kept as-is. It remains registered in `plugin.xml` but is not used by the new launch path. Removing it would be a separate cleanup.
+**Fix:** `LspLauncher.java` wraps `ScalaLspServer` and its delegate services (`TextDocumentService`, `WorkspaceService`) in pure Java classes. It overrides `Launcher.Builder.getSupportedMethods()` to return pre-computed methods from Java interfaces, and overrides `createRemoteEndpoint()` to use a Java-wrapped endpoint. This completely bypasses reflection on Scala implementation classes.
 
-### Build Changes
+### BSP Auto-Import (IntellijProjectManager.scala)
 
-`AppMode.setHeadlessInTestMode()`, `PluginManagerCore`, `ApplicationImpl`, and related bootstrap APIs are in IntelliJ's platform JARs. `AppMode` is in `core-api`, `ApplicationImpl` is in `platform-impl`, both already on our classpath.
+After opening a project, if a `.bsp` directory exists, the project manager attempts to link the BSP project via `BspOpenProjectProvider.doLinkProject()` using reflection (since BSP classes are in the Scala plugin, not on the compile classpath).
 
-The bootstrap helper functions (`initConfigurationStore`, `preloadCriticalServices`, `callAppInitialized`/`getAppInitializedListeners`) live in `platform-impl/bootstrap/src/`. This is a separate compilation module that may be packaged as its own JAR or merged into `platform-impl.jar`. **Before implementation, verify:** check whether `$IDEA_HOME/lib/` contains a separate bootstrap JAR (e.g., `platform-bootstrap.jar`) or whether these classes are inside `platform-impl.jar`. If separate, the launcher script's `$IDEA_HOME/lib/*.jar` glob already includes it. If these classes are not accessible at runtime, we'll need to either:
-- Confirm the JAR is on the classpath (most likely — `launch-lsp.sh` adds all `$IDEA_HOME/lib/*.jar`)
-- Or replicate the essential initialization inline
+**Current limitation:** BSP linking fails with `ClassNotFoundException` because the Scala plugin's classes aren't accessible via the system classloader in the flat-classpath launch mode. The project opens but without BSP module structure. This is a follow-up item.
 
-### Threading Model
+### Launcher Script (launch-lsp.sh)
 
-- Bootstrap runs on the main thread via `runBlocking(Dispatchers.Default)`
-- After bootstrap, the main thread blocks on `launcher.startListening().get()` (lsp4j's JSON-RPC loop)
-- All IntelliJ PSI access continues to use `ReadAction.compute()` and `ApplicationManager.getApplication.invokeAndWait()` as before
+- Calls `org.jetbrains.scalalsP.ScalaLspMain` directly instead of `com.intellij.idea.Main scala-lsp`
+- Sets `-Didea.home.path=$IDEA_HOME` for path resolution
+- Resolves `%IDE_HOME%` and `$IDE_HOME` placeholders in product-info.json JVM args (needed for JNA native library path on macOS)
+- Still reads product-info.json for boot classpath and JVM args
 
-### Shutdown
+### Build Changes (build.sbt)
 
-When the LSP connection closes, `launcher.startListening().get()` returns, and we call `System.exit(0)`. No graceful `ApplicationImpl.dispose()` — the process is done.
-
-### Error Handling
-
-If bootstrap fails (plugin loading timeout, component registration error), log to stderr and `System.exit(1)`. Plugin loading uses a 60-second timeout to avoid silent hangs.
+- Added `javacOptions ++= Seq("--release", "21")` — IntelliJ's bundled JBR is Java 21; compilation with newer JDKs must target 21
+- lsp4j version remains 0.23.1
 
 ## Files Changed
 
 | File | Change |
 |------|--------|
-| `lsp-server/src/ScalaLspMain.scala` | Full rewrite — direct ApplicationImpl bootstrap, `startLspServer` moved here |
-| `launcher/launch-lsp.sh` | Change main class, drop `scala-lsp` command arg |
+| `lsp-server/src/ScalaLspMain.scala` | Rewritten — calls `IntellijBootstrap.initialize()` then `LspLauncher.startAndAwait()` |
+| `lsp-server/src/org/jetbrains/scalalsP/IntellijBootstrap.java` | New — direct ApplicationImpl bootstrap |
+| `lsp-server/src/org/jetbrains/scalalsP/LspLauncher.java` | New — lsp4j Launcher with Java wrappers to avoid Scala 3 bridge methods |
+| `lsp-server/src/intellij/IntellijProjectManager.scala` | Added BSP auto-import detection |
+| `launcher/launch-lsp.sh` | Changed main class, added `idea.home.path`, fixed `%IDE_HOME%` resolution |
+| `build.sbt` | Added `javacOptions --release 21` |
 | `lsp-server/src/ScalaLspApplicationStarter.scala` | No change (kept but unused by new path) |
-| `build.sbt` | Possibly no change; verify bootstrap APIs are accessible |
+| `lsp-server/test/src/integration/LspLauncherIntegrationTest.scala` | New — verifies no bridge method duplicate errors |
+| `lsp-server/test/src/org/jetbrains/scalalsP/JavaTestLanguageClient.java` | New — Java test client for lsp4j compatibility |
 
-## Risks
+## Known Issues / Follow-ups
 
-1. **`@TestOnly` API usage** — `AppMode.setHeadlessInTestMode()` is marked `@TestOnly`. Accepted trade-off; it sets 3 boolean flags with no side effects.
-2. **Internal API coupling** — `ApplicationImpl` constructor, `registerComponents`, `initConfigurationStore`, `preloadCriticalServices` are `@ApiStatus.Internal`. These may change across IntelliJ versions. Mitigated by pinning to a specific IntelliJ build in `build.sbt`.
-3. **Missing kernel** — Skipping Fleet's `startServerKernel()`. If any platform service expects kernel coroutine context, it could fail. Mitigated by the fact that IntelliJ Community doesn't use Fleet kernel in production, and we use the production constructor which doesn't require it.
-4. **Bootstrap module accessibility** — Some helper functions (`initConfigurationStore`, `preloadCriticalServices`, `callAppInitialized`) live in `platform-impl/bootstrap`. Must verify they're on the runtime classpath before implementation.
-5. **Project opening** — `ProjectManager.getInstance().loadAndOpenProject()` depends on the full initialization chain. This already works in our test suite (which uses a similar bootstrap), but should be verified with the production constructor path.
+1. **BSP auto-import not working** — Scala plugin classes not accessible via system classloader in flat-classpath mode. Needs plugin classloader integration.
+2. **`ScalaLspApplicationStarter` is dead code** — Kept in plugin.xml but unused. Should be removed or deprecated.
+3. **`@TestOnly` API usage** — `AppMode.setHeadlessInTestMode()` is marked `@TestOnly`. Acceptable trade-off.
+4. **Internal API coupling** — Bootstrap depends on `@ApiStatus.Internal` APIs that may change across IntelliJ versions. Mitigated by pinning to a specific IntelliJ build.

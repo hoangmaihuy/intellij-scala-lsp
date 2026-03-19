@@ -1,6 +1,6 @@
 # Direct IntelliJ Platform Bootstrap Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **Status:** Implemented (2026-03-19). See spec for final architecture including Fleet kernel, P3Support, and Scala 3 bridge method workarounds discovered during implementation.
 
 **Goal:** Rewrite ScalaLspMain to directly bootstrap IntelliJ's ApplicationImpl in headless mode, bypassing com.intellij.idea.Main which rejects our custom "scala-lsp" command.
 
