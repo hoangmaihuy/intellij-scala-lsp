@@ -99,11 +99,12 @@ class ScalaLspServer(projectPath: String) extends LanguageServer with LanguageCl
 
   override def initialized(params: InitializedParams): Unit =
     System.err.println("[ScalaLsp] Client confirmed initialization")
-    // Wait for indexing to complete
-    projectManager.waitForSmartMode()
-    // Register daemon listener for push-based diagnostics
-    textDocumentService.registerDaemonListener()
-    System.err.println("[ScalaLsp] Project indexing complete, ready for requests")
+    // Run indexing wait and daemon registration in background
+    // to avoid blocking the lsp4j message processing thread
+    java.util.concurrent.CompletableFuture.runAsync: () =>
+      projectManager.waitForSmartMode()
+      textDocumentService.registerDaemonListener()
+      System.err.println("[ScalaLsp] Project indexing complete, ready for requests")
 
   override def shutdown(): CompletableFuture[AnyRef] =
     CompletableFuture.supplyAsync: () =>

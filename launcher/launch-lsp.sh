@@ -11,6 +11,12 @@
 #   LSP_HEAP_SIZE  - JVM heap size (default: 2g)
 set -euo pipefail
 
+# Log stderr to file for debugging (tail -f this file to watch)
+LSP_LOG="${HOME}/.cache/intellij-scala-lsp/lsp-server.log"
+mkdir -p "$(dirname "$LSP_LOG")"
+exec 2> >(tee -a "$LSP_LOG" >&2)
+echo "[launch-lsp] === Starting at $(date) ===" >&2
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 CACHE_DIR="${HOME}/.cache/intellij-scala-lsp"
