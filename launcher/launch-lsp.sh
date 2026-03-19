@@ -1,197 +1,238 @@
 #!/bin/bash
-# Launch IntelliJ Scala LSP server
+# Launch IntelliJ Scala LSP server in headless mode
 # Usage: launch-lsp.sh [projectPath]
 #
-# Environment variables:
-#   INTELLIJ_HOME  - Path to IntelliJ Community installation (auto-detected if not set)
-#   JAVA_HOME      - Path to JDK (uses IntelliJ's bundled JBR if not set)
+# Detects IntelliJ installation, reads its product-info.json to get the
+# exact JVM arguments, classpath, and class loader config needed for headless launch.
+#
+# Environment variables (optional):
+#   INTELLIJ_HOME  - Path to IntelliJ's Contents dir (e.g., /Applications/IntelliJ IDEA CE.app/Contents)
+#   JAVA_HOME      - Override JDK (default: IntelliJ's bundled JBR)
+#   LSP_HEAP_SIZE  - JVM heap size (default: 2g)
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 CACHE_DIR="${HOME}/.cache/intellij-scala-lsp"
 
-INTELLIJ_VERSION="261.22158.121"
-INTELLIJ_BUILD="2026.1"
-SCALA_PLUGIN_VERSION="2026.1.7"
-
-# --- Locate or download IntelliJ ---
+# --- Locate IntelliJ ---
 
 find_intellij_home() {
-  # 1. Explicit env var
   if [ -n "${INTELLIJ_HOME:-}" ] && [ -d "$INTELLIJ_HOME/lib" ]; then
-    echo "$INTELLIJ_HOME"
-    return 0
+    echo "$INTELLIJ_HOME"; return 0
   fi
-
-  # 2. Cached download
-  local cached="$CACHE_DIR/idea-IC-$INTELLIJ_VERSION"
-  if [ -d "$cached/lib" ]; then
-    echo "$cached"
-    return 0
-  fi
-
-  # 3. Common macOS locations
   for app in \
+    "$HOME/Applications/IntelliJ IDEA.app/Contents" \
+    "$HOME/Applications/IntelliJ IDEA CE.app/Contents" \
+    "$HOME/Applications/IntelliJ IDEA Community Edition.app/Contents" \
+    "/Applications/IntelliJ IDEA.app/Contents" \
     "/Applications/IntelliJ IDEA CE.app/Contents" \
-    "/Applications/IntelliJ IDEA Community Edition.app/Contents" \
-    "$HOME/Applications/IntelliJ IDEA CE.app/Contents"; do
-    if [ -d "$app/lib" ]; then
-      echo "$app"
-      return 0
-    fi
+    "/Applications/IntelliJ IDEA Community Edition.app/Contents"; do
+    if [ -d "$app/lib" ]; then echo "$app"; return 0; fi
   done
-
+  # Linux
+  for dir in /opt/idea-IC /opt/idea-IU /snap/intellij-idea-community/current /snap/intellij-idea-ultimate/current; do
+    if [ -d "$dir/lib" ]; then echo "$dir"; return 0; fi
+  done
   return 1
 }
 
-download_intellij() {
-  echo "[launch-lsp] Downloading IntelliJ Community $INTELLIJ_BUILD..." >&2
-  mkdir -p "$CACHE_DIR"
-
-  local os_name
-  os_name="$(uname -s)"
-  local arch
-  arch="$(uname -m)"
-
-  local url
-  if [ "$os_name" = "Darwin" ]; then
-    if [ "$arch" = "arm64" ] || [ "$arch" = "aarch64" ]; then
-      url="https://download.jetbrains.com/idea/ideaIC-${INTELLIJ_BUILD}-aarch64.tar.gz"
-    else
-      url="https://download.jetbrains.com/idea/ideaIC-${INTELLIJ_BUILD}.tar.gz"
-    fi
-  else
-    if [ "$arch" = "aarch64" ]; then
-      url="https://download.jetbrains.com/idea/ideaIC-${INTELLIJ_BUILD}-aarch64.tar.gz"
-    else
-      url="https://download.jetbrains.com/idea/ideaIC-${INTELLIJ_BUILD}.tar.gz"
-    fi
-  fi
-
-  local tarball="$CACHE_DIR/ideaIC-${INTELLIJ_BUILD}.tar.gz"
-  if [ ! -f "$tarball" ]; then
-    echo "[launch-lsp] URL: $url" >&2
-    curl -fSL -o "$tarball" "$url"
-  fi
-
-  echo "[launch-lsp] Extracting..." >&2
-  tar xzf "$tarball" -C "$CACHE_DIR"
-
-  # Find the extracted directory
-  local extracted
-  extracted=$(find "$CACHE_DIR" -maxdepth 1 -type d -name "idea-IC*" | head -1)
-  if [ -z "$extracted" ]; then
-    extracted=$(find "$CACHE_DIR" -maxdepth 1 -type d -name "*idea*" | head -1)
-  fi
-
-  local target="$CACHE_DIR/idea-IC-$INTELLIJ_VERSION"
-  if [ "$extracted" != "$target" ] && [ -n "$extracted" ]; then
-    mv "$extracted" "$target"
-  fi
-
-  echo "[launch-lsp] IntelliJ installed at $target" >&2
-  echo "$target"
+IDEA_HOME=$(find_intellij_home) || {
+  echo "[launch-lsp] ERROR: No IntelliJ installation found." >&2
+  echo "[launch-lsp] Install IntelliJ IDEA (Community or Ultimate) or set INTELLIJ_HOME." >&2
+  exit 1
 }
-
-download_scala_plugin() {
-  local plugin_dir="$CACHE_DIR/scala-plugin-$SCALA_PLUGIN_VERSION"
-  if [ -d "$plugin_dir/lib" ]; then
-    echo "$plugin_dir"
-    return 0
-  fi
-
-  echo "[launch-lsp] Downloading Scala plugin $SCALA_PLUGIN_VERSION..." >&2
-  mkdir -p "$CACHE_DIR"
-
-  local zipfile="$CACHE_DIR/scala-plugin-${SCALA_PLUGIN_VERSION}.zip"
-  if [ ! -f "$zipfile" ]; then
-    local url="https://plugins.jetbrains.com/plugin/download?pluginId=org.intellij.scala&version=${SCALA_PLUGIN_VERSION}&build=IC-${INTELLIJ_VERSION}"
-    curl -fSL -o "$zipfile" "$url"
-  fi
-
-  mkdir -p "$plugin_dir"
-  unzip -o "$zipfile" -d "$plugin_dir" >/dev/null
-
-  # Move Scala/ contents up if needed
-  if [ -d "$plugin_dir/Scala/lib" ] && [ ! -d "$plugin_dir/lib" ]; then
-    mv "$plugin_dir/Scala/"* "$plugin_dir/"
-    rmdir "$plugin_dir/Scala" 2>/dev/null || true
-  fi
-
-  echo "[launch-lsp] Scala plugin installed at $plugin_dir" >&2
-  echo "$plugin_dir"
-}
-
-# --- Main ---
-
-IDEA_HOME=$(find_intellij_home || download_intellij)
-SCALA_PLUGIN_DIR=$(download_scala_plugin)
-
 echo "[launch-lsp] IntelliJ: $IDEA_HOME" >&2
+
+# --- Locate Scala plugin ---
+
+find_scala_plugin() {
+  if [ -d "$IDEA_HOME/plugins/Scala/lib" ]; then
+    echo "$IDEA_HOME/plugins/Scala"; return 0
+  fi
+  # macOS JetBrains config
+  for d in $(ls -dt "$HOME/Library/Application Support/JetBrains"/*/plugins/Scala 2>/dev/null); do
+    if [ -d "$d/lib" ]; then echo "$d"; return 0; fi
+  done
+  # Linux config
+  for d in $(ls -dt "$HOME/.config/JetBrains"/*/plugins/Scala 2>/dev/null); do
+    if [ -d "$d/lib" ]; then echo "$d"; return 0; fi
+  done
+  # Cached download
+  for d in "$CACHE_DIR"/scala-plugin-*; do
+    if [ -d "$d/lib" ]; then echo "$d"; return 0; fi
+  done
+  return 1
+}
+
+SCALA_PLUGIN_DIR=$(find_scala_plugin) || {
+  echo "[launch-lsp] ERROR: Scala plugin not found. Install it in IntelliJ first." >&2
+  exit 1
+}
 echo "[launch-lsp] Scala plugin: $SCALA_PLUGIN_DIR" >&2
 
-# Find Java runtime
+# --- Read product-info.json for correct launch config ---
+
+PRODUCT_INFO="$IDEA_HOME/Resources/product-info.json"
+if [ ! -f "$PRODUCT_INFO" ]; then
+  PRODUCT_INFO="$IDEA_HOME/product-info.json"
+fi
+if [ ! -f "$PRODUCT_INFO" ]; then
+  echo "[launch-lsp] ERROR: product-info.json not found in $IDEA_HOME" >&2
+  exit 1
+fi
+
+# Extract boot classpath JARs and JVM arguments from product-info.json
+read_product_info() {
+  python3 - "$PRODUCT_INFO" "$IDEA_HOME" << 'PYEOF'
+import json, sys, os
+
+product_info_path = sys.argv[1]
+idea_home = sys.argv[2]
+
+with open(product_info_path) as f:
+    info = json.load(f)
+
+# Find the matching launch config (prefer current arch)
+import platform
+machine = platform.machine()
+arch_map = {"arm64": "aarch64", "x86_64": "amd64", "aarch64": "aarch64"}
+current_arch = arch_map.get(machine, machine)
+
+launch = None
+for l in info.get("launch", []):
+    if l.get("arch") == current_arch:
+        launch = l
+        break
+if launch is None and info.get("launch"):
+    launch = info["launch"][0]
+
+if launch is None:
+    print("ERROR: No launch config found", file=sys.stderr)
+    sys.exit(1)
+
+# Resolve $APP_PACKAGE
+if os.path.basename(idea_home) == "Contents":
+    app_package = os.path.dirname(idea_home)
+else:
+    app_package = idea_home
+
+def resolve(s):
+    return s.replace("$APP_PACKAGE/Contents", idea_home).replace("$APP_PACKAGE", app_package)
+
+# Boot classpath
+boot_jars = launch.get("bootClassPathJarNames", [])
+boot_cp = ":".join(os.path.join(idea_home, "lib", j) for j in boot_jars)
+print("BOOT_CP=" + boot_cp)
+
+# Additional JVM arguments
+jvm_args = []
+for arg in launch.get("additionalJvmArguments", []):
+    resolved = resolve(arg)
+    # Skip splash screen
+    if "splash" in resolved.lower():
+        continue
+    jvm_args.append(resolved)
+print("JVM_ARGS=" + "|||".join(jvm_args))
+
+# Java executable
+java_path = resolve(launch.get("javaExecutablePath", "java"))
+print("JAVA_PATH=" + java_path)
+
+# Main class
+print("MAIN_CLASS=" + launch.get("mainClass", "com.intellij.idea.Main"))
+PYEOF
+}
+
+LAUNCH_INFO=$(read_product_info)
+BOOT_CP=$(echo "$LAUNCH_INFO" | grep "^BOOT_CP=" | cut -d= -f2-)
+MAIN_CLASS=$(echo "$LAUNCH_INFO" | grep "^MAIN_CLASS=" | cut -d= -f2-)
+JAVA_DEFAULT=$(echo "$LAUNCH_INFO" | grep "^JAVA_PATH=" | cut -d= -f2-)
+JVM_ARGS_RAW=$(echo "$LAUNCH_INFO" | grep "^JVM_ARGS=" | cut -d= -f2-)
+
+# --- Find Java (prefer IntelliJ's bundled JBR) ---
+
 if [ -n "${JAVA_HOME:-}" ] && [ -x "$JAVA_HOME/bin/java" ]; then
   JAVA="$JAVA_HOME/bin/java"
-elif [ -d "$IDEA_HOME/jbr/Contents/Home" ]; then
-  # macOS bundled JBR
+elif [ -x "$IDEA_HOME/jbr/Contents/Home/bin/java" ]; then
   JAVA="$IDEA_HOME/jbr/Contents/Home/bin/java"
-elif [ -d "$IDEA_HOME/jbr" ]; then
-  # Linux bundled JBR
+elif [ -x "$IDEA_HOME/jbr/bin/java" ]; then
   JAVA="$IDEA_HOME/jbr/bin/java"
+elif [ -x "$JAVA_DEFAULT" ]; then
+  JAVA="$JAVA_DEFAULT"
 else
   JAVA="java"
 fi
-
 echo "[launch-lsp] Java: $JAVA" >&2
 
-# Build classpath
-CLASSPATH=""
+# --- LSP server JARs ---
 
-# IntelliJ platform JARs
+LSP_LIB_DIR="$PROJECT_ROOT/lsp-server/target/plugin/intellij-scala-lsp/lib"
+if [ ! -d "$LSP_LIB_DIR" ] || [ -z "$(ls "$LSP_LIB_DIR"/*.jar 2>/dev/null)" ]; then
+  echo "[launch-lsp] ERROR: LSP server JARs not found at $LSP_LIB_DIR" >&2
+  echo "[launch-lsp] Run: cd $PROJECT_ROOT && sbt 'lsp-server/packageArtifact'" >&2
+  exit 1
+fi
+
+# --- Build classpath ---
+
+CLASSPATH="$BOOT_CP"
+# Add all lib JARs not already in boot classpath
 for jar in "$IDEA_HOME/lib/"*.jar; do
+  case "$CLASSPATH" in
+    *"$(basename "$jar")"*) ;; # Already in boot classpath
+    *) CLASSPATH="${CLASSPATH:+$CLASSPATH:}$jar" ;;
+  esac
+done
+for jar in "$SCALA_PLUGIN_DIR/lib/"*.jar; do
+  CLASSPATH="${CLASSPATH:+$CLASSPATH:}$jar"
+done
+for jar in "$LSP_LIB_DIR/"*.jar; do
   CLASSPATH="${CLASSPATH:+$CLASSPATH:}$jar"
 done
 
-# Scala plugin JARs
-if [ -d "$SCALA_PLUGIN_DIR/lib" ]; then
-  for jar in "$SCALA_PLUGIN_DIR/lib/"*.jar; do
-    CLASSPATH="${CLASSPATH:+$CLASSPATH:}$jar"
-  done
-fi
+# --- Isolated config/system dirs ---
 
-# LSP server JAR (built by Mill)
-LSP_JAR="$PROJECT_ROOT/out/lsp-server/assembly.dest/out.jar"
-if [ ! -f "$LSP_JAR" ]; then
-  echo "[launch-lsp] LSP server JAR not found at $LSP_JAR" >&2
-  echo "[launch-lsp] Building with Mill..." >&2
-  (cd "$PROJECT_ROOT" && mill lsp-server.assembly)
-  if [ ! -f "$LSP_JAR" ]; then
-    echo "[launch-lsp] ERROR: Build failed. Run 'mill lsp-server.assembly' first." >&2
-    exit 1
-  fi
-fi
-CLASSPATH="${CLASSPATH:+$CLASSPATH:}$LSP_JAR"
-
-# Use dedicated config/system dirs to avoid polluting user's IntelliJ settings
 CONFIG_DIR="$CACHE_DIR/config"
 SYSTEM_DIR="$CACHE_DIR/system"
 mkdir -p "$CONFIG_DIR" "$SYSTEM_DIR"
 
-# Install our plugin into the config
+# Install our LSP plugin
 PLUGIN_INSTALL_DIR="$CONFIG_DIR/plugins/intellij-scala-lsp/lib"
 mkdir -p "$PLUGIN_INSTALL_DIR"
-cp -f "$LSP_JAR" "$PLUGIN_INSTALL_DIR/"
+cp -f "$LSP_LIB_DIR/"*.jar "$PLUGIN_INSTALL_DIR/"
+
+# Symlink Scala plugin
+if [ ! -e "$CONFIG_DIR/plugins/Scala" ]; then
+  ln -sf "$SCALA_PLUGIN_DIR" "$CONFIG_DIR/plugins/Scala"
+fi
+
+# --- Build JVM arguments array ---
+
+HEAP_SIZE="${LSP_HEAP_SIZE:-2g}"
+
+# Collect all JVM args
+JVM_ARGS=()
+JVM_ARGS+=("-Xmx${HEAP_SIZE}")
+JVM_ARGS+=("-Djava.awt.headless=true")
+JVM_ARGS+=("-Dide.native.launcher=true")
+
+# Add product-info JVM args
+IFS='|||' read -ra SPLIT_ARGS <<< "$JVM_ARGS_RAW"
+for arg in "${SPLIT_ARGS[@]}"; do
+  [ -n "$arg" ] && JVM_ARGS+=("$arg")
+done
+
+# Override paths for isolation
+JVM_ARGS+=("-Didea.config.path=$CONFIG_DIR")
+JVM_ARGS+=("-Didea.system.path=$SYSTEM_DIR")
+JVM_ARGS+=("-Didea.log.path=$SYSTEM_DIR/log")
+JVM_ARGS+=("-Didea.plugins.path=$CONFIG_DIR/plugins")
+JVM_ARGS+=("-Didea.classpath.index.enabled=false")
+
+# --- Launch ---
 
 exec "$JAVA" \
-  -Xmx2g \
-  -Djava.awt.headless=true \
-  -Didea.is.internal=false \
-  -Didea.config.path="$CONFIG_DIR" \
-  -Didea.system.path="$SYSTEM_DIR" \
-  -Didea.log.path="$SYSTEM_DIR/log" \
-  -Didea.plugins.path="$CONFIG_DIR/plugins" \
-  -Didea.classpath.index.enabled=false \
+  "${JVM_ARGS[@]}" \
   -cp "$CLASSPATH" \
-  com.intellij.idea.Main scala-lsp "$@"
+  org.jetbrains.scalalsP.ScalaLspMain "$@"

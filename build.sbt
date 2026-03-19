@@ -20,6 +20,9 @@ lazy val `lsp-server` = project.in(file("lsp-server"))
   .settings(
     scalaVersion := "3.8.2",
 
+    // Target Java 21 (IntelliJ's bundled JBR version)
+    javacOptions ++= Seq("--release", "21"),
+
     // Packaging
     packageMethod := PackagingMethod.Standalone(),
 

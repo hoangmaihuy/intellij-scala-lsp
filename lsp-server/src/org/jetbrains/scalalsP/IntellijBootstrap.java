@@ -9,8 +9,11 @@ import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.impl.ApplicationImpl;
 import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.util.registry.RegistryManager;
+import com.intellij.openapi.project.impl.P3SupportInstaller;
 import com.intellij.platform.ide.bootstrap.ApplicationLoader;
 import com.intellij.platform.ide.bootstrap.AppServicePreloadingKt;
+import com.intellij.platform.ide.bootstrap.kernel.KernelKt;
+import com.intellij.platform.ide.bootstrap.kernel.KernelStarted;
 
 import kotlin.Unit;
 import kotlin.coroutines.Continuation;
@@ -47,46 +50,58 @@ public final class IntellijBootstrap {
         // Step 2: Set headless test mode (sets 3 internal boolean flags)
         AppMode.setHeadlessInTestMode(true);
 
-        // Step 3: Setup ForkJoinPool
+        // Step 3: Setup ForkJoinPool and seal P3 support
         IdeaForkJoinWorkerThreadFactory.setupForkJoinCommonPool(true);
+        P3SupportInstaller.INSTANCE.seal();
 
-        // Step 4: Create coroutine scope for the application
+        // Step 4: Start the Fleet kernel (provides rhizomedb transactor on coroutine context)
+        System.err.println("[IntellijBootstrap] Starting kernel...");
+        CoroutineScope globalScope = GlobalScope.INSTANCE;
+        KernelStarted kernelStarted = (KernelStarted) BuildersKt.runBlocking(
+            Dispatchers.getDefault(),
+            (Function2<CoroutineScope, Continuation<? super KernelStarted>, Object>) (scope, continuation) ->
+                KernelKt.startServerKernel(globalScope, continuation)
+        );
+
+        // Step 5: Create coroutine scope with kernel context
         CompletableJob supervisorJob = SupervisorKt.SupervisorJob(null);
-        CoroutineContext context = supervisorJob.plus(Dispatchers.getDefault());
+        CoroutineContext context = supervisorJob
+            .plus(Dispatchers.getDefault())
+            .plus(kernelStarted.getCoroutineContext());
         CoroutineScope appScope = CoroutineScopeKt.CoroutineScope(context);
 
-        // Step 5: Schedule plugin descriptor loading
+        // Step 6: Schedule plugin descriptor loading
         System.err.println("[IntellijBootstrap] Loading plugins...");
         PluginManagerCore.INSTANCE.scheduleDescriptorLoading(appScope);
 
-        // Step 6: Create ApplicationImpl using the production constructor
+        // Step 7: Create ApplicationImpl using the production constructor
         System.err.println("[IntellijBootstrap] Creating ApplicationImpl...");
         ApplicationImpl app = new ApplicationImpl(appScope, false);
 
-        // Step 7: Wait for plugins and register components
+        // Step 8: Wait for plugins and register components
         System.err.println("[IntellijBootstrap] Waiting for plugin set...");
         PluginSet pluginSet = waitForPluginSet(60, TimeUnit.SECONDS);
         System.err.println("[IntellijBootstrap] Registering components...");
         app.registerComponents(pluginSet.getEnabledModules(), app, Collections.emptyList());
 
-        // Step 8: Set the application in ApplicationManager
+        // Step 9: Set the application in ApplicationManager
         ApplicationManager.setApplication(app);
         assert ApplicationManager.getApplication() != null : "Application must not be null after setApplication";
 
-        // Step 9: Initialize services using runBlocking for suspend function interop
+        // Step 10: Initialize services using runBlocking for suspend function interop
         System.err.println("[IntellijBootstrap] Initializing configuration store...");
         BuildersKt.runBlocking(
-            Dispatchers.getDefault(),
+            appScope.getCoroutineContext(),
             (Function2<CoroutineScope, Continuation<? super Unit>, Object>) (scope, continuation) ->
                 ApplicationLoader.initConfigurationStore(app, Collections.emptyList(), continuation)
         );
 
-        // Step 10: Initialize Registry
+        // Step 11: Initialize Registry
         System.err.println("[IntellijBootstrap] Initializing registry...");
         RegistryManager.getInstance();
         Registry.markAsLoaded();
 
-        // Step 11: Preload critical services
+        // Step 12: Preload critical services
         System.err.println("[IntellijBootstrap] Preloading critical services...");
         CompletableDeferred<Object> appRegistered = CompletableDeferredKt.CompletableDeferred(null);
         appRegistered.complete(null);
@@ -99,16 +114,16 @@ public final class IntellijBootstrap {
         );
         // Wait for preload to finish
         BuildersKt.runBlocking(
-            Dispatchers.getDefault(),
+            appScope.getCoroutineContext(),
             (Function2<CoroutineScope, Continuation<? super Unit>, Object>) (scope, continuation) ->
                 preloadJob.join(continuation)
         );
 
-        // Step 12: Call app initialized listeners
+        // Step 13: Call app initialized listeners
         System.err.println("[IntellijBootstrap] Calling app initialized listeners...");
         ApplicationLoader.callAppInitialized(appScope, ApplicationLoader.getAppInitializedListeners(app));
 
-        // Step 13: Set loading states
+        // Step 14: Set loading states
         LoadingState.setCurrentState(LoadingState.COMPONENTS_LOADED);
         LoadingState.setCurrentState(LoadingState.APP_STARTED);
 
