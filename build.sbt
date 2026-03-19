@@ -35,7 +35,15 @@ lazy val `lsp-server` = project.in(file("lsp-server"))
     libraryDependencies ++= Seq(
       "junit" % "junit" % "4.13.2" % Test,
       "com.github.sbt" % "junit-interface" % "0.13.3" % Test,
+      "org.opentest4j" % "opentest4j" % "1.3.0" % Test,
     ),
+
+    // Add Java plugin JARs to test classpath (needed by Scala plugin)
+    Test / unmanagedJars ++= {
+      val javaPluginDir = (ThisBuild / intellijBaseDirectory).value / "plugins" / "java" / "lib"
+      if (javaPluginDir.exists()) (javaPluginDir ** "*.jar").get
+      else Seq.empty
+    },
 
     // Source layout matching our project structure
     Compile / sourceDirectory := baseDirectory.value / "src",
@@ -47,8 +55,15 @@ lazy val `lsp-server` = project.in(file("lsp-server"))
     Test / resourceDirectory := baseDirectory.value / "test" / "resources",
     Test / unmanagedResourceDirectories := Seq((Test / resourceDirectory).value),
 
+    // Override plugin.path to include both our plugin AND the Scala plugin
+    // sbt-idea-plugin only sets our plugin; we need the Scala plugin too for integration tests
+    Test / javaOptions := (Test / javaOptions).value
+      .filterNot(_.startsWith("-Dplugin.path=")) :+
+      s"-Dplugin.path=${baseDirectory.value / "target" / "plugin" / "intellij-scala-lsp"}${java.io.File.pathSeparator}${(ThisBuild / intellijBaseDirectory).value.getAbsolutePath}/custom-plugins/Scala${java.io.File.pathSeparator}${(ThisBuild / intellijBaseDirectory).value.getAbsolutePath}/plugins/java",
+
     // JVM options for tests (IntelliJ test framework needs --add-opens)
     Test / javaOptions ++= Seq(
+      s"-Didea.home.path=${(ThisBuild / intellijBaseDirectory).value.getAbsolutePath}",
       "--add-opens=java.base/java.lang=ALL-UNNAMED",
       "--add-opens=java.base/java.lang.reflect=ALL-UNNAMED",
       "--add-opens=java.base/java.io=ALL-UNNAMED",

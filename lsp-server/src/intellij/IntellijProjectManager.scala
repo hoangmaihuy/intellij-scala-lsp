@@ -16,6 +16,17 @@ class IntellijProjectManager:
   import scala.compiletime.uninitialized
   @volatile private var project: Project = uninitialized
 
+  // Cache for virtual files that are not on the local filesystem (e.g., in-memory test files)
+  private val virtualFileCache = scala.collection.concurrent.TrieMap[String, VirtualFile]()
+
+  /** For testing only — allows injecting a project from test fixtures */
+  private[scalalsP] def setProjectForTesting(p: Project): Unit =
+    project = p
+
+  /** For testing only — registers an in-memory virtual file by URI */
+  private[scalalsP] def registerVirtualFile(uri: String, vf: VirtualFile): Unit =
+    virtualFileCache.put(uri, vf)
+
   def getProject: Project =
     val p = project
     if p == null then throw IllegalStateException("No project is open")
@@ -49,8 +60,9 @@ class IntellijProjectManager:
       System.err.println("[ProjectManager] Project closed")
 
   def findVirtualFile(uri: String): Option[VirtualFile] =
-    val path = uriToPath(uri)
-    Option(LocalFileSystem.getInstance().findFileByPath(path))
+    virtualFileCache.get(uri).orElse:
+      val path = uriToPath(uri)
+      Option(LocalFileSystem.getInstance().findFileByPath(path))
 
   def findPsiFile(uri: String): Option[PsiFile] =
     findVirtualFile(uri).flatMap: vf =>
