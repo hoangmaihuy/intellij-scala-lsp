@@ -155,7 +155,7 @@ intellij-scala-lsp/
 |---|---|
 | IntelliJ Platform | 261.22158.121 (2026.1) |
 | Scala Plugin | 2026.1.7 |
-| Scala (build) | 3.8.0 |
+| Scala (build) | 3.8.2 |
 | Mill | 1.1.3 |
 | lsp4j | 0.23.1 |
 | munit (test) | 1.1.0 |

@@ -6,7 +6,7 @@ import mill.api.PathRef
 import millbuild.IntellijSdk
 
 object `lsp-server` extends ScalaModule {
-  def scalaVersion = "3.8.0"
+  def scalaVersion = "3.8.2"
 
   def intellijSdkJars: T[Seq[PathRef]] = Task {
     IntellijSdk.platformJars()
