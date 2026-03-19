@@ -1,14 +1,10 @@
 *.class
 *.log
-out/
+target/
 .bsp/
 .idea/
 .claude/
 local/
-
-# Mill bootstrap script (downloaded, not tracked)
-/mill
-/mill.*
 
 # virtual machine crash logs
 hs_err_pid*

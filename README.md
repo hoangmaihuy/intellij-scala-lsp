@@ -41,37 +41,22 @@ IntelliJ Platform (headless) + intellij-scala plugin (PSI, Indexing, Resolve)
 
 ## Prerequisites
 
-- **JDK 21+** (or IntelliJ's bundled JBR)
-- **IntelliJ IDEA Community Edition** installed locally (auto-detected from standard locations)
-- **Scala plugin** installed in IntelliJ (or downloaded separately)
+- **JDK 21+**
+- **sbt 1.11+**
 
-The build auto-detects IntelliJ from these locations:
-- `$INTELLIJ_HOME` environment variable
-- `/Applications/IntelliJ IDEA CE.app/Contents/` (macOS)
-- `~/Applications/IntelliJ IDEA.app/Contents/` (macOS)
-- `~/.cache/intellij-scala-lsp/idea-IC-261.22158.121/` (cached download)
+The build uses [sbt-idea-plugin](https://github.com/JetBrains/sbt-idea-plugin) which automatically downloads the IntelliJ SDK, JBR, and Scala plugin on first build. No manual IntelliJ installation required for building.
 
 ## Build
 
 ```bash
-# Download the Mill bootstrap script
-curl -L https://repo1.maven.org/maven2/com/lihaoyi/mill-dist/1.1.3/mill-dist-1.1.3-mill.sh -o mill
-chmod +x mill
+# Compile (first run downloads ~1.5GB of IntelliJ SDK + plugins)
+sbt lsp-server/compile
 
-# Compile
-./mill lsp-server.compile
+# Run tests (105 tests)
+sbt lsp-server/test
 
-# Run tests (109 tests)
-./mill lsp-server.test
-
-# Build assembly JAR
-./mill lsp-server.assembly
-```
-
-If IntelliJ is not at a standard location, set the environment variable:
-
-```bash
-INTELLIJ_HOME=/path/to/idea ./mill lsp-server.compile
+# Package plugin
+sbt lsp-server/packageArtifact
 ```
 
 ## Usage
@@ -101,43 +86,43 @@ This registers the LSP server as a Claude Code plugin. Restart Claude Code after
 | Variable | Description |
 |---|---|
 | `INTELLIJ_HOME` | Path to IntelliJ installation (directory containing `lib/`) |
-| `SCALA_PLUGIN_HOME` | Path to Scala plugin (directory containing `lib/`) |
 | `JAVA_HOME` | Path to JDK (falls back to IntelliJ's bundled JBR) |
 
 ## Project Structure
 
 ```
 intellij-scala-lsp/
-├── build.mill                              # Mill build definition (Scala 3.8, lsp4j 0.23.1)
-├── mill-build/src/
-│   └── IntellijSdkModule.scala             # Auto-locates IntelliJ SDK + Scala plugin JARs
+├── build.sbt                               # sbt build with sbt-idea-plugin
+├── project/
+│   ├── build.properties                    # sbt version
+│   └── plugins.sbt                         # sbt-idea-plugin dependency
 ├── lsp-server/
 │   ├── src/
 │   │   ├── ScalaLspApplicationStarter.scala    # IntelliJ appStarter extension point
 │   │   ├── ScalaLspMain.scala                  # Debug entry point
 │   │   ├── ScalaLspServer.scala                # lsp4j LanguageServer implementation
-│   │   ├── ScalaTextDocumentService.scala      # textDocument/* handlers
-│   │   ├── ScalaWorkspaceService.scala         # workspace/* handlers
+│   │   ├── ScalaTextDocumentService.scala      # textDocument handlers
+│   │   ├── ScalaWorkspaceService.scala         # workspace handlers
 │   │   ├── intellij/
 │   │   │   ├── IntellijProjectManager.scala    # Project lifecycle (open/close/index)
 │   │   │   ├── DocumentSyncManager.scala       # LSP <-> IntelliJ VFS/Document sync
 │   │   │   ├── DefinitionProvider.scala        # Go to definition
-│   │   │   ├── TypeDefinitionProvider.scala   # Go to type definition
-│   │   │   ├── ImplementationProvider.scala   # Find implementations
+│   │   │   ├── TypeDefinitionProvider.scala    # Go to type definition
+│   │   │   ├── ImplementationProvider.scala    # Find implementations
 │   │   │   ├── ReferencesProvider.scala        # Find references
 │   │   │   ├── HoverProvider.scala             # Hover (type + docs)
 │   │   │   ├── DiagnosticsProvider.scala       # Publish diagnostics via DaemonListener
-│   │   │   ├── CallHierarchyProvider.scala    # Call hierarchy (incoming + outgoing)
-│   │   │   ├── FoldingRangeProvider.scala     # Code folding ranges
-│   │   │   ├── SelectionRangeProvider.scala   # Structural selection ranges
+│   │   │   ├── CallHierarchyProvider.scala     # Call hierarchy (incoming + outgoing)
+│   │   │   ├── FoldingRangeProvider.scala      # Code folding ranges
+│   │   │   ├── SelectionRangeProvider.scala    # Structural selection ranges
 │   │   │   ├── SymbolProvider.scala            # Document + workspace symbols
 │   │   │   └── PsiUtils.scala                  # Offset <-> Position conversion
 │   │   └── protocol/
 │   │       └── LspConversions.scala            # IntelliJ <-> LSP type conversions
-│   ├── test/src/                               # 109 tests (munit)
+│   ├── test/src/                               # 105 tests (JUnit 4)
 │   └── resources/META-INF/plugin.xml           # IntelliJ plugin descriptor
 ├── launcher/
-│   └── launch-lsp.sh                           # Runtime launcher (auto-download, classpath)
+│   └── launch-lsp.sh                           # Runtime launcher
 └── claude-code/
     └── setup-intellij-scala-lsp.sh             # Claude Code plugin registration
 ```
@@ -157,7 +142,8 @@ intellij-scala-lsp/
 
 - **Threading**: IntelliJ requires PSI reads under read lock and document writes on the EDT. All providers use `ReadAction.compute()` and `WriteCommandAction` respectively.
 - **Symbol detection**: Uses class-name-based checks (e.g. `className.contains("ScClass")`) rather than direct type references to avoid compile-time coupling to Scala plugin internals.
-- **Hover**: Type info is retrieved via reflection on `getType()` methods; documentation via `ScalaDocumentationProvider.generateDoc()`.
+- **Hover**: Type info is retrieved via reflection on `getType()` methods; documentation via `LanguageDocumentation.INSTANCE.forLanguage()`.
+- **Diagnostics**: Push-based via `DaemonCodeAnalyzer.DAEMON_EVENT_TOPIC` — diagnostics publish when IntelliJ's analysis actually completes, not on a timer.
 - **Memory**: Expect ~1-2GB for IntelliJ + project indices. The launcher sets `-Xmx2g`.
 - **First launch**: Initial indexing can take several minutes depending on project size. Subsequent launches use cached indices.
 
@@ -165,12 +151,12 @@ intellij-scala-lsp/
 
 | Component | Version |
 |---|---|
-| IntelliJ Platform | 261.22158.121 (2026.1) |
-| Scala Plugin | 2026.1.7 |
+| IntelliJ Platform | 253.32098.37 (2025.3.4) |
+| Scala Plugin | auto-resolved by sbt-idea-plugin |
 | Scala (build) | 3.8.2 |
-| Mill | 1.1.3 |
+| sbt | 1.11.7 |
+| sbt-idea-plugin | 5.1.3 |
 | lsp4j | 0.23.1 |
-| munit (test) | 1.1.0 |
 
 ## License
 

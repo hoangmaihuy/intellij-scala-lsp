@@ -1,0 +1,69 @@
+import org.jetbrains.sbtidea.Keys._
+import org.jetbrains.sbtidea.packaging.PackagingKeys._
+
+// IntelliJ Platform settings (must be ThisBuild-scoped for sbt-idea-plugin)
+ThisBuild / intellijPluginName := "intellij-scala-lsp"
+ThisBuild / intellijBuild := "253.32098.37"
+ThisBuild / intellijPlatform := IntelliJPlatform.IdeaUltimate
+
+Global / excludeLintKeys ++= Set(intellijPlugins)
+
+lazy val root = project.in(file("."))
+  .aggregate(`lsp-server`)
+  .settings(
+    name := "intellij-scala-lsp",
+    publish / skip := true,
+  )
+
+lazy val `lsp-server` = project.in(file("lsp-server"))
+  .enablePlugins(SbtIdeaPlugin)
+  .settings(
+    scalaVersion := "3.8.2",
+
+    // Packaging
+    packageMethod := PackagingMethod.Standalone(),
+
+    // Depend on the Scala plugin
+    intellijPlugins += "org.intellij.scala".toPlugin,
+
+    // lsp4j dependency
+    libraryDependencies ++= Seq(
+      "org.eclipse.lsp4j" % "org.eclipse.lsp4j" % "0.23.1",
+    ),
+
+    // Test dependencies
+    libraryDependencies ++= Seq(
+      "junit" % "junit" % "4.13.2" % Test,
+      "com.github.sbt" % "junit-interface" % "0.13.3" % Test,
+    ),
+
+    // Source layout matching our project structure
+    Compile / sourceDirectory := baseDirectory.value / "src",
+    Compile / unmanagedSourceDirectories := Seq((Compile / sourceDirectory).value),
+    Compile / resourceDirectory := baseDirectory.value / "resources",
+    Compile / unmanagedResourceDirectories := Seq((Compile / resourceDirectory).value),
+    Test / sourceDirectory := baseDirectory.value / "test" / "src",
+    Test / unmanagedSourceDirectories := Seq((Test / sourceDirectory).value),
+    Test / resourceDirectory := baseDirectory.value / "test" / "resources",
+    Test / unmanagedResourceDirectories := Seq((Test / resourceDirectory).value),
+
+    // JVM options for tests (IntelliJ test framework needs --add-opens)
+    Test / javaOptions ++= Seq(
+      "--add-opens=java.base/java.lang=ALL-UNNAMED",
+      "--add-opens=java.base/java.lang.reflect=ALL-UNNAMED",
+      "--add-opens=java.base/java.io=ALL-UNNAMED",
+      "--add-opens=java.base/java.net=ALL-UNNAMED",
+      "--add-opens=java.base/java.nio=ALL-UNNAMED",
+      "--add-opens=java.base/java.util=ALL-UNNAMED",
+      "--add-opens=java.base/java.util.concurrent=ALL-UNNAMED",
+      "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED",
+      "--add-opens=java.base/sun.security.ssl=ALL-UNNAMED",
+      "--add-opens=java.desktop/java.awt=ALL-UNNAMED",
+      "--add-opens=java.desktop/sun.awt=ALL-UNNAMED",
+      "--add-opens=java.desktop/sun.font=ALL-UNNAMED",
+      "--add-opens=java.desktop/java.awt.event=ALL-UNNAMED",
+      "--add-opens=java.desktop/javax.swing=ALL-UNNAMED",
+      "-Djava.awt.headless=true",
+    ),
+    Test / fork := true,
+  )
