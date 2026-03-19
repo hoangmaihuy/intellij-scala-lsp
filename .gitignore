@@ -1,5 +1,12 @@
 *.class
 *.log
+out/
+.bsp/
+local/
 
-# virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
+# Mill bootstrap script (downloaded, not tracked)
+/mill
+/mill.*
+
+# virtual machine crash logs
 hs_err_pid*

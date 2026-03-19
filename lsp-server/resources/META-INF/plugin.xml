@@ -1,0 +1,15 @@
+<idea-plugin>
+  <id>org.jetbrains.intellij-scala-lsp</id>
+  <name>IntelliJ Scala LSP</name>
+  <version>0.1.0</version>
+  <vendor>JetBrains</vendor>
+  <description>LSP server backed by IntelliJ IDEA's Scala analysis engine</description>
+
+  <depends>com.intellij.modules.platform</depends>
+  <depends>org.intellij.scala</depends>
+
+  <extensions defaultExtensionNs="com.intellij">
+    <appStarter implementation="org.jetbrains.scalalsP.ScalaLspApplicationStarter"
+                commandName="scala-lsp"/>
+  </extensions>
+</idea-plugin>
