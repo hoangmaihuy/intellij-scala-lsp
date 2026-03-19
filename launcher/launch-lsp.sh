@@ -60,14 +60,14 @@ find_scala_plugin() {
   if [ -d "$IDEA_HOME/custom-plugins/Scala/lib" ]; then
     echo "$IDEA_HOME/custom-plugins/Scala"; return 0
   fi
-  # macOS JetBrains config
-  for d in $(ls -dt "$HOME/Library/Application Support/JetBrains"/*/plugins/Scala 2>/dev/null); do
+  # macOS JetBrains config (use while-read to handle spaces in paths)
+  while IFS= read -r d; do
     if [ -d "$d/lib" ]; then echo "$d"; return 0; fi
-  done
+  done < <(ls -dt "$HOME/Library/Application Support/JetBrains"/*/plugins/Scala 2>/dev/null)
   # Linux config
-  for d in $(ls -dt "$HOME/.config/JetBrains"/*/plugins/Scala 2>/dev/null); do
+  while IFS= read -r d; do
     if [ -d "$d/lib" ]; then echo "$d"; return 0; fi
-  done
+  done < <(ls -dt "$HOME/.config/JetBrains"/*/plugins/Scala 2>/dev/null)
   # Cached download
   for d in "$CACHE_DIR"/scala-plugin-*; do
     if [ -d "$d/lib" ]; then echo "$d"; return 0; fi
@@ -198,15 +198,31 @@ for jar in "$IDEA_HOME/lib/"*.jar; do
     *) CLASSPATH="${CLASSPATH:+$CLASSPATH:}$jar" ;;
   esac
 done
-for jar in "$SCALA_PLUGIN_DIR/lib/"*.jar; do
-  CLASSPATH="${CLASSPATH:+$CLASSPATH:}$jar"
-done
-# JUnit plugin JARs (needed by TestApplicationManager bootstrap)
-for jar in "$IDEA_HOME/plugins/junit/lib/"*.jar; do
-  CLASSPATH="${CLASSPATH:+$CLASSPATH:}$jar"
-done
+
+# Add LSP server JARs to classpath (for ScalaLspMain entry point).
+# IMPORTANT: lsp-server.jar contains META-INF/plugin.xml which causes
+# TestApplicationManager's plugin loader to discover it from the classpath
+# AND from -Dplugin.path, leading to "jarFiles is not set" fatal assertion.
+# Fix: create a stripped copy without plugin.xml for the classpath.
+STRIPPED_JAR="$CACHE_DIR/lsp-server-stripped.jar"
+if [ "$LSP_LIB_DIR/lsp-server.jar" -nt "$STRIPPED_JAR" ] 2>/dev/null; then
+  cp "$LSP_LIB_DIR/lsp-server.jar" "$STRIPPED_JAR"
+  zip -qd "$STRIPPED_JAR" "META-INF/plugin.xml" 2>/dev/null || true
+fi
 for jar in "$LSP_LIB_DIR/"*.jar; do
-  CLASSPATH="${CLASSPATH:+$CLASSPATH:}$jar"
+  if [ "$(basename "$jar")" = "lsp-server.jar" ]; then
+    CLASSPATH="${CLASSPATH:+$CLASSPATH:}$STRIPPED_JAR"
+  else
+    CLASSPATH="${CLASSPATH:+$CLASSPATH:}$jar"
+  fi
+done
+
+# Add Scala runtime JARs to classpath (needed by our Scala code).
+# Only the runtime JARs, not the full Scala plugin (which loads via -Dplugin.path).
+for jar in "scala-library.jar" "scala3-library_3.jar"; do
+  if [ -f "$SCALA_PLUGIN_DIR/lib/$jar" ]; then
+    CLASSPATH="${CLASSPATH:+$CLASSPATH:}$SCALA_PLUGIN_DIR/lib/$jar"
+  fi
 done
 
 # --- Isolated config/system dirs ---
@@ -214,16 +230,6 @@ done
 CONFIG_DIR="$CACHE_DIR/config"
 SYSTEM_DIR="$CACHE_DIR/system"
 mkdir -p "$CONFIG_DIR" "$SYSTEM_DIR"
-
-# Install our LSP plugin
-PLUGIN_INSTALL_DIR="$CONFIG_DIR/plugins/intellij-scala-lsp/lib"
-mkdir -p "$PLUGIN_INSTALL_DIR"
-cp -f "$LSP_LIB_DIR/"*.jar "$PLUGIN_INSTALL_DIR/"
-
-# Symlink Scala plugin
-if [ ! -e "$CONFIG_DIR/plugins/Scala" ]; then
-  ln -sf "$SCALA_PLUGIN_DIR" "$CONFIG_DIR/plugins/Scala"
-fi
 
 # --- Build JVM arguments array ---
 
@@ -234,6 +240,8 @@ JVM_ARGS=()
 JVM_ARGS+=("-Xmx${HEAP_SIZE}")
 JVM_ARGS+=("-Djava.awt.headless=true")
 JVM_ARGS+=("-Dide.native.launcher=true")
+# Suppress JVM CDS warning on stdout which corrupts the JSON-RPC stream
+JVM_ARGS+=("-Xlog:cds=off")
 
 # Add product-info JVM args
 IFS='|||' read -ra SPLIT_ARGS <<< "$JVM_ARGS_RAW"
@@ -248,6 +256,14 @@ JVM_ARGS+=("-Didea.system.path=$SYSTEM_DIR")
 JVM_ARGS+=("-Didea.log.path=$SYSTEM_DIR/log")
 JVM_ARGS+=("-Didea.plugins.path=$CONFIG_DIR/plugins")
 JVM_ARGS+=("-Didea.classpath.index.enabled=false")
+
+# Tell plugin loader where plugins are (same approach as test framework in build.sbt)
+PLUGIN_PATH="$LSP_LIB_DIR/.."
+PLUGIN_PATH="${PLUGIN_PATH}:${SCALA_PLUGIN_DIR}"
+if [ -d "$IDEA_HOME/plugins/java" ]; then
+  PLUGIN_PATH="${PLUGIN_PATH}:${IDEA_HOME}/plugins/java"
+fi
+JVM_ARGS+=("-Dplugin.path=$PLUGIN_PATH")
 
 # --- Launch ---
 

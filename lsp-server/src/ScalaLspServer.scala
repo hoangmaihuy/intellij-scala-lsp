@@ -8,11 +8,12 @@ import java.util.concurrent.CompletableFuture
 
 // Main LSP server implementation using lsp4j.
 // Delegates textDocument and workspace requests to specialized services.
-class ScalaLspServer(projectPath: String) extends LanguageServer with LanguageClientAware:
+class ScalaLspServer(projectPath: String, projectManager: IntellijProjectManager) extends LanguageServer with LanguageClientAware:
+
+  def this(projectPath: String) = this(projectPath, IntellijProjectManager())
 
   import scala.compiletime.uninitialized
   private var client: LanguageClient = uninitialized
-  private val projectManager = IntellijProjectManager()
   private val textDocumentService = ScalaTextDocumentService(projectManager)
   private val workspaceService = ScalaWorkspaceService(projectManager)
 

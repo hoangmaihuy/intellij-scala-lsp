@@ -36,6 +36,10 @@ class IntellijProjectManager:
     p
 
   def openProject(projectPath: String): Unit =
+    if project != null then
+      System.err.println(s"[ProjectManager] Project already open: ${project.getName}")
+      return
+
     System.err.println(s"[ProjectManager] Opening project at: $projectPath")
     val path = Path.of(projectPath)
 

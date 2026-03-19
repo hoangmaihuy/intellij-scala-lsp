@@ -23,6 +23,10 @@ public final class IntellijBootstrap {
     /**
      * Initialize the IntelliJ platform in headless mode.
      * Called once from ScalaLspMain's background bootstrap thread.
+     * <p>
+     * IMPORTANT: The caller must install a lenient LoggedErrorProcessor BEFORE calling this,
+     * because TestApplicationManager installs TestLoggerFactory which converts LOG.error()
+     * into thrown exceptions — fatal for an LSP server.
      */
     public static void initialize() throws Exception {
         System.err.println("[IntellijBootstrap] Initializing IntelliJ platform via test framework...");
