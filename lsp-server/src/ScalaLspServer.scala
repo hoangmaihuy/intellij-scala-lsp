@@ -52,6 +52,26 @@ class ScalaLspServer(projectPath: String) extends LanguageServer with LanguageCl
       capabilities.setSelectionRangeProvider(true)
       capabilities.setCallHierarchyProvider(true)
 
+      // Inlay hints
+      capabilities.setInlayHintProvider(true)
+
+      // Completion with trigger characters
+      capabilities.setCompletionProvider(
+        CompletionOptions(false, java.util.List.of(".", " "))
+      )
+
+      // Code actions
+      val codeActionOptions = CodeActionOptions(
+        java.util.List.of(
+          CodeActionKind.QuickFix,
+          CodeActionKind.Refactor,
+          CodeActionKind.Source,
+          CodeActionKind.RefactorExtract,
+          CodeActionKind.RefactorInline
+        )
+      )
+      capabilities.setCodeActionProvider(codeActionOptions)
+
       System.err.println("[ScalaLsp] Server capabilities configured")
 
       val serverInfo = ServerInfo("intellij-scala-lsp", "0.1.0")

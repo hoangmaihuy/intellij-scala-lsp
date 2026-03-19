@@ -25,6 +25,9 @@ class ScalaTextDocumentService(projectManager: IntellijProjectManager) extends T
   private val foldingRangeProvider = FoldingRangeProvider(projectManager)
   private val selectionRangeProvider = SelectionRangeProvider(projectManager)
   private val callHierarchyProvider = CallHierarchyProvider(projectManager)
+  private val inlayHintProvider = InlayHintProvider(projectManager)
+  private val completionProvider = CompletionProvider(projectManager)
+  private val codeActionProvider = CodeActionProvider(projectManager)
 
   def connect(client: LanguageClient): Unit =
     this.client = client
@@ -126,3 +129,32 @@ class ScalaTextDocumentService(projectManager: IntellijProjectManager) extends T
   override def callHierarchyOutgoingCalls(params: CallHierarchyOutgoingCallsParams): CompletableFuture[util.List[CallHierarchyOutgoingCall]] =
     CompletableFuture.supplyAsync: () =>
       callHierarchyProvider.outgoingCalls(params.getItem).asJava
+
+  // --- Inlay Hints ---
+
+  override def inlayHint(params: InlayHintParams): CompletableFuture[util.List[InlayHint]] =
+    CompletableFuture.supplyAsync: () =>
+      inlayHintProvider.getInlayHints(
+        params.getTextDocument.getUri,
+        params.getRange
+      ).asJava
+
+  // --- Completion ---
+
+  override def completion(params: CompletionParams): CompletableFuture[LspEither[util.List[CompletionItem], CompletionList]] =
+    CompletableFuture.supplyAsync: () =>
+      val items = completionProvider.getCompletions(
+        params.getTextDocument.getUri,
+        params.getPosition
+      )
+      LspEither.forLeft(items.asJava)
+
+  // --- Code Actions ---
+
+  override def codeAction(params: CodeActionParams): CompletableFuture[util.List[LspEither[Command, CodeAction]]] =
+    CompletableFuture.supplyAsync: () =>
+      codeActionProvider.getCodeActions(
+        params.getTextDocument.getUri,
+        params.getRange,
+        params.getContext
+      ).map(ca => LspEither.forRight[Command, CodeAction](ca)).asJava
