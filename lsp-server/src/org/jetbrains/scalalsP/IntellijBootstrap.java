@@ -38,7 +38,7 @@ public final class IntellijBootstrap {
 
     /**
      * Initialize the IntelliJ platform in headless mode.
-     * Must be called once before any IntelliJ APIs are used.
+     * Called once from ScalaLspMain's background bootstrap thread.
      */
     public static void initialize() throws Exception {
         System.err.println("[IntellijBootstrap] Setting system properties...");

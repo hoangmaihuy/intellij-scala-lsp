@@ -1,41 +1,47 @@
 package org.jetbrains.scalalsP
 
-import java.io.{InputStream, OutputStream}
+import java.util.concurrent.CountDownLatch
 
 /**
  * Entry point for the IntelliJ Scala LSP server.
  *
- * Bootstraps the IntelliJ platform directly (bypassing com.intellij.idea.Main)
- * because IntelliJ 2025.3's WellKnownCommands rejects custom commands in headless mode.
+ * Starts the LSP JSON-RPC listener immediately so the client can connect,
+ * then bootstraps IntelliJ in a background thread. The server's initialize()
+ * handler waits for bootstrap to complete before opening the project.
  */
 object ScalaLspMain:
 
-  def main(args: Array[String]): Unit =
-    // Project path is optional as CLI arg — if not provided, the LSP client
-    // sends it in the initialize request's rootUri parameter
-    val projectPath = args.headOption.getOrElse("")
+  /** Latch that the initialize handler waits on before opening the project */
+  val bootstrapComplete = new CountDownLatch(1)
 
-    if projectPath.nonEmpty then
-      System.err.println(s"[ScalaLsp] Starting IntelliJ Scala LSP server for project: $projectPath")
-    else
-      System.err.println("[ScalaLsp] Starting IntelliJ Scala LSP server (project path from LSP initialize)")
+  def main(args: Array[String]): Unit =
+    val projectPath = args.headOption.getOrElse("")
+    System.err.println("[ScalaLsp] Starting IntelliJ Scala LSP server...")
+
+    // Start bootstrap in background so the LSP listener can accept connections immediately
+    val bootstrapThread = new Thread(() =>
+      try
+        IntellijBootstrap.initialize()
+        System.err.println("[ScalaLsp] IntelliJ platform initialized")
+      catch
+        case e: Exception =>
+          System.err.println(s"[ScalaLsp] Bootstrap failed: ${e.getMessage}")
+          e.printStackTrace(System.err)
+      finally
+        bootstrapComplete.countDown()
+    , "intellij-bootstrap")
+    bootstrapThread.setDaemon(true)
+    bootstrapThread.start()
 
     try
-      IntellijBootstrap.initialize()
-      System.err.println("[ScalaLsp] IntelliJ platform initialized")
-      startLspServer(projectPath, System.in, System.out)
+      // Start LSP listener immediately — it reads JSON-RPC from stdin
+      // The server's initialize() waits for bootstrapComplete before proceeding
+      val server = new ScalaLspServer(projectPath)
+      LspLauncher.startAndAwait(server, System.in, System.out)
+      System.err.println("[ScalaLsp] LSP connection closed")
+      System.exit(0)
     catch
       case e: Exception =>
         System.err.println(s"[ScalaLsp] Fatal error: ${e.getMessage}")
         e.printStackTrace(System.err)
         System.exit(1)
-
-  private def startLspServer(projectPath: String, in: InputStream, out: OutputStream): Unit =
-    val server = new ScalaLspServer(projectPath)
-
-    // Create Launcher in Java to avoid Scala 3 bridge method annotation duplication
-    // that causes "Duplicate RPC method" errors in lsp4j ServiceEndpoints scanning
-    LspLauncher.startAndAwait(server, in, out)
-
-    System.err.println("[ScalaLsp] LSP connection closed")
-    System.exit(0)
