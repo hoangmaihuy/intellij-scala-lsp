@@ -165,16 +165,21 @@ class RenameProvider(projectManager: IntellijProjectManager):
           val name = element.getName
           if name == null || name.isEmpty then null
           else
-            for
-              file <- Option(element.getContainingFile)
-              vf <- Option(file.getVirtualFile)
+            // Return the range at the cursor position (the reference/usage site),
+            // not the declaration — the client highlights this range in the editor
+            (for
+              vf <- projectManager.findVirtualFile(uri)
               document <- Option(FileDocumentManager.getInstance().getDocument(vf))
+              psiFile <- projectManager.findPsiFile(uri)
             yield
-              val range = PsiUtils.nameElementToRange(document, element)
-              PrepareRenameResult(range, name)
-            match
-              case Some(result) => result
-              case None => null
+              val offset = PsiUtils.positionToOffset(document, position)
+              val leafAtCursor = PsiUtils.findReferenceElementAt(psiFile, offset)
+              leafAtCursor match
+                case Some(leaf) =>
+                  val range = PsiUtils.nameElementToRange(document, leaf)
+                  PrepareRenameResult(range, name)
+                case None => null
+            ).getOrElse(null)
         case None => null
 
   def rename(uri: String, position: Position, newName: String): WorkspaceEdit | Null =
@@ -460,11 +465,12 @@ class TypeHierarchyProvider(projectManager: IntellijProjectManager):
   private def getSupertypes(element: PsiElement): Seq[PsiElement] =
     // PsiClass.getSupers() returns direct supertypes, works for both Java and Scala PSI
     // (ScClass, ScTrait, ScObject all implement PsiClass)
+    val syntheticTypes = Set("java.lang.Object", "scala.Any", "scala.AnyRef")
     element match
       case psiClass: PsiClass =>
         psiClass.getSupers.toSeq.filter: sup =>
           val name = sup.getQualifiedName
-          name != "java.lang.Object"
+          !syntheticTypes.contains(name)
       case _ => Seq.empty
 
   private def toTypeHierarchyItem(element: PsiElement): Option[TypeHierarchyItem] =
