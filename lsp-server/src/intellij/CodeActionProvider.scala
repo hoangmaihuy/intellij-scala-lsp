@@ -26,8 +26,9 @@ class CodeActionProvider(projectManager: IntellijProjectManager):
     range: Range,
     context: CodeActionContext
   ): Seq[CodeAction] =
-    projectManager.smartReadAction: () =>
-      val result = for
+    // Phase 1 (inside smartReadAction): collect quick fixes and gather data for intentions
+    val phase1 = projectManager.smartReadAction: () =>
+      for
         psiFile <- projectManager.findPsiFile(uri)
         vf <- projectManager.findVirtualFile(uri)
         document <- Option(FileDocumentManager.getInstance().getDocument(vf))
@@ -36,17 +37,15 @@ class CodeActionProvider(projectManager: IntellijProjectManager):
         val startOffset = PsiUtils.positionToOffset(document, range.getStart)
         val endOffset = PsiUtils.positionToOffset(document, range.getEnd)
 
-        val actions = Seq.newBuilder[CodeAction]
+        val quickFixes = collectQuickFixes(uri, document, project, startOffset, endOffset)
+        (quickFixes, psiFile, document, project, startOffset, uri)
 
-        // 1. Quick fixes from highlighting
-        actions ++= collectQuickFixes(uri, document, project, startOffset, endOffset)
-
-        // 2. Intention actions
-        actions ++= collectIntentionActions(uri, psiFile, document, project, startOffset)
-
-        actions.result()
-
-      result.getOrElse(Seq.empty)
+    phase1 match
+      case Some((quickFixes, psiFile, document, project, offset, actionUri)) =>
+        // Phase 2 (outside smartReadAction): create editor on EDT, collect intention actions
+        val intentionActions = collectIntentionActions(actionUri, psiFile, document, project, offset)
+        quickFixes ++ intentionActions
+      case None => Seq.empty
 
   // --- Resolve ---
 
@@ -317,8 +316,14 @@ class CodeActionProvider(projectManager: IntellijProjectManager):
   ): Seq[CodeAction] =
     var editor: Editor = null
     try
-      editor = EditorFactory.getInstance().createEditor(document, project)
-      editor.getCaretModel.moveToOffset(offset)
+      // Editor creation must happen on EDT
+      val createEditor: Runnable = () =>
+        editor = EditorFactory.getInstance().createEditor(document, project)
+        editor.getCaretModel.moveToOffset(offset)
+      if ApplicationManager.getApplication.isDispatchThread then
+        createEditor.run()
+      else
+        ApplicationManager.getApplication.invokeAndWait(createEditor)
 
       val intentionManager = IntentionManager.getInstance
       if intentionManager == null then return Seq.empty
@@ -350,7 +355,13 @@ class CodeActionProvider(projectManager: IntellijProjectManager):
       case _: Exception => Seq.empty
     finally
       if editor != null then
-        EditorFactory.getInstance().releaseEditor(editor)
+        val editorToRelease = editor
+        val releaseEditor: Runnable = () =>
+          EditorFactory.getInstance().releaseEditor(editorToRelease)
+        if ApplicationManager.getApplication.isDispatchThread then
+          releaseEditor.run()
+        else
+          ApplicationManager.getApplication.invokeAndWait(releaseEditor)
 
   private def categorizeIntention(intention: IntentionAction): String =
     val text = intention.getText.toLowerCase
