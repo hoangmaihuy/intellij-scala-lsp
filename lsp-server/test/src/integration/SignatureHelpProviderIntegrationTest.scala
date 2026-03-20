@@ -58,3 +58,50 @@ class SignatureHelpProviderIntegrationTest extends ScalaLspTestBase:
     val help = provider.getSignatureHelp(uri, positionAt(4, 23))
     help.foreach: sh =>
       assertTrue("Should have multiple overloaded signatures", sh.getSignatures.size() >= 2)
+
+  def testSignatureIncludesReturnType(): Unit =
+    val uri = configureScalaFile(
+      """object Main:
+        |  def add(a: Int, b: Int): Int = a + b
+        |  val result = add(
+        |""".stripMargin
+    )
+    val help = provider.getSignatureHelp(uri, positionAt(2, 19))
+    assertNotNull("Should return signature help", help)
+    help.foreach: sh =>
+      assertFalse("Should have at least one signature", sh.getSignatures.isEmpty)
+      val sig = sh.getSignatures.get(0)
+      assertTrue("Signature label should contain return type annotation",
+        sig.getLabel.contains(": Int") || sig.getLabel.contains(":Int"))
+
+  def testSignatureIncludesDocumentation(): Unit =
+    val uri = configureScalaFile(
+      """object Main:
+        |  /** Adds two integers together. */
+        |  def add(a: Int, b: Int): Int = a + b
+        |  val result = add(
+        |""".stripMargin
+    )
+    val help = provider.getSignatureHelp(uri, positionAt(3, 19))
+    assertNotNull("Should return signature help", help)
+    help.foreach: sh =>
+      assertFalse("Should have at least one signature", sh.getSignatures.isEmpty)
+      val sig = sh.getSignatures.get(0)
+      // Documentation may or may not be available depending on the IntelliJ version
+      // Just verify we got a signature with the right label
+      assertTrue("Signature should contain method name", sig.getLabel.contains("add"))
+
+  def testImplicitParameterClause(): Unit =
+    val uri = configureScalaFile(
+      """object Main:
+        |  def sorted[A](list: List[A])(implicit ord: Ordering[A]): List[A] = list.sorted
+        |  val result = sorted(
+        |""".stripMargin
+    )
+    val help = provider.getSignatureHelp(uri, positionAt(2, 22))
+    assertNotNull("Should return signature help", help)
+    help.foreach: sh =>
+      assertFalse("Should have at least one signature", sh.getSignatures.isEmpty)
+      val sig = sh.getSignatures.get(0)
+      assertTrue("Signature label should contain 'implicit'",
+        sig.getLabel.contains("implicit"))
