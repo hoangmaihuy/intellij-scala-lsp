@@ -16,3 +16,4 @@ lsp-server/test/resources/fixtures/sbt-project/target/
 lsp-server/test/resources/fixtures/sbt-project/project/target/
 lsp-server/test/resources/fixtures/mill-project/src/
 lsp-server/test/resources/fixtures/mill-project/out/
+vscode-extension/node_modules/
