@@ -87,3 +87,16 @@ object PsiUtils:
       while current != null && current.getReference == null && current != psiFile do
         current = current.getParent
       if current != null && current != psiFile then current else leaf
+
+  /** Resolve element at offset to its declaration. If on a reference, resolves it.
+    * If on a declaration itself, walks up to the containing PsiNamedElement. */
+  def resolveToDeclaration(psiFile: PsiFile, offset: Int): Option[PsiElement] =
+    findReferenceElementAt(psiFile, offset).flatMap: element =>
+      val ref = element.getReference
+      if ref != null then
+        Option(ref.resolve())
+      else
+        var parent = element.getParent
+        while parent != null && !parent.isInstanceOf[PsiNamedElement] do
+          parent = parent.getParent
+        if parent != null then Some(parent) else Some(element)

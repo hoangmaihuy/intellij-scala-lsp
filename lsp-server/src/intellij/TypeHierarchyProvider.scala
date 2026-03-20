@@ -70,23 +70,15 @@ class TypeHierarchyProvider(projectManager: IntellijProjectManager):
     className.contains("PsiClass")
 
   private def getSupertypes(element: PsiElement): Seq[PsiElement] =
-    // Use reflection to call getSupers() which is available on PsiClass implementations
-    // (ScClass, ScTrait, ScObject all implement PsiClass)
     val syntheticTypes = Set("java.lang.Object", "scala.Any", "scala.AnyRef")
-    try
-      val method = element.getClass.getMethod("getSupers")
-      val supers = method.invoke(element).asInstanceOf[Array[?]]
-      supers.toSeq
-        .map(_.asInstanceOf[PsiElement & PsiNamedElement])
-        .filter: sup =>
-          try
-            val qnMethod = sup.getClass.getMethod("getQualifiedName")
-            val name = qnMethod.invoke(sup).asInstanceOf[String]
-            !syntheticTypes.contains(name)
-          catch
-            case _: Exception => true
-    catch
-      case _: Exception => Seq.empty
+    element match
+      case psiClass: com.intellij.psi.PsiClass =>
+        psiClass.getSupers
+          .filter: sup =>
+            val qn = Option(sup.getQualifiedName)
+            !qn.exists(syntheticTypes.contains)
+          .toSeq
+      case _ => Seq.empty
 
   private def toTypeHierarchyItem(element: PsiElement): Option[TypeHierarchyItem] =
     element match

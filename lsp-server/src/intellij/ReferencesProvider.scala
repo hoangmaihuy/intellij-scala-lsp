@@ -1,8 +1,6 @@
 package org.jetbrains.scalalsP.intellij
 
-import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.fileEditor.FileDocumentManager
-import com.intellij.psi.PsiElement
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.search.searches.ReferencesSearch
 import org.eclipse.lsp4j.{Location, Position}
@@ -31,7 +29,7 @@ class ReferencesProvider(projectManager: IntellijProjectManager):
     offset: Int,
     includeDeclaration: Boolean
   ): Seq[Location] =
-    val targetElement = resolveToDeclaration(psiFile, offset)
+    val targetElement = PsiUtils.resolveToDeclaration(psiFile, offset)
 
     targetElement match
       case Some(target) =>
@@ -53,15 +51,3 @@ class ReferencesProvider(projectManager: IntellijProjectManager):
       case None =>
         Seq.empty
 
-  private def resolveToDeclaration(psiFile: com.intellij.psi.PsiFile, offset: Int): Option[PsiElement] =
-    PsiUtils.findReferenceElementAt(psiFile, offset).flatMap: element =>
-      val ref = element.getReference
-      if ref != null then
-        Option(ref.resolve())
-      else
-        // Walk up to find the containing named element (class, trait, method, val, etc.)
-        // This handles the case where the cursor is on the definition itself
-        var parent = element.getParent
-        while parent != null && !parent.isInstanceOf[com.intellij.psi.PsiNamedElement] do
-          parent = parent.getParent
-        if parent != null then Some(parent) else Some(element)

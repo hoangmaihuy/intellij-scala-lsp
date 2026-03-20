@@ -47,8 +47,8 @@ lazy val `lsp-server` = project.in(file("lsp-server"))
       (ThisBuild / intellijBaseDirectory).value / "lib" / "testFramework.jar"
     },
 
-    // Add Java plugin JARs to test classpath (needed by Scala plugin)
-    Test / unmanagedJars ++= {
+    // Add Java plugin JARs to compile+test classpath (PsiClass etc. live here; also needed by Scala plugin)
+    Compile / unmanagedJars ++= {
       val javaPluginDir = (ThisBuild / intellijBaseDirectory).value / "plugins" / "java" / "lib"
       if (javaPluginDir.exists()) (javaPluginDir ** "*.jar").get
       else Seq.empty
