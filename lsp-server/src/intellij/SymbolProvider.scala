@@ -73,14 +73,11 @@ class SymbolProvider(projectManager: IntellijProjectManager):
   // --- workspace/symbol ---
 
   def workspaceSymbols(query: String): Seq[SymbolInformation] =
-    System.err.println(s"[SymbolProvider] workspaceSymbols query='$query' (length=${query.length})")
     if query.isEmpty then return Seq.empty
 
     projectManager.smartReadAction: () =>
       val project = projectManager.getProject
-      val results = searchViaContributors(project, query)
-      System.err.println(s"[SymbolProvider] workspaceSymbols returning ${results.size} results for '$query'")
-      results
+      searchViaContributors(project, query)
 
   // Use IntelliJ's GotoClassContributor and GotoSymbolContributor extension points.
   // These support prefix/fuzzy matching via processNames + processElementsWithName.
