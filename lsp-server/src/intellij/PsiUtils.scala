@@ -3,8 +3,11 @@ package org.jetbrains.scalalsP.intellij
 import com.intellij.openapi.editor.Document
 import com.intellij.openapi.roots.{OrderRootType, ProjectFileIndex}
 import com.intellij.openapi.vfs.VirtualFile
-import com.intellij.psi.{PsiElement, PsiFile, PsiNameIdentifierOwner, PsiNamedElement}
+import com.intellij.psi.{PsiClass, PsiElement, PsiField, PsiFile, PsiMethod, PsiNameIdentifierOwner, PsiNamedElement}
 import org.eclipse.lsp4j.{Location, Position, Range, SymbolKind}
+import org.jetbrains.plugins.scala.lang.psi.api.statements.*
+import org.jetbrains.plugins.scala.lang.psi.api.toplevel.ScPackaging
+import org.jetbrains.plugins.scala.lang.psi.api.toplevel.typedef.*
 
 import java.nio.file.{Files, Path}
 import scala.jdk.CollectionConverters.*
@@ -55,20 +58,19 @@ object PsiUtils:
   /** Try to find the original source element for a synthetic element.
     * For synthetic methods (like case class apply), navigates to the containing class. */
   private def findOriginalElement(element: PsiElement): Option[PsiElement] =
-    // Try 1: If element has getContainingClass (methods), navigate to the class
-    // Use reflection to avoid compile-time dependency on PsiMethod which may not be on classpath
-    try
-      val containingClass = element.getClass.getMethod("getContainingClass").invoke(element)
-      containingClass match
-        case cls: PsiElement if cls != null =>
-          val nav = cls.getNavigationElement
-          val effective = if nav != null && nav != cls then nav else cls
-          if effective.getContainingFile != null && effective.getContainingFile.getVirtualFile != null then
-            return Some(effective)
-        case _ => ()
-    catch
-      case _: NoSuchMethodException => () // not a method-like element
-      case _: Exception => ()
+    // Try 1: If element has getContainingClass (methods, fields), navigate to the class
+    val containingClass = element match
+      case m: PsiMethod => Option(m.getContainingClass)
+      case f: PsiField  => Option(f.getContainingClass)
+      case _            => None
+
+    val fromClass = containingClass.flatMap: cls =>
+      val nav = cls.getNavigationElement
+      val effective = if nav != null && nav != cls then nav else cls
+      if effective.getContainingFile != null && effective.getContainingFile.getVirtualFile != null then Some(effective)
+      else None
+
+    if fromClass.isDefined then return fromClass
 
     // Try 2: Walk up parents looking for one with a real VirtualFile
     var parent = element.getParent
@@ -212,21 +214,22 @@ object PsiUtils:
   def findElementAtOffset(psiFile: PsiFile, offset: Int): Option[PsiElement] =
     Option(psiFile.findElementAt(offset))
 
-  /** Determine the LSP SymbolKind for a PSI element based on its class name.
+  /** Determine the LSP SymbolKind for a PSI element.
    * Shared by SymbolProvider, CompletionProvider, and CallHierarchyProvider. */
-  def getSymbolKind(element: PsiElement): SymbolKind =
-    val cls = element.getClass.getName
-    if cls.contains("ScClass") then SymbolKind.Class
-    else if cls.contains("ScTrait") then SymbolKind.Interface
-    else if cls.contains("ScObject") then SymbolKind.Module
-    else if cls.contains("ScFunction") || cls.contains("PsiMethod") then SymbolKind.Method
-    else if cls.contains("ScValue") || cls.contains("ScPatternDefinition") then SymbolKind.Variable
-    else if cls.contains("ScVariable") || cls.contains("ScVariableDefinition") then SymbolKind.Variable
-    else if cls.contains("ScTypeAlias") then SymbolKind.TypeParameter
-    else if cls.contains("ScPackaging") then SymbolKind.Package
-    else if cls.contains("PsiClass") then SymbolKind.Class
-    else if cls.contains("PsiField") then SymbolKind.Field
-    else SymbolKind.Variable
+  def getSymbolKind(element: PsiElement): SymbolKind = element match
+    case _: ScEnum      => SymbolKind.Enum
+    case _: ScClass     => SymbolKind.Class
+    case _: ScTrait     => SymbolKind.Interface
+    case _: ScObject    => SymbolKind.Module
+    case _: ScFunction  => SymbolKind.Method
+    case _: ScValue | _: ScPatternDefinition => SymbolKind.Variable
+    case _: ScVariable | _: ScVariableDefinition => SymbolKind.Variable
+    case _: ScTypeAlias => SymbolKind.TypeParameter
+    case _: ScPackaging => SymbolKind.Package
+    case _: PsiMethod   => SymbolKind.Method
+    case _: PsiClass    => SymbolKind.Class
+    case _: PsiField    => SymbolKind.Field
+    case _              => SymbolKind.Variable
 
   /** Walk up from a leaf element to find the nearest reference or named element.
     * Uses IntelliJ's findReferenceAt first for accurate reference detection,

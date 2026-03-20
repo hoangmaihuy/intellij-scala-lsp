@@ -3,6 +3,7 @@ package org.jetbrains.scalalsP.intellij
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.psi.{PsiElement, PsiMethod, PsiNamedElement}
 import org.eclipse.lsp4j.{ParameterInformation, Position, SignatureHelp, SignatureInformation}
+import org.jetbrains.plugins.scala.lang.psi.api.statements.ScFunction
 
 import scala.jdk.CollectionConverters.*
 
@@ -114,70 +115,29 @@ class SignatureHelpProvider(projectManager: IntellijProjectManager):
       .orElse(tryPsiMethod(element))
       .orElse(tryNavigationItem(element))
 
-  /** Try to extract signature from Scala plugin's ScFunction via reflection. */
+  /** Try to extract signature from Scala plugin's ScFunction using direct types. */
   private def tryScFunction(element: PsiElement): Option[SignatureInformation] =
-    try
-      val cls = element.getClass
-      if !cls.getName.contains("ScFunction") then return None
+    element match
+      case fn: ScFunction =>
+        try
+          val name = fn.name
+          val clauses = fn.effectiveParameterClauses
+          val params = if clauses.nonEmpty then
+            clauses.head.parameters.map: param =>
+              val pName = param.name
+              val pType = param.typeElement.map(_.getText).getOrElse("Any")
+              (pName, pType)
+            .toList
+          else List.empty
 
-      val name = cls.getMethod("name").invoke(element).asInstanceOf[String]
-
-      // Get parameter clauses via effectiveParameterClauses
-      val clauses = try
-        val m = cls.getMethod("effectiveParameterClauses")
-        val result = m.invoke(element)
-        // result is a Scala Seq of ScParameterClause
-        val seqClass = result.getClass
-        val applyMethod = seqClass.getMethod("apply", classOf[Int])
-        val sizeMethod = seqClass.getMethod("size")
-        val size = sizeMethod.invoke(result).asInstanceOf[Int]
-        if size > 0 then
-          val firstClause = applyMethod.invoke(result, Integer.valueOf(0))
-          extractParamsFromClause(firstClause)
-        else
-          List.empty
-      catch
-        case _: Exception => List.empty
-
-      val paramStr = clauses.map(p => s"${p._1}: ${p._2}").mkString(", ")
-      val label = s"$name($paramStr)"
-      val sig = SignatureInformation(label)
-      val paramInfos = clauses.map: (pName, pType) =>
-        val pi = ParameterInformation(s"$pName: $pType")
-        pi
-      sig.setParameters(paramInfos.asJava)
-      Some(sig)
-    catch
-      case _: Exception => None
-
-  /** Extract parameter name-type pairs from a ScParameterClause via reflection. */
-  private def extractParamsFromClause(clause: Any): List[(String, String)] =
-    try
-      val clauseClass = clause.getClass
-      val paramsMethod = clauseClass.getMethod("parameters")
-      val params = paramsMethod.invoke(clause)
-      val seqClass = params.getClass
-      val sizeMethod = seqClass.getMethod("size")
-      val applyMethod = seqClass.getMethod("apply", classOf[Int])
-      val size = sizeMethod.invoke(params).asInstanceOf[Int]
-
-      (0 until size).toList.map: idx =>
-        val param = applyMethod.invoke(params, Integer.valueOf(idx))
-        val paramClass = param.getClass
-        val pName = try paramClass.getMethod("name").invoke(param).asInstanceOf[String] catch case _: Exception => "?"
-        val pType = try
-          val typeElem = paramClass.getMethod("typeElement").invoke(param)
-          // typeElement returns Option[ScTypeElement]
-          val optClass = typeElem.getClass
-          if optClass.getName.contains("Some") then
-            val getMethod = optClass.getMethod("get")
-            val te = getMethod.invoke(typeElem)
-            te.getClass.getMethod("getText").invoke(te).asInstanceOf[String]
-          else "Any"
-        catch case _: Exception => "Any"
-        (pName, pType)
-    catch
-      case _: Exception => List.empty
+          val paramStr = params.map(p => s"${p._1}: ${p._2}").mkString(", ")
+          val label = s"$name($paramStr)"
+          val sig = SignatureInformation(label)
+          sig.setParameters(params.map((pName, pType) => ParameterInformation(s"$pName: $pType")).asJava)
+          Some(sig)
+        catch
+          case _: Exception => None
+      case _ => None
 
   /** Try to extract signature from a standard Java PsiMethod. */
   private def tryPsiMethod(element: PsiElement): Option[SignatureInformation] =

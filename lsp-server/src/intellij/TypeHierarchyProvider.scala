@@ -1,10 +1,11 @@
 package org.jetbrains.scalalsP.intellij
 
 import com.intellij.openapi.fileEditor.FileDocumentManager
-import com.intellij.psi.{PsiElement, PsiNamedElement}
+import com.intellij.psi.{PsiClass, PsiElement, PsiNamedElement}
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.search.searches.DefinitionsScopedSearch
 import org.eclipse.lsp4j.{Position, SymbolKind, TypeHierarchyItem}
+import org.jetbrains.plugins.scala.lang.psi.api.toplevel.typedef.{ScClass, ScObject, ScTrait}
 
 import scala.jdk.CollectionConverters.*
 
@@ -62,12 +63,9 @@ class TypeHierarchyProvider(projectManager: IntellijProjectManager):
           current = current.getParent
         Option(current)
 
-  private def isTypeElement(element: PsiElement): Boolean =
-    val className = element.getClass.getName
-    className.contains("ScClass") ||
-    className.contains("ScTrait") ||
-    className.contains("ScObject") ||
-    className.contains("PsiClass")
+  private def isTypeElement(element: PsiElement): Boolean = element match
+    case _: ScClass | _: ScTrait | _: ScObject | _: PsiClass => true
+    case _ => false
 
   private def getSupertypes(element: PsiElement): Seq[PsiElement] =
     val syntheticTypes = Set("java.lang.Object", "scala.Any", "scala.AnyRef")
@@ -115,8 +113,7 @@ class TypeHierarchyProvider(projectManager: IntellijProjectManager):
 
     result.flatMap(Option(_))
 
-  private def getSymbolKind(element: PsiElement): SymbolKind =
-    val className = element.getClass.getName
-    if className.contains("ScTrait") then SymbolKind.Interface
-    else if className.contains("ScObject") then SymbolKind.Module
-    else SymbolKind.Class
+  private def getSymbolKind(element: PsiElement): SymbolKind = element match
+    case _: ScTrait  => SymbolKind.Interface
+    case _: ScObject => SymbolKind.Module
+    case _           => SymbolKind.Class

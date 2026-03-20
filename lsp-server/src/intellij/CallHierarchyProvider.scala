@@ -1,11 +1,13 @@
 package org.jetbrains.scalalsP.intellij
 
 import com.intellij.openapi.fileEditor.FileDocumentManager
-import com.intellij.psi.{PsiElement, PsiFile, PsiNamedElement, PsiReference}
+import com.intellij.psi.{PsiElement, PsiFile, PsiMethod, PsiNamedElement, PsiReference}
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.search.searches.ReferencesSearch
 import com.intellij.psi.util.PsiTreeUtil
 import org.eclipse.lsp4j.*
+import org.jetbrains.plugins.scala.lang.psi.api.statements.{ScFunction, ScPatternDefinition, ScVariableDefinition}
+import org.jetbrains.plugins.scala.lang.psi.api.toplevel.typedef.{ScClass, ScObject, ScTrait}
 
 import scala.jdk.CollectionConverters.*
 
@@ -144,16 +146,10 @@ class CallHierarchyProvider(projectManager: IntellijProjectManager):
       current = current.getParent
     None
 
-  private def isCallable(element: PsiElement): Boolean =
-    val className = element.getClass.getName
-    className.contains("ScFunction") ||
-    className.contains("ScPatternDefinition") ||  // val = ...
-    className.contains("ScVariableDefinition") || // var = ...
-    className.contains("PsiMethod") ||
-    // Class/object bodies can also be "callers" for constructor-level code
-    className.contains("ScClass") ||
-    className.contains("ScObject") ||
-    className.contains("ScTrait")
+  private def isCallable(element: PsiElement): Boolean = element match
+    case _: ScFunction | _: ScPatternDefinition | _: ScVariableDefinition |
+         _: PsiMethod | _: ScClass | _: ScObject | _: ScTrait => true
+    case _ => false
 
   private def collectOutgoingRefs(
     element: PsiElement,

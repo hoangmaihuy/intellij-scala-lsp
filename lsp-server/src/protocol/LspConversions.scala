@@ -29,12 +29,4 @@ object LspConversions:
     new TextEdit(new Range(start, end), newText)
 
   def toSymbolKind(element: PsiElement): SymbolKind =
-    val className = element.getClass.getName
-    if className.contains("ScClass") then SymbolKind.Class
-    else if className.contains("ScTrait") then SymbolKind.Interface
-    else if className.contains("ScObject") then SymbolKind.Module
-    else if className.contains("ScFunction") then SymbolKind.Method
-    else if className.contains("ScValue") then SymbolKind.Field
-    else if className.contains("ScVariable") then SymbolKind.Variable
-    else if className.contains("ScTypeAlias") then SymbolKind.TypeParameter
-    else SymbolKind.Variable
+    PsiUtils.getSymbolKind(element)

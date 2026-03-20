@@ -4,6 +4,11 @@ import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.psi.{PsiElement, PsiNameIdentifierOwner, PsiNamedElement}
 import org.eclipse.lsp4j.{InlayHint, InlayHintKind, Position, Range}
 import org.eclipse.lsp4j.jsonrpc.messages.{Either => LspEither}
+import org.jetbrains.plugins.scala.lang.psi.api.base.ScPrimaryConstructor
+import org.jetbrains.plugins.scala.lang.psi.api.base.types.*
+import org.jetbrains.plugins.scala.lang.psi.api.expr.{ScArgumentExprList, ScMethodCall, ScReferenceExpression}
+import org.jetbrains.plugins.scala.lang.psi.api.statements.{ScFunction, ScFunctionDefinition, ScPatternDefinition, ScVariableDefinition}
+import org.jetbrains.plugins.scala.lang.psi.api.statements.params.{ScParameter, ScParameters}
 
 import scala.jdk.CollectionConverters.*
 
@@ -49,19 +54,16 @@ class InlayHintProvider(projectManager: IntellijProjectManager):
       hint.setPaddingLeft(false)
       hint
 
-  private def isInferredTypeDefinition(element: PsiElement): Boolean =
-    val cls = element.getClass.getName
-    (cls.contains("ScPatternDefinition") || cls.contains("ScVariableDefinition") ||
-      cls.contains("ScFunctionDefinition")) && !hasExplicitTypeAnnotation(element)
+  private def isInferredTypeDefinition(element: PsiElement): Boolean = element match
+    case _: ScPatternDefinition | _: ScVariableDefinition | _: ScFunctionDefinition =>
+      !hasExplicitTypeAnnotation(element)
+    case _ => false
 
   private def hasExplicitTypeAnnotation(element: PsiElement): Boolean =
-    // If the element has a child whose class name contains "TypeElement",
-    // it has an explicit type annotation
-    element.getChildren.exists: child =>
-      val cn = child.getClass.getName
-      cn.contains("ScSimpleTypeElement") || cn.contains("ScParameterizedTypeElement") ||
-        cn.contains("ScFunctionalTypeElement") || cn.contains("ScTupleTypeElement") ||
-        cn.contains("ScInfixTypeElement") || cn.contains("ScCompoundTypeElement")
+    element.getChildren.exists:
+      case _: ScSimpleTypeElement | _: ScParameterizedTypeElement | _: ScFunctionalTypeElement |
+           _: ScTupleTypeElement | _: ScInfixTypeElement | _: ScCompoundTypeElement => true
+      case _ => false
 
   private def getTypeText(element: PsiElement): Option[String] =
     // Use NavigationItem.getPresentation for type display text
@@ -81,8 +83,7 @@ class InlayHintProvider(projectManager: IntellijProjectManager):
     element: PsiElement,
     document: com.intellij.openapi.editor.Document
   ): Seq[InlayHint] =
-    val className = element.getClass.getName
-    if !className.contains("ScArgumentExprList") then return Seq.empty
+    if !element.isInstanceOf[ScArgumentExprList] then return Seq.empty
     try
       val call = element.getParent
       if call == null then return Seq.empty
@@ -111,39 +112,23 @@ class InlayHintProvider(projectManager: IntellijProjectManager):
 
   private def resolveParameterNames(callElement: PsiElement): Option[Seq[String]] =
     // Find the invoked expression (first child that is a reference-like element)
-    val invokedExpr = callElement.getChildren.find: child =>
-      val cn = child.getClass.getName
-      cn.contains("ScReferenceExpression") || cn.contains("ScMethodCall")
+    val invokedExpr = callElement.getChildren.find:
+      case _: ScReferenceExpression | _: ScMethodCall => true
+      case _ => false
     invokedExpr.flatMap: ref =>
       val resolved = Option(ref.getReference).flatMap(r => Option(r.resolve()))
       resolved.flatMap(getParameterNames)
 
-  private def getParameterNames(element: PsiElement): Option[Seq[String]] =
-    val className = element.getClass.getName
-    if className.contains("ScFunction") || className.contains("ScPrimaryConstructor") then
-      // Find the parameter clause children and extract named parameters
-      val paramClauses = element.getChildren.filter(_.getClass.getName.contains("ScParameter"))
-      if paramClauses.nonEmpty then
-        Some(paramClauses.collect { case named: PsiNamedElement => named.getName }.toSeq)
-      else
-        // Look for parameter clause wrapper, then find parameters inside
-        val clauseWrapper = element.getChildren.find(_.getClass.getName.contains("ScParameters"))
-        clauseWrapper.map: wrapper =>
-          findDescendants(wrapper, _.getClass.getName.contains("ScParameter"))
-            .collect { case named: PsiNamedElement => named.getName }
-    else None
-
-  private def findDescendants(root: PsiElement, predicate: PsiElement => Boolean): Seq[PsiElement] =
-    val result = Seq.newBuilder[PsiElement]
-    def visit(elem: PsiElement): Unit =
-      if predicate(elem) then result += elem
-      else
-        var child = elem.getFirstChild
-        while child != null do
-          visit(child)
-          child = child.getNextSibling
-    visit(root)
-    result.result()
+  private def getParameterNames(element: PsiElement): Option[Seq[String]] = element match
+    case fn: ScFunction =>
+      val params = fn.parameters
+      if params.nonEmpty then Some(params.map(_.name).toSeq)
+      else None
+    case ctor: ScPrimaryConstructor =>
+      val params = ctor.parameters
+      if params.nonEmpty then Some(params.map(_.name).toSeq)
+      else None
+    case _ => None
 
   // --- PSI tree walking ---
 

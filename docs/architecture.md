@@ -131,8 +131,7 @@ class XxxProvider(projectManager: IntellijProjectManager):
 
 ### Design Decisions
 
-**No compile-time Scala plugin dependency.** The Scala plugin's classes (`ScClass`, `ScTrait`, `ScFunction`, etc.) are not on the compile classpath. This is intentional — it decouples the LSP server from Scala plugin internals and avoids version lock-in. Where Scala-specific behavior is needed, we use:
-- Class name string matching: `element.getClass.getName.contains("ScClass")` — for type identification
+**Compile-time Scala plugin dependency.** The Scala plugin's `scalaCommunity.jar` is on the compile classpath (added as `unmanagedJars` in `build.sbt`). This gives type-safe access to `ScClass`, `ScTrait`, `ScFunction`, etc. via `instanceof` / pattern matching instead of fragile class name string matching. The plugin is already a runtime dependency (loaded via `-Dplugin.path` and declared in `plugin.xml` as `<depends>org.intellij.scala</depends>`), so this adds no new coupling. Additionally:
 - IntelliJ extension points: `LanguageDocumentation`, `TypeDeclarationProvider`, `CompletionContributor` — these dispatch to the Scala plugin at runtime
 - Standard `PsiClass` API: works for Scala types since `ScClass`/`ScTrait` implement `PsiClass`
 

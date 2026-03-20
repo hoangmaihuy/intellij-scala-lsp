@@ -54,6 +54,13 @@ lazy val `lsp-server` = project.in(file("lsp-server"))
       else Seq.empty
     },
 
+    // Add Scala plugin JARs to compile classpath for direct type-safe access to ScClass, ScFunction, etc.
+    Compile / unmanagedJars ++= {
+      val scalaPluginDir = (ThisBuild / intellijBaseDirectory).value / "custom-plugins" / "Scala" / "lib"
+      if (scalaPluginDir.exists()) Seq(scalaPluginDir / "scalaCommunity.jar")
+      else Seq.empty
+    },
+
     // Source layout matching our project structure
     Compile / sourceDirectory := baseDirectory.value / "src",
     Compile / unmanagedSourceDirectories := Seq((Compile / sourceDirectory).value),
