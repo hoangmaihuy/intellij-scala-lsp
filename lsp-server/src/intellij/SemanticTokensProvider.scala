@@ -50,8 +50,16 @@ object SemanticTokensProvider:
     else if cls.contains("ScEnum") then Some(4)                                  // enum
     else if cls.contains("ScTypeAlias") then Some(1)                             // type
     else if cls.contains("ScTypeParam") then Some(9)                             // typeParameter
-    else if cls.contains("ScFunction") || cls.contains("PsiMethod") then Some(5) // method
-    else if cls.contains("ScBindingPattern") then
+    else if cls.contains("ScFunction") || cls.contains("PsiMethod") then
+      // Synthetic accessors (e.g. case class param getters) should classify as their original element
+      val navElement = element.getNavigationElement
+      if navElement != null && (navElement ne element) then
+        val navCls = navElement.getClass.getName
+        if navCls.contains("ScParameter") then Some(8)          // parameter accessor
+        else if navCls.contains("ScBindingPattern") || navCls.contains("ScReferencePattern") || navCls.contains("ScFieldId") then Some(6) // property accessor
+        else Some(5) // method
+      else Some(5) // method
+    else if cls.contains("ScBindingPattern") || cls.contains("ScReferencePattern") then
       // Distinguish field vs local variable by checking parent context
       val ctx = element.getParent
       if ctx != null then
@@ -66,7 +74,51 @@ object SemanticTokensProvider:
           else Some(7) // variable (local var)
         else Some(7) // variable (pattern, generator, etc.)
       else Some(7)
-    else None
+    else if cls.contains("ScFieldId") then
+      // Field identifier - check if it's a class member or local
+      val ctx = element.getParent
+      if ctx != null then
+        val ctxCls = ctx.getClass.getName
+        if ctxCls.contains("ScValue") || ctxCls.contains("ScPatternDefinition") || ctxCls.contains("ScVariable") then
+          val grandParent = ctx.getParent
+          if grandParent != null && grandParent.getClass.getName.contains("ScTemplateBody") then Some(6) // property
+          else Some(7) // variable
+        else Some(7)
+      else Some(7)
+    else
+      // Fallback: use reflection to check if this is a class parameter
+      classifyByReflection(element)
+
+  /** Fallback classification using reflection to check element properties */
+  private def classifyByReflection(element: PsiElement): Option[Int] =
+    try
+      // Check if element is a parameter-like thing (has isClassParameter or similar)
+      val isParam = try
+        val m = element.getClass.getMethod("isClassParameter")
+        m.invoke(element).asInstanceOf[Boolean]
+      catch case _: Exception => false
+
+      if isParam then return Some(8) // parameter
+
+      // Check if it has getContainingClass (member of a class)
+      val hasMember = try
+        val m = element.getClass.getMethod("getContainingClass")
+        m.invoke(element) != null
+      catch case _: Exception => false
+
+      if hasMember then
+        // It's a class member - check if it's a field-like thing
+        val cls = element.getClass.getName
+        if cls.contains("Field") || cls.contains("Value") then Some(6) // property
+        else if cls.contains("Method") || cls.contains("Function") then Some(5) // method
+        else
+          System.err.println(s"[SemanticTokens] Unclassified class member: $cls")
+          None
+      else
+        System.err.println(s"[SemanticTokens] Unclassified resolved element: ${element.getClass.getName}")
+        None
+    catch
+      case _: Exception => None
 
   /** Get modifier bits for a resolved element */
   def classifyModifiers(element: PsiElement): Int =
@@ -162,10 +214,21 @@ class SemanticTokensProvider(projectManager: IntellijProjectManager):
       catch
         case _: Exception => None
 
-      resolved.flatMap(classifyElement).foreach: tokenType =>
-        val modifiers = resolved.map(classifyModifiers).getOrElse(0)
-        val nameRange = getNameRange(element)
-        tokens += ((nameRange._1, nameRange._2, tokenType, modifiers))
+      resolved match
+        case Some(res) =>
+          classifyElement(res) match
+            case Some(tokenType) =>
+              val modifiers = classifyModifiers(res)
+              val nameRange = getNameRange(element)
+              tokens += ((nameRange._1, nameRange._2, tokenType, modifiers))
+            case None =>
+              // Already logged in classifyElement/classifyByReflection
+              ()
+        case None =>
+          if isIdentifierLike(element) then
+            val nameRange = getNameRange(element)
+            System.err.println(s"[SemanticTokens] Unresolved reference: ${element.getText.take(50)} at offset ${nameRange._1}, element class: $cls")
+          ()
 
     // Check for keyword tokens (leaf elements with keyword token type)
     if element.getChildren.isEmpty then
