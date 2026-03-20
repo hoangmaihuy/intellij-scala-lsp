@@ -17,6 +17,7 @@ class ScalaTextDocumentService(projectManager: IntellijProjectManager) extends T
   private val documentSync = DocumentSyncManager(projectManager)
   private val definitionProvider = DefinitionProvider(projectManager)
   private val referencesProvider = ReferencesProvider(projectManager)
+  private val definitionOrReferencesProvider = DefinitionOrReferencesProvider(projectManager, definitionProvider, referencesProvider)
   private val hoverProvider = HoverProvider(projectManager)
   private val symbolProvider = SymbolProvider(projectManager)
   private val typeDefinitionProvider = TypeDefinitionProvider(projectManager)
@@ -67,7 +68,7 @@ class ScalaTextDocumentService(projectManager: IntellijProjectManager) extends T
 
   override def definition(params: DefinitionParams): CompletableFuture[LspEither[util.List[? <: Location], util.List[? <: LocationLink]]] =
     CompletableFuture.supplyAsync: () =>
-      val locations = definitionProvider.getDefinition(
+      val locations = definitionOrReferencesProvider.getDefinitionOrReferences(
         params.getTextDocument.getUri,
         params.getPosition
       )
