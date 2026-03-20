@@ -64,6 +64,7 @@ class ScalaLspServer(
       capabilities.setFoldingRangeProvider(true)
       capabilities.setSelectionRangeProvider(true)
       capabilities.setCallHierarchyProvider(true)
+      capabilities.setDocumentHighlightProvider(true)
 
       // Inlay hints
       capabilities.setInlayHintProvider(true)

@@ -35,6 +35,7 @@ class ScalaTextDocumentService(projectManager: IntellijProjectManager) extends T
   private val formattingProvider = FormattingProvider(projectManager)
   private val documentLinkProvider = DocumentLinkProvider(projectManager)
   private val semanticTokensProvider = SemanticTokensProvider(projectManager)
+  private val documentHighlightProvider = DocumentHighlightProvider(projectManager)
 
   def connect(client: LanguageClient): Unit =
     this.client = client
@@ -250,3 +251,12 @@ class ScalaTextDocumentService(projectManager: IntellijProjectManager) extends T
         params.getTextDocument.getUri,
         params.getRange
       )
+
+  // --- Document Highlights ---
+
+  override def documentHighlight(params: DocumentHighlightParams): CompletableFuture[util.List[? <: DocumentHighlight]] =
+    CompletableFuture.supplyAsync: () =>
+      documentHighlightProvider.getDocumentHighlights(
+        params.getTextDocument.getUri,
+        params.getPosition
+      ).asJava
