@@ -1,0 +1,8 @@
+package build
+
+import mill._, scalalib._
+
+object root extends ScalaModule {
+  def scalaVersion = "3.3.3"
+  def ivyDeps = Agg(ivy"org.typelevel::cats-core:2.12.0")
+}

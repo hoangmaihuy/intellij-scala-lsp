@@ -5,6 +5,14 @@ target/
 .idea/
 .claude/
 local/
+docs/superpowers/
 
 # virtual machine crash logs
 hs_err_pid*
+
+# E2E fixture build outputs
+lsp-server/test/resources/fixtures/sbt-project/src/
+lsp-server/test/resources/fixtures/sbt-project/target/
+lsp-server/test/resources/fixtures/sbt-project/project/target/
+lsp-server/test/resources/fixtures/mill-project/src/
+lsp-server/test/resources/fixtures/mill-project/out/
