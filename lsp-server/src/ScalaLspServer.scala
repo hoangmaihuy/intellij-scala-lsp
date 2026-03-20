@@ -101,6 +101,7 @@ class ScalaLspServer(
           CodeActionKind.RefactorInline
         )
       )
+      codeActionOptions.setResolveProvider(true)
       capabilities.setCodeActionProvider(codeActionOptions)
 
       // Semantic tokens

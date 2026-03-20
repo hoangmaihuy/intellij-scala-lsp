@@ -1,5 +1,6 @@
 package org.jetbrains.scalalsP.integration
 
+import com.google.gson.JsonObject
 import org.eclipse.lsp4j.*
 import org.jetbrains.scalalsP.intellij.CodeActionProvider
 import org.junit.Assert.*
@@ -67,3 +68,18 @@ class CodeActionProviderIntegrationTest extends ScalaLspTestBase:
       if diagnostics != null && !diagnostics.isEmpty then
         assertNotNull("Quick fix should have linked diagnostic",
           diagnostics.get(0).getMessage)
+
+  def testCodeActionsHaveDataField(): Unit =
+    val uri = configureScalaFile(
+      """object Main:
+        |  val x = 1 + 2
+        |""".stripMargin
+    )
+    val actions = getActions(uri, Range(Position(1, 10), Position(1, 15)))
+    assertNotNull(actions)
+    // All actions should have non-null data
+    actions.foreach: action =>
+      assertNotNull(s"Code action '${action.getTitle}' should have data field", action.getData)
+      val data = action.getData.asInstanceOf[JsonObject]
+      assertNotNull("Data should have 'type' field", data.get("type"))
+      assertNotNull("Data should have 'uri' field", data.get("uri"))

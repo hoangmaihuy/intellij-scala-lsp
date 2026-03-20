@@ -141,6 +141,7 @@ public final class LspLauncher {
         @Override public CompletableFuture<java.util.List<? extends DocumentHighlight>> documentHighlight(DocumentHighlightParams params) { return delegate.documentHighlight(params); }
         @Override public CompletableFuture<java.util.List<Either<SymbolInformation, DocumentSymbol>>> documentSymbol(DocumentSymbolParams params) { return delegate.documentSymbol(params); }
         @Override public CompletableFuture<java.util.List<Either<Command, CodeAction>>> codeAction(CodeActionParams params) { return delegate.codeAction(params); }
+        @Override public CompletableFuture<CodeAction> resolveCodeAction(CodeAction params) { return delegate.resolveCodeAction(params); }
         @Override public CompletableFuture<java.util.List<FoldingRange>> foldingRange(FoldingRangeRequestParams params) { return delegate.foldingRange(params); }
         @Override public CompletableFuture<java.util.List<SelectionRange>> selectionRange(SelectionRangeParams params) { return delegate.selectionRange(params); }
         @Override public CompletableFuture<java.util.List<InlayHint>> inlayHint(InlayHintParams params) { return delegate.inlayHint(params); }

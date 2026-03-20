@@ -179,6 +179,10 @@ class ScalaTextDocumentService(projectManager: IntellijProjectManager) extends T
         params.getContext
       ).map(ca => LspEither.forRight[Command, CodeAction](ca)).asJava
 
+  override def resolveCodeAction(unresolved: CodeAction): CompletableFuture[CodeAction] =
+    CompletableFuture.supplyAsync: () =>
+      codeActionProvider.resolveCodeAction(unresolved)
+
   // --- Rename ---
 
   override def prepareRename(params: PrepareRenameParams): CompletableFuture[LspEither3[Range, PrepareRenameResult, PrepareRenameDefaultBehavior]] =

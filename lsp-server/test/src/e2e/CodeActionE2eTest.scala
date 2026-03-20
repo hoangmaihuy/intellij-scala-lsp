@@ -13,3 +13,21 @@ class CodeActionE2eTest extends E2eTestBase:
     openFixture("service/Repository.scala")
     val actions = client.codeActions(uri, 4, 0, 14, 0)
     // Verify it doesn't crash
+
+  def testCodeActionResolveRoundTrip(): Unit =
+    val uri = openFixture("service/ShapeService.scala")
+    openFixture("hierarchy/Shape.scala")
+    openFixture("hierarchy/Circle.scala")
+    openFixture("hierarchy/Rectangle.scala")
+    openFixture("service/ShapeRepository.scala")
+    openFixture("service/Repository.scala")
+    val actions = client.codeActions(uri, 4, 0, 14, 0)
+    // If there are any actions, resolve the first one
+    if actions.nonEmpty then
+      val firstAction = actions.head
+      assertNotNull("Action should have data", firstAction.getData)
+      val resolved = client.resolveCodeAction(firstAction)
+      assertNotNull("Resolved action should not be null", resolved)
+      // The edit may or may not be present depending on the fix,
+      // but the resolve should not throw
+      assertNotNull("Resolved action should have title", resolved.getTitle)

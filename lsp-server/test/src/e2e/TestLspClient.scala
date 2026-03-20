@@ -260,6 +260,11 @@ class TestLspClient private (
       else result.asScala.map(_.getRight).toList
     }
 
+  def resolveCodeAction(action: CodeAction): CodeAction =
+    requestOffEdt() {
+      clientProxy.getTextDocumentService.resolveCodeAction(action).get(10, TimeUnit.SECONDS)
+    }
+
   def formatting(uri: String): java.util.List[? <: TextEdit] =
     requestOffEdt() {
       val params = new DocumentFormattingParams()
