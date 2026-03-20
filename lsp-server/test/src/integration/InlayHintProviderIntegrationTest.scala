@@ -4,6 +4,8 @@ import org.eclipse.lsp4j.{InlayHint, InlayHintKind, Position, Range}
 import org.jetbrains.scalalsP.intellij.InlayHintProvider
 import org.junit.Assert.*
 
+import scala.jdk.CollectionConverters.*
+
 class InlayHintProviderIntegrationTest extends ScalaLspTestBase:
 
   private def getHints(uri: String, range: Range) =
@@ -11,16 +13,99 @@ class InlayHintProviderIntegrationTest extends ScalaLspTestBase:
 
   private def fullRange = Range(Position(0, 0), Position(100, 0))
 
-  def testInferredTypeOnVal(): Unit =
+  private def labelOf(hint: InlayHint): String =
+    val either = hint.getLabel
+    if either.isLeft then either.getLeft
+    else either.getRight.asScala.map(_.getValue).mkString
+
+  def testTypeHintForInferredVal(): Unit =
     val uri = configureScalaFile(
       """object Main:
         |  val x = 42
         |""".stripMargin
     )
     val hints = getHints(uri, fullRange)
-    if hints.nonEmpty then
-      assertTrue("Should have a type hint containing Int",
-        hints.exists(h => h.getLabel.toString.contains("Int")))
+    val typeHints = hints.filter(_.getKind == InlayHintKind.Type)
+    val intHint = typeHints.find(h => labelOf(h).contains("Int"))
+    assertTrue("Should have a type hint containing 'Int' for inferred val", intHint.isDefined)
+    intHint.foreach: h =>
+      assertEquals("Type hint should be on line 1", 1, h.getPosition.getLine)
+
+  def testTypeHintValueAfterIdentifier(): Unit =
+    val uri = configureScalaFile(
+      """object Main:
+        |  val x = 42
+        |""".stripMargin
+    )
+    val hints = getHints(uri, fullRange)
+    val typeHints = hints.filter(_.getKind == InlayHintKind.Type)
+    val intHint = typeHints.find(h => labelOf(h).contains("Int"))
+    assertTrue("Should have an Int type hint", intHint.isDefined)
+    intHint.foreach: h =>
+      // "val x" — 'x' is at char 6; end offset of identifier is char 7
+      assertTrue("Type hint should be after 'x' (char >= 7)", h.getPosition.getCharacter >= 7)
+
+  def testTypeHintLabelStartsWithColon(): Unit =
+    val uri = configureScalaFile(
+      """object Main:
+        |  val x = 42
+        |""".stripMargin
+    )
+    val hints = getHints(uri, fullRange)
+    val typeHints = hints.filter(_.getKind == InlayHintKind.Type)
+    val intHint = typeHints.find(h => labelOf(h).contains("Int"))
+    assertTrue("Should have a type hint", intHint.isDefined)
+    intHint.foreach: h =>
+      val label = labelOf(h)
+      assertTrue(s"Type hint label should start with ': ', got: $label", label.startsWith(": "))
+
+  def testNoTypeHintWhenExplicit(): Unit =
+    val uri = configureScalaFile(
+      """object Main:
+        |  val x: Int = 42
+        |""".stripMargin
+    )
+    val hints = getHints(uri, fullRange)
+    val typeHintsOnLine1 = hints.filter: h =>
+      h.getKind == InlayHintKind.Type && h.getPosition.getLine == 1
+    assertFalse(
+      "Should NOT produce a type hint for an explicitly typed val",
+      typeHintsOnLine1.exists(h => labelOf(h).contains("Int"))
+    )
+
+  def testParameterNameHints(): Unit =
+    val uri = configureScalaFile(
+      """object Main:
+        |  def greet(name: String, age: Int): Unit = ()
+        |  greet("Alice", 30)
+        |""".stripMargin
+    )
+    val hints = getHints(uri, fullRange)
+    val paramHints = hints.filter(_.getKind == InlayHintKind.Parameter)
+    val labels = paramHints.map(labelOf)
+    assertTrue(
+      s"Should have a 'name' parameter hint, labels found: $labels",
+      labels.exists(_.contains("name"))
+    )
+    assertTrue(
+      s"Should have an 'age' parameter hint, labels found: $labels",
+      labels.exists(_.contains("age"))
+    )
+
+  def testParameterNameHintsOnCorrectLine(): Unit =
+    val uri = configureScalaFile(
+      """object Main:
+        |  def greet(name: String, age: Int): Unit = ()
+        |  greet("Alice", 30)
+        |""".stripMargin
+    )
+    val hints = getHints(uri, fullRange)
+    val paramHints = hints.filter(h => h.getKind == InlayHintKind.Parameter && h.getPosition.getLine == 2)
+    val labels = paramHints.map(labelOf)
+    assertTrue(
+      s"Parameter name hints should be on line 2 (the call site), labels: $labels",
+      labels.exists(_.contains("name")) || labels.exists(_.contains("age"))
+    )
 
   def testInferredReturnType(): Unit =
     val uri = configureScalaFile(
@@ -29,19 +114,11 @@ class InlayHintProviderIntegrationTest extends ScalaLspTestBase:
         |""".stripMargin
     )
     val hints = getHints(uri, fullRange)
-    // Type inference may produce different type representations
-    assertNotNull(hints)
-
-  def testExplicitTypeNoHint(): Unit =
-    val uri = configureScalaFile(
-      """object Main:
-        |  val x: Int = 42
-        |""".stripMargin
-    )
-    val hints = getHints(uri, fullRange)
-    val typeHintsOnX = hints.filter: h =>
-      h.getPosition.getLine == 1 && h.getKind == InlayHintKind.Type
-    assertNotNull(typeHintsOnX)
+    val typeHints = hints.filter(_.getKind == InlayHintKind.Type)
+    // The inferred return type hint must contain some non-empty text
+    typeHints.foreach: h =>
+      val label = labelOf(h)
+      assertTrue(s"Type hint label should not be empty, got: '$label'", label.nonEmpty)
 
   def testImplicitParameterHint(): Unit =
     val uri = configureScalaFile(
@@ -52,71 +129,19 @@ class InlayHintProviderIntegrationTest extends ScalaLspTestBase:
         |""".stripMargin
     )
     val hints = getHints(uri, fullRange)
-    assertNotNull("Should not crash with implicit parameters", hints)
-
-  def testImplicitParameterHintDoesNotCrash(): Unit =
-    val uri = configureScalaFile(
-      """object Main:
-        |  import scala.concurrent.ExecutionContext
-        |  implicit val ec: ExecutionContext = ExecutionContext.global
-        |  def run(implicit ec: ExecutionContext): Unit = ()
-        |  run
-        |""".stripMargin
-    )
-    val hints = getHints(uri, fullRange)
-    assertNotNull("Should not crash with ExecutionContext implicit", hints)
-
-  def testImplicitConversionHintDoesNotCrash(): Unit =
-    val uri = configureScalaFile(
-      """object Main:
-        |  implicit def intToString(x: Int): String = x.toString
-        |  val s: String = 42
-        |""".stripMargin
-    )
-    val hints = getHints(uri, fullRange)
-    assertNotNull("Should not crash with implicit conversion", hints)
-
-  def testTypeParameterHintDoesNotCrash(): Unit =
-    val uri = configureScalaFile(
-      """object Main:
-        |  def identity[A](a: A): A = a
-        |  val x = identity(42)
-        |""".stripMargin
-    )
-    val hints = getHints(uri, fullRange)
-    assertNotNull("Should not crash with type parameter inference", hints)
-
-  def testTypeParameterHintWithExplicitTypeArgs(): Unit =
-    val uri = configureScalaFile(
-      """object Main:
-        |  def identity[A](a: A): A = a
-        |  val x = identity[Int](42)
-        |""".stripMargin
-    )
-    val hints = getHints(uri, fullRange)
-    // When explicit type args are provided, no type parameter hint should appear
-    val typeParamHints = hints.filter: h =>
-      h.getKind == InlayHintKind.Type && h.getLabel.toString.contains("[")
-    // Should either be empty or not crash
-    assertNotNull(typeParamHints)
-
-  def testParameterNameHint(): Unit =
-    val uri = configureScalaFile(
-      """object Main:
-        |  def greet(name: String, times: Int) = name * times
-        |  val result = greet("hello", 3)
-        |""".stripMargin
-    )
-    val hints = getHints(uri, fullRange)
-    assertNotNull(hints)
+    // Implicit argument hints must be non-null; if present, must have non-empty labels
+    assertNotNull("hints list must not be null", hints)
+    hints.foreach: h =>
+      assertNotNull("Each hint must have a kind", h.getKind)
+      val label = labelOf(h)
+      assertTrue(s"Each hint label must be non-empty, got: '$label'", label.nonEmpty)
 
   def testEmptyFileNoHints(): Unit =
     val uri = configureScalaFile("// empty\n")
     val hints = getHints(uri, Range(Position(0, 0), Position(1, 0)))
-    assertTrue("Empty file should produce no hints", hints.isEmpty)
+    assertTrue("Empty file should produce no inlay hints", hints.isEmpty)
 
   def testResolveInlayHint(): Unit =
-    // Ensure we have a project context
     configureScalaFile("object Main {}\n")
     val provider = InlayHintProvider(projectManager)
     val hint = InlayHint()
@@ -125,21 +150,21 @@ class InlayHintProviderIntegrationTest extends ScalaLspTestBase:
     hint.setKind(InlayHintKind.Type)
     val resolved = provider.resolveInlayHint(hint)
     assertNotNull("resolveInlayHint should return the hint", resolved)
-    assertSame("resolved hint should be the same object", hint, resolved)
+    assertSame("resolveInlayHint should return the same object", hint, resolved)
+    assertEquals("resolveInlayHint should preserve the label", ": Int", labelOf(resolved))
 
-  def testMultipleImplicitClauses(): Unit =
+  def testTypeHintForInferredVar(): Unit =
     val uri = configureScalaFile(
       """object Main:
-        |  implicit val x: Int = 1
-        |  implicit val s: String = "hello"
-        |  def bar(implicit i: Int, s: String): String = s * i
-        |  val result = bar
+        |  var count = 0
         |""".stripMargin
     )
     val hints = getHints(uri, fullRange)
-    assertNotNull("Should not crash with multiple implicit params", hints)
+    val typeHints = hints.filter(_.getKind == InlayHintKind.Type)
+    val intHint = typeHints.find(h => labelOf(h).contains("Int"))
+    assertTrue("Should have a type hint containing 'Int' for inferred var", intHint.isDefined)
 
-  def testComplexExpressionDoesNotCrash(): Unit =
+  def testComplexExpressionProducesHints(): Unit =
     val uri = configureScalaFile(
       """object Main:
         |  val xs = List(1, 2, 3)
@@ -147,4 +172,9 @@ class InlayHintProviderIntegrationTest extends ScalaLspTestBase:
         |""".stripMargin
     )
     val hints = getHints(uri, fullRange)
-    assertNotNull("Should not crash on chained method calls", hints)
+    // Must not crash and hints must all have non-empty labels
+    assertNotNull("hints must not be null", hints)
+    hints.foreach: h =>
+      assertNotNull("hint kind must not be null", h.getKind)
+      val label = labelOf(h)
+      assertTrue(s"hint label must be non-empty, got: '$label'", label.nonEmpty)
