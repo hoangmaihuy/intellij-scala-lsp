@@ -7,6 +7,7 @@ import com.intellij.psi.{PsiDocumentManager, PsiFile, PsiManager}
 import org.jetbrains.scalalsP.ProjectRegistry
 
 import java.nio.file.Path
+import java.util.concurrent.{ScheduledExecutorService, ScheduledFuture, Executors, TimeUnit}
 
 /**
  * Manages the IntelliJ project lifecycle: open, index, close.
@@ -22,6 +23,15 @@ class IntellijProjectManager(registry: Option[ProjectRegistry] = None, daemonMod
 
   // Cache for virtual files that are not on the local filesystem (e.g., in-memory test files)
   private val virtualFileCache = scala.collection.concurrent.TrieMap[String, VirtualFile]()
+
+  // Delayed close: projects are kept warm for a grace period after close, in case client reconnects
+  private val closeScheduler: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor(r =>
+    val t = Thread(r, "project-close-scheduler")
+    t.setDaemon(true)
+    t
+  )
+  private val pendingCloses = scala.collection.concurrent.TrieMap[String, ScheduledFuture[?]]()
+  private val CloseDelayMinutes = 5L
 
   /** For testing only — allows injecting a project from test fixtures */
   private[scalalsP] def setProjectForTesting(p: Project): Unit =
@@ -49,6 +59,12 @@ class IntellijProjectManager(registry: Option[ProjectRegistry] = None, daemonMod
       .getOrElse(getProject)
 
   def openProject(projectPath: String): Unit =
+    // Cancel any pending delayed close for this path
+    val normalizedForCancel = Path.of(projectPath).toString
+    pendingCloses.remove(normalizedForCancel).foreach: future =>
+      future.cancel(false)
+      System.err.println(s"[ProjectManager] Cancelled pending close for: $projectPath")
+
     if project != null then
       // Check if this path is already tracked
       val normalizedPath = Path.of(projectPath).toString
@@ -134,18 +150,32 @@ class IntellijProjectManager(registry: Option[ProjectRegistry] = None, daemonMod
         virtualFileCache.clear()
         System.err.println("[ProjectManager] Session cleared (daemon mode)")
       else
-        ApplicationManager.getApplication.invokeAndWait: () =>
-          ProjectManager.getInstance().closeAndDispose(p)
+        // Delay actual disposal — client may reconnect shortly
+        val basePath = Option(p.getBasePath).getOrElse("")
+        System.err.println(s"[ProjectManager] Scheduling project close in ${CloseDelayMinutes}m: $basePath")
         project = null
         projects.clear()
-        System.err.println("[ProjectManager] Project closed")
+        val future = closeScheduler.schedule((() =>
+          System.err.println(s"[ProjectManager] Closing project after delay: $basePath")
+          ApplicationManager.getApplication.invokeAndWait: () =>
+            ProjectManager.getInstance().closeAndDispose(p)
+          pendingCloses.remove(basePath)
+          System.err.println("[ProjectManager] Project closed")
+        ): Runnable, CloseDelayMinutes, TimeUnit.MINUTES)
+        if basePath.nonEmpty then pendingCloses.put(basePath, future)
 
   def closeProject(folderPath: String): Unit =
     projects.remove(folderPath).foreach: p =>
-      if !daemonMode then
-        ApplicationManager.getApplication.invokeAndWait: () =>
-          ProjectManager.getInstance().closeAndDispose(p)
       if project == p then project = projects.values.headOption.orNull
+      if !daemonMode then
+        System.err.println(s"[ProjectManager] Scheduling folder close in ${CloseDelayMinutes}m: $folderPath")
+        val future = closeScheduler.schedule((() =>
+          System.err.println(s"[ProjectManager] Closing folder after delay: $folderPath")
+          ApplicationManager.getApplication.invokeAndWait: () =>
+            ProjectManager.getInstance().closeAndDispose(p)
+          pendingCloses.remove(folderPath)
+        ): Runnable, CloseDelayMinutes, TimeUnit.MINUTES)
+        pendingCloses.put(folderPath, future)
 
   def findVirtualFile(uri: String): Option[VirtualFile] =
     virtualFileCache.get(uri).orElse:
