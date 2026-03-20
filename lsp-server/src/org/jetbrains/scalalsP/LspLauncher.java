@@ -162,6 +162,7 @@ public final class LspLauncher {
         @Override public CompletableFuture<SemanticTokens> semanticTokensRange(SemanticTokensRangeParams params) { return delegate.semanticTokensRange(params); }
         @Override public CompletableFuture<java.util.List<? extends CodeLens>> codeLens(CodeLensParams params) { return delegate.codeLens(params); }
         @Override public CompletableFuture<CodeLens> resolveCodeLens(CodeLens params) { return delegate.resolveCodeLens(params); }
+        @Override public CompletableFuture<java.util.List<? extends TextEdit>> onTypeFormatting(DocumentOnTypeFormattingParams params) { return delegate.onTypeFormatting(params); }
         @Override public void didOpen(DidOpenTextDocumentParams params) { delegate.didOpen(params); }
         @Override public void didChange(DidChangeTextDocumentParams params) { delegate.didChange(params); }
         @Override public void didClose(DidCloseTextDocumentParams params) { delegate.didClose(params); }

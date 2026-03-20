@@ -33,6 +33,7 @@ class ScalaTextDocumentService(projectManager: IntellijProjectManager) extends T
   private val typeHierarchyProvider = TypeHierarchyProvider(projectManager)
   private val signatureHelpProvider = SignatureHelpProvider(projectManager)
   private val formattingProvider = FormattingProvider(projectManager)
+  private val onTypeFormattingProvider = OnTypeFormattingProvider(projectManager)
   private val documentLinkProvider = DocumentLinkProvider(projectManager)
   private val semanticTokensProvider = SemanticTokensProvider(projectManager)
   private val documentHighlightProvider = DocumentHighlightProvider(projectManager)
@@ -236,6 +237,14 @@ class ScalaTextDocumentService(projectManager: IntellijProjectManager) extends T
       formattingProvider.getRangeFormatting(
         params.getTextDocument.getUri,
         params.getRange
+      ).asJava
+
+  override def onTypeFormatting(params: DocumentOnTypeFormattingParams): CompletableFuture[util.List[? <: TextEdit]] =
+    CompletableFuture.supplyAsync: () =>
+      onTypeFormattingProvider.onTypeFormatting(
+        params.getTextDocument.getUri,
+        params.getPosition,
+        params.getCh
       ).asJava
 
   // --- Document Links ---

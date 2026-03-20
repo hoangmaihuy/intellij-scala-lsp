@@ -125,6 +125,11 @@ class ScalaLspServer(
       capabilities.setDocumentFormattingProvider(true)
       capabilities.setDocumentRangeFormattingProvider(true)
 
+      // On-type formatting: newline triggers indentation, quote triggers triple-quote close, brace triggers block reformat
+      val onTypeOptions = DocumentOnTypeFormattingOptions("\n")
+      onTypeOptions.setMoreTriggerCharacter(java.util.List.of("\"", "}"))
+      capabilities.setDocumentOnTypeFormattingProvider(onTypeOptions)
+
       // Workspace folders
       val workspaceFolderOptions = WorkspaceFoldersOptions()
       workspaceFolderOptions.setSupported(true)
