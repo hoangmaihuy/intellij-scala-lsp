@@ -3,7 +3,6 @@ package org.jetbrains.scalalsP
 import com.intellij.testFramework.LoggedErrorProcessor
 
 import java.io.{OutputStream, PrintStream}
-import java.util.concurrent.CountDownLatch
 import java.util.EnumSet
 
 /**
@@ -16,7 +15,7 @@ import java.util.EnumSet
 object ScalaLspMain:
 
   /** Latch that the initialize handler waits on before opening the project */
-  val bootstrapComplete = new CountDownLatch(1)
+  val bootstrapComplete = BootstrapState.bootstrapComplete
 
   def main(args: Array[String]): Unit =
     val projectPath = args.headOption.getOrElse("")

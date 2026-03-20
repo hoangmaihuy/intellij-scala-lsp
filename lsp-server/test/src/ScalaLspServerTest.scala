@@ -8,7 +8,7 @@ import java.util.concurrent.TimeUnit
 
 class ScalaLspServerTest:
   // Count down bootstrap latch — these unit tests don't go through ScalaLspMain
-  ScalaLspMain.bootstrapComplete.countDown()
+  BootstrapState.bootstrapComplete.countDown()
 
   @Test def testServerInitializesWithFileUriRoot(): Unit =
     val server = new ScalaLspServer("/tmp/fallback")

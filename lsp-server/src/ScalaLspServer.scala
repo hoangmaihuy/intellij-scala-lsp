@@ -36,7 +36,7 @@ class ScalaLspServer(projectPath: String, projectManager: IntellijProjectManager
       // Wait for IntelliJ platform bootstrap (started by ScalaLspMain in background)
       // In test mode, the latch is pre-counted down by ScalaLspTestBase.setUp()
       // Timeout after 5 minutes to avoid hanging forever if bootstrap fails
-      if !ScalaLspMain.bootstrapComplete.await(5, java.util.concurrent.TimeUnit.MINUTES) then
+      if !BootstrapState.bootstrapComplete.await(5, java.util.concurrent.TimeUnit.MINUTES) then
         throw RuntimeException("IntelliJ platform bootstrap timed out")
 
       // Open the project in headless IntelliJ
