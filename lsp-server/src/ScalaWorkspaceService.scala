@@ -175,4 +175,18 @@ class ScalaWorkspaceService(projectManager: IntellijProjectManager) extends Work
 
   override def didChangeConfiguration(params: DidChangeConfigurationParams): Unit = ()
 
-  override def didChangeWatchedFiles(params: DidChangeWatchedFilesParams): Unit = ()
+  override def didChangeWatchedFiles(params: DidChangeWatchedFilesParams): Unit =
+    if params.getChanges == null || params.getChanges.isEmpty then return
+    // Collect changed virtual files and trigger async VFS refresh so IntelliJ picks up external changes
+    val changedFiles = params.getChanges.asScala.flatMap: change =>
+      val uri = change.getUri
+      projectManager.findVirtualFile(uri)
+    .toArray
+
+    if changedFiles.nonEmpty then
+      com.intellij.openapi.vfs.VfsUtil.markDirtyAndRefresh(
+        /* async= */ true,
+        /* recursive= */ false,
+        /* reloadChildren= */ false,
+        changedFiles*
+      )
