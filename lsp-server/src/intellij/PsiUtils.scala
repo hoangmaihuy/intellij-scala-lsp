@@ -1,11 +1,13 @@
 package org.jetbrains.scalalsP.intellij
 
 import com.intellij.openapi.editor.Document
+import com.intellij.openapi.roots.{OrderRootType, ProjectFileIndex}
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.{PsiElement, PsiFile, PsiNameIdentifierOwner, PsiNamedElement}
 import org.eclipse.lsp4j.{Location, Position, Range, SymbolKind}
 
 import java.nio.file.{Files, Path}
+import scala.jdk.CollectionConverters.*
 
 /**
  * Utilities for converting between IntelliJ's offset-based positions
@@ -37,8 +39,8 @@ object PsiUtils:
   private val CACHE_DIR: Path = Path.of(System.getProperty("user.home"), ".cache", "intellij-scala-lsp", "sources")
 
   /** Convert a PsiElement to an LSP Location (file URI + range).
-    * For JAR-internal files, extracts the decompiled/source text to a cache directory
-    * and returns a file:// URI so clients can open it directly. */
+    * For JAR-internal files, tries to find the original source from source JARs first,
+    * falls back to decompiled text. Caches to a file:// URI so all clients can open it. */
   def elementToLocation(element: PsiElement): Option[Location] =
     for
       file <- Option(element.getContainingFile)
@@ -50,14 +52,14 @@ object PsiUtils:
       val range = elementToRange(document, element)
       val vfPath = vf.getPath
       if vfPath.contains("!/") then
-        // JAR-internal file — cache the decompiled text and return file:// URI
         val cachedUri = cacheJarEntry(file, vf)
         Location(cachedUri, range)
       else
         Location(vfToUri(vf), range)
 
-  /** Extract a JAR-internal file's content to the cache directory.
-    * Uses IntelliJ's decompiled PSI text (which is already available for .class files). */
+  /** Resolve a JAR-internal file to a cached file:// URI.
+    * First tries to find the original source from attached source JARs (like IntelliJ does),
+    * then falls back to IntelliJ's decompiled PSI text. */
   private[intellij] def cacheJarEntry(psiFile: PsiFile, vf: VirtualFile): String =
     try
       val vfPath = vf.getPath
@@ -65,28 +67,80 @@ object PsiUtils:
       val jarName = Path.of(vfPath.substring(0, separatorIndex)).getFileName.toString
       val entryPath = vfPath.substring(separatorIndex + 2)
 
-      // Create a stable cache path: ~/.cache/intellij-scala-lsp/sources/<jar-name>/<entry-path>
-      // Map .class to .scala for decompiled Scala, .java for Java
-      val cachedEntryPath = if entryPath.endsWith(".class") then
-        entryPath.replaceAll("\\.class$", ".scala")
-      else entryPath
+      // Determine cache path — preserve original extension for source files,
+      // map .class to .scala/.java for decompiled files
+      val (cachedEntryPath, isClassFile) = if entryPath.endsWith(".class") then
+        (entryPath.replaceAll("\\.class$", ".scala"), true)
+      else
+        (entryPath, false)
       val cachePath = CACHE_DIR.resolve(jarName).resolve(cachedEntryPath)
 
       if !Files.exists(cachePath) then
         Files.createDirectories(cachePath.getParent)
-        // Use PSI text — IntelliJ already decompiles .class files into readable source
-        val text = psiFile.getText
-        if text != null && text.nonEmpty then
-          Files.writeString(cachePath, text)
-        else
-          Files.writeString(cachePath, s"// Could not decompile: $vfPath")
+
+        // Try 1: Find original source from attached source JARs
+        val sourceText = if isClassFile then findSourceFromSourceJar(vf, entryPath) else None
+
+        val text = sourceText.getOrElse:
+          // Try 2: Use PSI text — IntelliJ decompiles .class files into readable source
+          val psiText = psiFile.getText
+          if psiText != null && psiText.nonEmpty then psiText
+          else s"// Could not resolve source: $vfPath"
+
+        Files.writeString(cachePath, text)
 
       s"file://${cachePath.toAbsolutePath}"
     catch
       case e: Exception =>
         System.err.println(s"[PsiUtils] Failed to cache JAR entry: ${e.getMessage}")
-        // Fallback to jar: URI
         vfToUri(vf)
+
+  /** Try to find the original source file from source JARs attached to the library.
+    * Uses IntelliJ's ProjectFileIndex to find the library, then searches its source roots. */
+  private def findSourceFromSourceJar(classVf: VirtualFile, entryPath: String): Option[String] =
+    try
+      // Get the class root (the JAR containing this .class file)
+      val jarPath = classVf.getPath.substring(0, classVf.getPath.indexOf("!/"))
+      val classRoot = com.intellij.openapi.vfs.VirtualFileManager.getInstance()
+        .findFileByUrl(s"jar://$jarPath!/")
+
+      if classRoot == null then return None
+
+      // Convert .class entry path to potential source paths
+      // e.g., com/foo/Bar.class -> com/foo/Bar.scala, com/foo/Bar.java
+      // For inner classes: com/foo/Bar$Inner.class -> com/foo/Bar.scala
+      val basePath = entryPath.replaceAll("\\$[^/]*\\.class$", "").replaceAll("\\.class$", "")
+      val sourceNames = Seq(s"$basePath.scala", s"$basePath.java")
+
+      // Find which library owns this class file via ProjectFileIndex
+      val project = com.intellij.openapi.project.ProjectManager.getInstance().getOpenProjects
+      if project.isEmpty then return None
+
+      val fileIndex = ProjectFileIndex.getInstance(project.head)
+      val orderEntries = fileIndex.getOrderEntriesForFile(classVf)
+
+      // Search source roots of each library order entry
+      orderEntries.asScala.flatMap:
+        case libEntry: com.intellij.openapi.roots.LibraryOrderEntry =>
+          Option(libEntry.getLibrary).flatMap: lib =>
+            val sourceRoots = lib.getFiles(OrderRootType.SOURCES)
+            sourceRoots.flatMap: sourceRoot =>
+              sourceNames.flatMap: sourceName =>
+                Option(sourceRoot.findFileByRelativePath(sourceName))
+                  .filter(_.isValid)
+                  .map: sourceFile =>
+                    val doc = com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().getDocument(sourceFile)
+                    if doc != null then doc.getText
+                    else
+                      // Read directly from VFS
+                      new String(sourceFile.contentsToByteArray(), sourceFile.getCharset)
+            .headOption
+        case _ => None
+      .headOption
+    catch
+      case e: Exception =>
+        System.err.println(s"[PsiUtils] Source JAR lookup failed: ${e.getMessage}")
+        None
 
   /** Get the name range for a named element (just the identifier, not the whole declaration) */
   def nameElementToRange(document: Document, element: PsiElement): Range =
