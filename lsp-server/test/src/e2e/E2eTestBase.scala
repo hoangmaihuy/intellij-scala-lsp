@@ -3,7 +3,7 @@ package org.jetbrains.scalalsP.e2e
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.testFramework.LoggedErrorProcessor
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
-import org.jetbrains.scalalsP.{BootstrapState, ScalaLspServer}
+import org.jetbrains.scalalsP.{BootstrapState, ScalaLspMain, ScalaLspServer}
 import org.jetbrains.scalalsP.intellij.{IntellijProjectManager, PsiUtils}
 
 import java.nio.file.{Files, Path}
@@ -30,6 +30,7 @@ abstract class E2eTestBase extends BasePlatformTestCase:
       override def processError(category: String, message: String, details: Array[String], t: Throwable): java.util.Set[LoggedErrorProcessor.Action] =
         EnumSet.of(LoggedErrorProcessor.Action.STDERR)
     )
+    ScalaLspMain.notificationsEnabled = false
     BootstrapState.bootstrapComplete.countDown()
     projectManager = IntellijProjectManager()
     projectManager.setProjectForTesting(getProject)

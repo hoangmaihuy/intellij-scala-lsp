@@ -3,6 +3,7 @@ package org.jetbrains.scalalsP.integration
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.fileTypes.FileTypeManager
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
+import org.jetbrains.scalalsP.ScalaLspMain
 import org.eclipse.lsp4j.Position
 import org.jetbrains.scalalsP.BootstrapState
 import org.jetbrains.scalalsP.intellij.{IntellijProjectManager, PsiUtils}
@@ -18,6 +19,7 @@ abstract class ScalaLspTestBase extends BasePlatformTestCase:
   override def setUp(): Unit =
     super.setUp()
     // In tests, IntelliJ is already bootstrapped by BasePlatformTestCase
+    ScalaLspMain.notificationsEnabled = false
     BootstrapState.bootstrapComplete.countDown()
     projectManager = IntellijProjectManager()
     projectManager.setProjectForTesting(getProject)
