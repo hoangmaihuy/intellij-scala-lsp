@@ -96,3 +96,20 @@ class TypeHierarchyProviderIntegrationTest extends ScalaLspTestBase:
       if supers.nonEmpty then
         assertTrue("Should find Base as supertype",
           supers.exists(_.getName == "Base"))
+
+  def testCaseClassFiltersSyntheticParents(): Unit =
+    val uri = configureScalaFile(
+      """trait Named:
+        |  def name: String
+        |
+        |case class Person(name: String) extends Named
+        |""".stripMargin
+    )
+    val items = provider.prepare(uri, positionAt(3, 10))
+    if items.nonEmpty then
+      val supers = provider.supertypes(items.head)
+      val superNames = supers.map(_.getName).toSet
+      // Should include Named but not Product/Serializable synthetic parents
+      if supers.nonEmpty then
+        assertFalse("Should not include Product as supertype", superNames.contains("Product"))
+        assertFalse("Should not include Serializable as supertype", superNames.contains("Serializable"))
