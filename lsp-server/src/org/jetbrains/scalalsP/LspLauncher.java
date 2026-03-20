@@ -181,6 +181,7 @@ public final class LspLauncher {
 
         @Override public CompletableFuture<Object> executeCommand(ExecuteCommandParams params) { return delegate.executeCommand(params); }
         @Override public CompletableFuture<Either<java.util.List<? extends SymbolInformation>, java.util.List<? extends WorkspaceSymbol>>> symbol(WorkspaceSymbolParams params) { return delegate.symbol(params); }
+        @Override public CompletableFuture<WorkspaceEdit> willRenameFiles(RenameFilesParams params) { return delegate.willRenameFiles(params); }
         @Override public void didChangeConfiguration(DidChangeConfigurationParams params) { delegate.didChangeConfiguration(params); }
         @Override public void didChangeWatchedFiles(DidChangeWatchedFilesParams params) { delegate.didChangeWatchedFiles(params); }
     }

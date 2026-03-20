@@ -7,6 +7,7 @@ import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.psi.codeStyle.CodeStyleManager
 import org.eclipse.lsp4j.*
 import org.eclipse.lsp4j.services.{LanguageClient, WorkspaceService}
+import org.jetbrains.plugins.scala.lang.psi.api.toplevel.typedef.ScTypeDefinition
 import org.jetbrains.scalalsP.intellij.{IntellijProjectManager, PsiUtils, SymbolProvider}
 
 import java.util
@@ -124,6 +125,53 @@ class ScalaWorkspaceService(projectManager: IntellijProjectManager) extends Work
         val path = if uri.startsWith("file://") then java.net.URI.create(uri).getPath else uri
         System.err.println(s"[WorkspaceService] Removing workspace folder: $path")
         projectManager.closeProject(path)
+
+  override def willRenameFiles(params: RenameFilesParams): CompletableFuture[WorkspaceEdit] =
+    CompletableFuture.supplyAsync: () =>
+      try
+        val allDocChanges = new java.util.ArrayList[org.eclipse.lsp4j.jsonrpc.messages.Either[TextDocumentEdit, ResourceOperation]]()
+
+        params.getFiles.asScala.foreach: fileRename =>
+          val oldUri = fileRename.getOldUri
+          val newUri = fileRename.getNewUri
+
+          // Only process Scala file renames
+          if oldUri.endsWith(".scala") then
+            val oldFileName = oldUri.substring(oldUri.lastIndexOf('/') + 1).stripSuffix(".scala")
+            val newFileName = newUri.substring(newUri.lastIndexOf('/') + 1).stripSuffix(".scala")
+
+            // Find top-level type definitions matching old filename and generate rename edits
+            val edits = projectManager.smartReadAction: () =>
+              (for
+                psiFile <- projectManager.findPsiFile(oldUri)
+                vf <- projectManager.findVirtualFile(oldUri)
+                document <- Option(FileDocumentManager.getInstance().getDocument(vf))
+              yield
+                import com.intellij.psi.util.PsiTreeUtil
+                val typeDefs = PsiTreeUtil.findChildrenOfType(psiFile, classOf[ScTypeDefinition]).asScala
+                typeDefs
+                  .filter(td => td.getName == oldFileName && Option(td.getParent).exists(p =>
+                    p.isInstanceOf[com.intellij.psi.PsiFile] ||
+                    p.isInstanceOf[org.jetbrains.plugins.scala.lang.psi.api.toplevel.ScPackaging]))
+                  .flatMap: td =>
+                    Option(td.getNameIdentifier).map: nameId =>
+                      val start = PsiUtils.offsetToPosition(document, nameId.getTextRange.getStartOffset)
+                      val end = PsiUtils.offsetToPosition(document, nameId.getTextRange.getEndOffset)
+                      TextEdit(Range(start, end), newFileName)
+                  .toSeq
+              ).getOrElse(Seq.empty)
+
+            if edits.nonEmpty then
+              val versionedId = VersionedTextDocumentIdentifier(oldUri, null)
+              val docEdit = TextDocumentEdit(versionedId, edits.asJava)
+              allDocChanges.add(org.eclipse.lsp4j.jsonrpc.messages.Either.forLeft(docEdit))
+
+        if allDocChanges.isEmpty then WorkspaceEdit()
+        else WorkspaceEdit(allDocChanges)
+      catch
+        case e: Exception =>
+          System.err.println(s"[WorkspaceService] willRenameFiles error: ${e.getMessage}")
+          WorkspaceEdit()
 
   override def didChangeConfiguration(params: DidChangeConfigurationParams): Unit = ()
 

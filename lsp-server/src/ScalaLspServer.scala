@@ -130,11 +130,17 @@ class ScalaLspServer(
       onTypeOptions.setMoreTriggerCharacter(java.util.List.of("\"", "}"))
       capabilities.setDocumentOnTypeFormattingProvider(onTypeOptions)
 
-      // Workspace folders
+      // Workspace folders + file operations (willRenameFiles)
       val workspaceFolderOptions = WorkspaceFoldersOptions()
       workspaceFolderOptions.setSupported(true)
       workspaceFolderOptions.setChangeNotifications(true)
+      val willRenamePattern = FileOperationPattern("**/*.scala")
+      val willRenameFilter = FileOperationFilter(willRenamePattern)
+      val willRenameOptions = FileOperationOptions(java.util.List.of(willRenameFilter))
+      val fileOpsCapabilities = FileOperationsServerCapabilities()
+      fileOpsCapabilities.setWillRename(willRenameOptions)
       val workspaceCapabilities = WorkspaceServerCapabilities(workspaceFolderOptions)
+      workspaceCapabilities.setFileOperations(fileOpsCapabilities)
       capabilities.setWorkspace(workspaceCapabilities)
 
       // Open initial workspace folders (beyond the root)
