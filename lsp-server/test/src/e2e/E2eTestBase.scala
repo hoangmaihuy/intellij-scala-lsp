@@ -1,6 +1,7 @@
 package org.jetbrains.scalalsP.e2e
 
 import com.intellij.openapi.fileEditor.FileDocumentManager
+import com.intellij.openapi.fileTypes.FileTypeManager
 import com.intellij.testFramework.LoggedErrorProcessor
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import org.jetbrains.scalalsP.{BootstrapState, ScalaLspMain, ScalaLspServer}
@@ -79,3 +80,15 @@ abstract class E2eTestBase extends BasePlatformTestCase:
     * which conflicts with the test framework's document change tracking. */
   protected def openFixture(relativePath: String): String =
     fixtureUri(relativePath)
+
+  /** Configure a Scala source string as the active editor file and register it with both
+    * the projectManager and the LSP client.  Unlike `openFixture`, this method calls
+    * `myFixture.configureByText` which creates a real IntelliJ editor for the file,
+    * enabling intention-action discovery in CodeActionProvider. */
+  protected def configureActiveScalaFile(code: String): String =
+    val scalaFileType = FileTypeManager.getInstance().getFileTypeByExtension("scala")
+    myFixture.configureByText(scalaFileType, code)
+    val vf = myFixture.getFile.getVirtualFile
+    val uri = PsiUtils.vfToUri(vf)
+    projectManager.registerVirtualFile(uri, vf)
+    uri

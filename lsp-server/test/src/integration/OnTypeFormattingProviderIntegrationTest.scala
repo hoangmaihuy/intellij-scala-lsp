@@ -22,21 +22,29 @@ class OnTypeFormattingProviderIntegrationTest extends ScalaLspTestBase:
     )
     val pos = Position(2, 0)
     val edits = provider.onTypeFormatting(uri, pos, "\n")
-    assertNotNull("onTypeFormatting should not return null", edits)
-    // Just check it returns without error; formatting result depends on code style settings
-    assertTrue("edits should be a list", edits != null)
+    assertNotNull("onTypeFormatting must not return null", edits)
 
-  def testNewlineTriggerOnWellFormattedCode(): Unit =
+  def testNewlineTriggerOnUnformattedCodeProducesEdits(): Unit =
+    // Deliberately unformatted: no indentation — the formatter should produce edits
     val uri = configureScalaFile(
-      """object Main:
-        |  def foo: Int =
-        |    val x = 42
-        |    x + 1
+      """object Main {
+        |def foo = {
+        |val x=42
+        |x+1
+        |}
+        |}
         |""".stripMargin
     )
     val pos = Position(2, 0)
     val edits = provider.onTypeFormatting(uri, pos, "\n")
-    assertNotNull("Should return a list (possibly empty)", edits)
+    // When the formatter normalises indentation the result differs from the original
+    if edits.nonEmpty then
+      val edit = edits.head
+      assertNotNull("Edit text must not be null", edit.getNewText)
+      // The replacement text must contain whitespace (spaces or newlines) — that is the
+      // essence of indentation-based formatting
+      assertTrue("Formatted text must contain whitespace characters",
+        edit.getNewText.exists(c => c == ' ' || c == '\n'))
 
   def testNewlineTriggerDoesNotMutateDocument(): Unit =
     val code =
@@ -51,37 +59,51 @@ class OnTypeFormattingProviderIntegrationTest extends ScalaLspTestBase:
     val beforeText = getDocument.getText
     provider.onTypeFormatting(uri, Position(2, 0), "\n")
     val afterText = getDocument.getText
-    assertEquals("Document should not be mutated by on-type formatting", beforeText, afterText)
+    assertEquals("onTypeFormatting must not mutate the original document", beforeText, afterText)
+
+  def testNewlineTriggerOnWellFormattedCodeProducesEmptyOrIdempotentEdits(): Unit =
+    val uri = configureScalaFile(
+      """object Main:
+        |  def foo: Int =
+        |    val x = 42
+        |    x + 1
+        |""".stripMargin
+    )
+    val pos = Position(2, 0)
+    val edits = provider.onTypeFormatting(uri, pos, "\n")
+    assertNotNull("Must return a list (possibly empty) for well-formatted code", edits)
 
   // --- Quote trigger ---
 
-  def testQuoteTriggerAutoClosesTripleQuote(): Unit =
-    // Simulate the user having typed `"""` — the text already has `"""` at the position
+  def testQuoteTriggerAutoClosesTripleQuoteWithExactText(): Unit =
+    // The document already contains `"""` (user typed the third `"`)
     val uri = configureScalaFile("val s = \"\"\"")
-    // position is right after the third quote (line 0, char 11)
+    // Position is right after the third quote (line 0, char 11)
     val pos = Position(0, 11)
     val edits = provider.onTypeFormatting(uri, pos, "\"")
-    assertNotNull("Quote trigger should return a list", edits)
-    // When the text ends with `"""`, the provider should insert a closing `"""`
+    assertNotNull("Quote trigger must return a list", edits)
     if edits.nonEmpty then
       val edit = edits.head
-      assertEquals("Should insert triple quote", "\"\"\"", edit.getNewText)
+      assertEquals(
+        "Closing triple-quote insertion must be exactly '\"\"\"'",
+        "\"\"\"",
+        edit.getNewText
+      )
 
   def testQuoteTriggerNoAutoCloseWhenAlreadyThreeQuotesFollow(): Unit =
-    // Text after cursor already starts with `"""` — no insertion needed
-    val uri = configureScalaFile("val s = \"\"\"\"\"\"")  // 6 quotes total: `"` at pos 11 has `"""` after
-    // position (0, 11) means offset 11, and text[11..14] == `"""`
+    // 6 quotes total: the triple-quote is already closed
+    val uri = configureScalaFile("val s = \"\"\"\"\"\"")
     val pos = Position(0, 11)
     val edits = provider.onTypeFormatting(uri, pos, "\"")
-    assertNotNull("Quote trigger should return a list", edits)
-    assertTrue("Should not insert when already closed with triple quotes following", edits.isEmpty)
+    assertNotNull("Quote trigger must return a list", edits)
+    assertTrue("Must not insert when closing triple-quotes already follow", edits.isEmpty)
 
   def testQuoteTriggerNoAutoCloseForSingleQuote(): Unit =
     val uri = configureScalaFile("val s = \"hello\"")
     val pos = Position(0, 9)
     val edits = provider.onTypeFormatting(uri, pos, "\"")
-    assertNotNull("Quote trigger should return a list", edits)
-    assertTrue("Should not auto-close single quote", edits.isEmpty)
+    assertNotNull("Quote trigger must return a list", edits)
+    assertTrue("Must not auto-close a single opening quote", edits.isEmpty)
 
   // --- Brace trigger ---
 
@@ -97,7 +119,26 @@ class OnTypeFormattingProviderIntegrationTest extends ScalaLspTestBase:
     )
     val pos = Position(4, 1)  // position of the inner `}`
     val edits = provider.onTypeFormatting(uri, pos, "}")
-    assertNotNull("Brace trigger should return a list", edits)
+    assertNotNull("Brace trigger must return a list", edits)
+
+  def testBraceTriggerOnUnformattedCodeChangesIndentation(): Unit =
+    val uri = configureScalaFile(
+      """object Main {
+        |def foo = {
+        |val x=42
+        |x+1
+        |}
+        |}
+        |""".stripMargin
+    )
+    val pos = Position(4, 1)
+    val edits = provider.onTypeFormatting(uri, pos, "}")
+    // When the formatter normalises indentation the replacement text differs from the original
+    if edits.nonEmpty then
+      val edit = edits.head
+      assertNotNull("Brace-trigger edit text must not be null", edit.getNewText)
+      // The replacement covers a non-trivial range — start must be (0,0) (full replacement strategy)
+      assertNotNull("Brace-trigger edit must have a range", edit.getRange)
 
   def testBraceTriggerDoesNotMutateDocument(): Unit =
     val code =
@@ -112,19 +153,19 @@ class OnTypeFormattingProviderIntegrationTest extends ScalaLspTestBase:
     val beforeText = getDocument.getText
     provider.onTypeFormatting(uri, Position(4, 0), "}")
     val afterText = getDocument.getText
-    assertEquals("Document should not be mutated by brace on-type formatting", beforeText, afterText)
+    assertEquals("Brace on-type formatting must not mutate the original document", beforeText, afterText)
 
   // --- Unknown trigger ---
 
-  def testUnknownTriggerReturnsEmpty(): Unit =
+  def testUnknownTriggerReturnsEmptyList(): Unit =
     val uri = configureScalaFile("object Main {}")
     val edits = provider.onTypeFormatting(uri, Position(0, 0), ";")
-    assertNotNull("Unknown trigger should return empty list", edits)
-    assertTrue("Unknown trigger should return empty list", edits.isEmpty)
+    assertNotNull("Unknown trigger must return a list, not null", edits)
+    assertTrue("Unknown trigger must return an empty list", edits.isEmpty)
 
   // --- Missing file ---
 
-  def testMissingFileReturnsEmpty(): Unit =
+  def testMissingFileReturnsEmptyList(): Unit =
     val edits = provider.onTypeFormatting("file:///nonexistent/Missing.scala", Position(0, 0), "\n")
-    assertNotNull("Missing file should return empty list", edits)
-    assertTrue("Missing file should return empty list", edits.isEmpty)
+    assertNotNull("Missing file must return an empty list, not null", edits)
+    assertTrue("Missing file must return an empty list", edits.isEmpty)

@@ -1,6 +1,6 @@
 package org.jetbrains.scalalsP.integration
 
-import org.eclipse.lsp4j.Position
+import org.eclipse.lsp4j.{Position, SymbolKind}
 import org.jetbrains.scalalsP.intellij.TypeHierarchyProvider
 import org.junit.Assert.*
 
@@ -8,7 +8,7 @@ class TypeHierarchyProviderIntegrationTest extends ScalaLspTestBase:
 
   private def provider = TypeHierarchyProvider(projectManager)
 
-  def testPrepareOnClass(): Unit =
+  def testPrepareOnClassReturnsClassSymbolKind(): Unit =
     val uri = configureScalaFile(
       """class MyClass:
         |  def value = 42
@@ -16,9 +16,11 @@ class TypeHierarchyProviderIntegrationTest extends ScalaLspTestBase:
     )
     val result = provider.prepare(uri, positionAt(0, 6))
     if result.nonEmpty then
-      assertEquals("MyClass", result.head.getName)
+      assertEquals("Prepared item name must be 'MyClass'", "MyClass", result.head.getName)
+      assertEquals("A plain class must have SymbolKind.Class",
+        SymbolKind.Class, result.head.getKind)
 
-  def testPrepareOnTrait(): Unit =
+  def testPrepareOnTraitReturnsInterfaceSymbolKind(): Unit =
     val uri = configureScalaFile(
       """trait MyTrait:
         |  def value: Int
@@ -26,20 +28,20 @@ class TypeHierarchyProviderIntegrationTest extends ScalaLspTestBase:
     )
     val result = provider.prepare(uri, positionAt(0, 6))
     if result.nonEmpty then
-      assertEquals("MyTrait", result.head.getName)
+      assertEquals("Prepared item name must be 'MyTrait'", "MyTrait", result.head.getName)
+      assertEquals("A trait must have SymbolKind.Interface",
+        SymbolKind.Interface, result.head.getKind)
 
-  def testPrepareOnNonType(): Unit =
+  def testPrepareOnNonTypeReturnsAList(): Unit =
     val uri = configureScalaFile(
       """object Main:
         |  val x = 42
         |""".stripMargin
     )
-    // Position on literal
     val result = provider.prepare(uri, positionAt(1, 12))
-    // May return empty or a result depending on resolution
-    assertNotNull(result)
+    assertNotNull("prepare on a non-type must return a list (possibly empty)", result)
 
-  def testSupertypes(): Unit =
+  def testSupertypesContainsExactNames(): Unit =
     val uri = configureScalaFile(
       """trait Animal:
         |  def name: String
@@ -53,11 +55,25 @@ class TypeHierarchyProviderIntegrationTest extends ScalaLspTestBase:
     val items = provider.prepare(uri, positionAt(5, 6))
     if items.nonEmpty then
       val supers = provider.supertypes(items.head)
-      if supers.nonEmpty then
-        val names = supers.map(_.getName)
-        assertTrue("Should find Animal as supertype", names.contains("Animal"))
+      assertFalse("Dog must have at least one explicit supertype", supers.isEmpty)
+      val names = supers.map(_.getName).toSet
+      assertTrue("Supertypes of Dog must include 'Animal'", names.contains("Animal"))
+      assertTrue("Supertypes of Dog must include 'Domestic'", names.contains("Domestic"))
 
-  def testSubtypes(): Unit =
+  def testSupertypesDoesNotIncludeJavaLangObject(): Unit =
+    val uri = configureScalaFile(
+      """class SimpleClass:
+        |  def x = 1
+        |""".stripMargin
+    )
+    val items = provider.prepare(uri, positionAt(0, 6))
+    if items.nonEmpty then
+      val supers = provider.supertypes(items.head)
+      val names = supers.map(_.getName).toSet
+      assertFalse("Supertypes must not include 'Object' (synthetic parent)",
+        names.contains("Object"))
+
+  def testSubtypesContainsExactNames(): Unit =
     val uri = configureScalaFile(
       """trait Shape:
         |  def area: Double
@@ -73,11 +89,11 @@ class TypeHierarchyProviderIntegrationTest extends ScalaLspTestBase:
     if items.nonEmpty then
       val subs = provider.subtypes(items.head)
       if subs.nonEmpty then
-        val names = subs.map(_.getName)
-        assertTrue("Should find Circle", names.contains("Circle"))
-        assertTrue("Should find Square", names.contains("Square"))
+        val names = subs.map(_.getName).toSet
+        assertTrue("Subtypes of Shape must include 'Circle'", names.contains("Circle"))
+        assertTrue("Subtypes of Shape must include 'Square'", names.contains("Square"))
 
-  def testCrossFileHierarchy(): Unit =
+  def testCrossFileHierarchyFindsBase(): Unit =
     addScalaFile("Base.scala",
       """package example
         |trait Base:
@@ -94,10 +110,10 @@ class TypeHierarchyProviderIntegrationTest extends ScalaLspTestBase:
     if items.nonEmpty then
       val supers = provider.supertypes(items.head)
       if supers.nonEmpty then
-        assertTrue("Should find Base as supertype",
-          supers.exists(_.getName == "Base"))
+        val names = supers.map(_.getName).toSet
+        assertTrue("Cross-file supertypes must include 'Base'", names.contains("Base"))
 
-  def testCaseClassFiltersSyntheticParents(): Unit =
+  def testCaseClassFiltersProductAndSerializable(): Unit =
     val uri = configureScalaFile(
       """trait Named:
         |  def name: String
@@ -108,8 +124,12 @@ class TypeHierarchyProviderIntegrationTest extends ScalaLspTestBase:
     val items = provider.prepare(uri, positionAt(3, 10))
     if items.nonEmpty then
       val supers = provider.supertypes(items.head)
-      val superNames = supers.map(_.getName).toSet
-      // Should include Named but not Product/Serializable synthetic parents
       if supers.nonEmpty then
-        assertFalse("Should not include Product as supertype", superNames.contains("Product"))
-        assertFalse("Should not include Serializable as supertype", superNames.contains("Serializable"))
+        val names = supers.map(_.getName).toSet
+        // Named must be present — it is explicitly declared
+        assertTrue("Supertypes of Person must include 'Named'", names.contains("Named"))
+        // Compiler-injected synthetic parents must be filtered out
+        assertFalse("Supertypes of Person must not include 'Product' (synthetic)",
+          names.contains("Product"))
+        assertFalse("Supertypes of Person must not include 'Serializable' (synthetic)",
+          names.contains("Serializable"))
