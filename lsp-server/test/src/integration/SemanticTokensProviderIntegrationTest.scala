@@ -111,3 +111,79 @@ class SemanticTokensProviderIntegrationTest extends ScalaLspTestBase:
     assertTrue("Legend should include 'keyword'", legend.getTokenTypes.contains("keyword"))
     assertTrue("Legend should include 'class'", legend.getTokenTypes.contains("class"))
     assertTrue("Legend should include 'method'", legend.getTokenTypes.contains("method"))
+
+  def testOperatorTokenType(): Unit =
+    val uri = configureScalaFile(
+      """object Ops:
+        |  case class Vec(x: Int, y: Int):
+        |    def +(other: Vec): Vec = Vec(x + other.x, y + other.y)
+        |  val a = Vec(1, 2)
+        |  val b = Vec(3, 4)
+        |  val c = a + b
+        |""".stripMargin
+    )
+    myFixture.doHighlighting()
+    val result = provider.getSemanticTokensFull(uri)
+    val tokens = decodeTokens(result.getData)
+
+    val tokenTypeNames = SemanticTokensProvider.tokenTypes
+
+    // Print all tokens for debugging
+    for (line, char, len, tt, mods) <- tokens do
+      System.err.println(s"  token: line=$line char=$char len=$len type=${if tt < tokenTypeNames.size then tokenTypeNames.get(tt) else tt.toString}($tt) mods=$mods")
+
+    // The `+` operator call on line 5 (val c = a + b) should have token type 14 (operator)
+    val operatorTokens = tokens.filter(_._4 == 14)
+    assertTrue(
+      s"Should have at least one operator token (type 14), all tokens: $tokens",
+      operatorTokens.nonEmpty
+    )
+
+  def testDeprecatedModifier(): Unit =
+    val uri = configureScalaFile(
+      """object DeprecatedTest:
+        |  @deprecated("use newFoo instead", "1.0")
+        |  def oldFoo(): Int = 42
+        |
+        |  val result = oldFoo()
+        |""".stripMargin
+    )
+    myFixture.doHighlighting()
+    val result = provider.getSemanticTokensFull(uri)
+    val tokens = decodeTokens(result.getData)
+
+    val tokenTypeNames = SemanticTokensProvider.tokenTypes
+
+    // Print all tokens for debugging
+    for (line, char, len, tt, mods) <- tokens do
+      System.err.println(s"  token: line=$line char=$char len=$len type=${if tt < tokenTypeNames.size then tokenTypeNames.get(tt) else tt.toString}($tt) mods=$mods")
+
+    // The call to oldFoo() on line 4 should have the deprecated modifier (bit 7 = 128)
+    val tokensWithDeprecated = tokens.filter((_, _, _, _, mods) => (mods & 128) != 0)
+    assertTrue(
+      s"Should have at least one token with deprecated modifier (bit 7), all tokens: $tokens",
+      tokensWithDeprecated.nonEmpty
+    )
+
+  def testStringEscapeSequences(): Unit =
+    val uri = configureScalaFile(
+      """object EscapeTest:
+        |  val s = "hello\nworld"
+        |""".stripMargin
+    )
+    myFixture.doHighlighting()
+    val result = provider.getSemanticTokensFull(uri)
+    val tokens = decodeTokens(result.getData)
+
+    val tokenTypeNames = SemanticTokensProvider.tokenTypes
+
+    // Print all tokens for debugging
+    for (line, char, len, tt, mods) <- tokens do
+      System.err.println(s"  token: line=$line char=$char len=$len type=${if tt < tokenTypeNames.size then tokenTypeNames.get(tt) else tt.toString}($tt) mods=$mods")
+
+    // There should be regexp tokens (type 15) for the escape sequence \n
+    val regexpTokens = tokens.filter(_._4 == 15)
+    assertTrue(
+      s"Should have at least one regexp/escape token (type 15) for \\n in string, all tokens: $tokens",
+      regexpTokens.nonEmpty
+    )

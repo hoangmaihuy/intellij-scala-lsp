@@ -3,11 +3,11 @@ package org.jetbrains.scalalsP.intellij
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.psi.{PsiClass, PsiElement, PsiFile, PsiMethod, PsiNamedElement, PsiPolyVariantReference}
 import org.eclipse.lsp4j.*
-import org.jetbrains.plugins.scala.lang.psi.api.base.{ScFieldId, ScReference, ScStableCodeReference}
-import org.jetbrains.plugins.scala.lang.psi.api.base.patterns.{ScBindingPattern, ScReferencePattern}
+import org.jetbrains.plugins.scala.lang.psi.api.base.{ScAnnotationsHolder, ScFieldId, ScReference, ScStableCodeReference}
+import org.jetbrains.plugins.scala.lang.psi.api.base.patterns.ScBindingPattern
 import org.jetbrains.plugins.scala.lang.psi.api.expr.ScReferenceExpression
 import org.jetbrains.plugins.scala.lang.psi.api.statements.*
-import org.jetbrains.plugins.scala.lang.psi.api.statements.params.{ScClassParameter, ScParameter, ScTypeParam}
+import org.jetbrains.plugins.scala.lang.psi.api.statements.params.{ScParameter, ScTypeParam}
 import org.jetbrains.plugins.scala.lang.psi.api.toplevel.typedef.*
 import org.jetbrains.plugins.scala.lang.psi.api.toplevel.templates.ScTemplateBody
 
@@ -30,7 +30,9 @@ object SemanticTokensProvider:
     "string",        // 10
     "number",        // 11
     "comment",       // 12
-    "function"       // 13
+    "function",      // 13
+    "operator",      // 14
+    "regexp"         // 15 (for escape sequences in strings)
   )
 
   val tokenModifiers: JList[String] = JList.of(
@@ -40,10 +42,15 @@ object SemanticTokensProvider:
     "readonly",      // bit 3
     "modification",  // bit 4
     "documentation", // bit 5
-    "lazy"           // bit 6
+    "lazy",          // bit 6
+    "deprecated"     // bit 7
   )
 
   val legend: SemanticTokensLegend = SemanticTokensLegend(tokenTypes, tokenModifiers)
+
+  /** Returns true if the name looks like a symbolic operator (not starting with a letter or underscore). */
+  private def isOperatorName(name: String): Boolean =
+    name.nonEmpty && !name.head.isLetter && name.head != '_'
 
   /** Classify a resolved PSI element into a semantic token type index. */
   def classifyElement(element: PsiElement): Option[Int] = element match
@@ -55,14 +62,18 @@ object SemanticTokensProvider:
     case _: ScTypeAlias => Some(1)       // type
     case _: ScTypeParam => Some(9)       // typeParameter
     case _: ScFunction | _: PsiMethod =>
-      // Synthetic accessors (e.g. case class param getters) should classify as their original element
-      val navElement = element.getNavigationElement
-      if navElement != null && (navElement ne element) then navElement match
-        case _: ScParameter      => Some(8) // parameter accessor
-        case _: ScBindingPattern => Some(6) // property accessor
-        case _: ScFieldId        => Some(6) // property accessor
-        case _                   => Some(5) // method
-      else Some(5) // method
+      // Check if it's an operator method (symbolic name)
+      val methodName = try element.asInstanceOf[PsiNamedElement].getName catch case _: Exception => null
+      if methodName != null && isOperatorName(methodName) then Some(14) // operator
+      else
+        // Synthetic accessors (e.g. case class param getters) should classify as their original element
+        val navElement = element.getNavigationElement
+        if navElement != null && (navElement ne element) then navElement match
+          case _: ScParameter      => Some(8) // parameter accessor
+          case _: ScBindingPattern => Some(6) // property accessor
+          case _: ScFieldId        => Some(6) // property accessor
+          case _                   => Some(5) // method
+        else Some(5) // method
     case bp: ScBindingPattern => classifyBinding(bp)
     case fi: ScFieldId        => classifyFieldId(fi)
     case _: PsiClass          => Some(2) // Java class fallback
@@ -90,10 +101,30 @@ object SemanticTokensProvider:
       case _ => Some(7)
 
   /** Get modifier bits for a resolved element */
-  def classifyModifiers(element: PsiElement): Int = element match
-    case _: ScTrait  => 4 // abstract
-    case _: ScObject => 2 // static
-    case _           => 0
+  def classifyModifiers(element: PsiElement): Int =
+    var mods = element match
+      case _: ScTrait  => 4 // abstract
+      case _: ScObject => 2 // static
+      case _           => 0
+    // Check for deprecated annotation via ScAnnotationsHolder (Scala) or PsiModifierListOwner (Java)
+    val isDeprecated = element match
+      case holder: ScAnnotationsHolder =>
+        try
+          // First try qualified name lookup (works when stdlib is available)
+          val byQName = holder.hasAnnotation("scala.deprecated") || holder.hasAnnotation("java.lang.Deprecated")
+          if byQName then true
+          else
+            // Fallback: check annotation text for "deprecated" (works without stdlib)
+            holder.annotations.exists: ann =>
+              val typeText = ann.typeElement.getText
+              typeText == "deprecated" || typeText.endsWith(".deprecated") || typeText == "Deprecated"
+        catch case _: Exception => false
+      case mod: com.intellij.psi.PsiModifierListOwner =>
+        try mod.hasAnnotation("java.lang.Deprecated")
+        catch case _: Exception => false
+      case _ => false
+    if isDeprecated then mods |= 128 // bit 7 = deprecated
+    mods
 
 class SemanticTokensProvider(projectManager: IntellijProjectManager):
 
@@ -192,14 +223,26 @@ class SemanticTokensProvider(projectManager: IntellijProjectManager):
     // Check for keyword tokens (leaf elements with keyword token type)
     if element.getChildren.isEmpty then
       val elementType = element.getNode.getElementType.toString
-      classifyLeafToken(elementType, element.getText).foreach: tokenType =>
-        tokens += ((textRange.getStartOffset, textRange.getLength, tokenType, 0))
+      val text = element.getText
+      if isStringToken(elementType) then
+        // Split string into segments: non-escape parts (type 10) and escape sequences (type 15)
+        val subTokens = splitStringEscapes(textRange.getStartOffset, text)
+        tokens ++= subTokens
+      else
+        classifyLeafToken(elementType, text) match
+          case Some(tokenType) =>
+            tokens += ((textRange.getStartOffset, textRange.getLength, tokenType, 0))
+          case None =>
+            // Classify symbolic identifiers as operator (only for actual identifier tokens)
+            if (elementType == "identifier" || elementType == "tIDENTIFIER") && isOperatorName(text) then
+              tokens += ((textRange.getStartOffset, textRange.getLength, 14, 0)) // operator
 
     // Check for declarations (definitions that introduce names)
     if isDeclaration(element) then
-      classifyDeclaration(element).foreach: (tokenType, modifiers) =>
+      classifyDeclaration(element).foreach: (tokenType, baseModifiers) =>
         getNameIdentifier(element).foreach: (offset, length) =>
-          tokens += ((offset, length, tokenType, modifiers | 1)) // bit 0 = declaration
+          val elementModifiers = classifyModifiers(element)
+          tokens += ((offset, length, tokenType, baseModifiers | elementModifiers | 1)) // bit 0 = declaration
 
     // Recurse into children
     var child = element.getFirstChild
@@ -265,6 +308,42 @@ class SemanticTokensProvider(projectManager: IntellijProjectManager):
       case _ => ()
     (element.getTextRange.getStartOffset, element.getTextRange.getLength)
 
+  private def isStringToken(elementType: String): Boolean =
+    // Match actual toString() values from ScalaTokenTypes:
+    // tSTRING → "string content", tMULTILINE_STRING → "multiline string"
+    // Also keep legacy string checks for forward compatibility
+    elementType.contains("string") || elementType.contains("STRING") ||
+    elementType == "tSTRING" || elementType == "tMULTILINE_STRING"
+
+  /**
+   * Split a string literal into sub-tokens:
+   * - Non-escape parts → token type 10 (string)
+   * - Escape sequences (\n, \t, \r, \b, \f, \\, \", \', \uXXXX) → token type 15 (regexp)
+   * Returns a sequence of (offset, length, tokenType, modifiers).
+   */
+  private def splitStringEscapes(startOffset: Int, text: String): Seq[(Int, Int, Int, Int)] =
+    val result = scala.collection.mutable.ArrayBuffer[(Int, Int, Int, Int)]()
+    var pos = 0
+    var segStart = 0
+
+    def flushNonEscape(end: Int): Unit =
+      if end > segStart then
+        result += ((startOffset + segStart, end - segStart, 10, 0))
+
+    while pos < text.length do
+      if text(pos) == '\\' && pos + 1 < text.length then
+        flushNonEscape(pos)
+        val escLen = if text(pos + 1) == 'u' && pos + 5 < text.length then 6 // \uXXXX
+                     else 2
+        result += ((startOffset + pos, escLen, 15, 0))
+        pos += escLen
+        segStart = pos
+      else
+        pos += 1
+
+    flushNonEscape(pos)
+    result.toSeq
+
   private val scala3SoftKeywords = Set(
     "using", "given", "extension", "derives", "end",
     "inline", "opaque", "open", "transparent", "infix"
@@ -288,12 +367,9 @@ class SemanticTokensProvider(projectManager: IntellijProjectManager):
        elementType == "kGIVEN" || elementType == "kUSING" || elementType == "kENUM" ||
        elementType == "kEXPORT" || elementType == "kTHEN" || elementType == "kEND" then
       Some(0) // keyword
-    // Scala 3 soft keywords have element type tIDENTIFIER — match by text
-    else if elementType == "tIDENTIFIER" && scala3SoftKeywords.contains(text) then
+    // Scala 3 soft keywords have element type "identifier" (tIDENTIFIER.toString) — match by text
+    else if (elementType == "identifier" || elementType == "tIDENTIFIER") && scala3SoftKeywords.contains(text) then
       Some(0) // keyword
-    else if elementType.contains("string") || elementType.contains("STRING") ||
-            elementType == "tSTRING" || elementType == "tMULTILINE_STRING" then
-      Some(10) // string
     else if elementType == "tINTEGER" || elementType == "tFLOAT" ||
             elementType.contains("integer") || elementType.contains("float") then
       Some(11) // number
