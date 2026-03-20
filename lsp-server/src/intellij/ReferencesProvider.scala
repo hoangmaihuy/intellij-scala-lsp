@@ -15,7 +15,7 @@ import scala.jdk.CollectionConverters.*
 class ReferencesProvider(projectManager: IntellijProjectManager):
 
   def findReferences(uri: String, position: Position, includeDeclaration: Boolean): Seq[Location] =
-    ReadAction.compute[Seq[Location], RuntimeException]: () =>
+    projectManager.smartReadAction: () =>
       val result = for
         psiFile <- projectManager.findPsiFile(uri)
         vf <- projectManager.findVirtualFile(uri)

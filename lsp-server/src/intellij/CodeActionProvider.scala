@@ -3,7 +3,7 @@ package org.jetbrains.scalalsP.intellij
 import com.intellij.codeInsight.daemon.impl.{DaemonCodeAnalyzerImpl, HighlightInfo}
 import com.intellij.codeInsight.intention.{IntentionAction, IntentionManager}
 import com.intellij.lang.annotation.HighlightSeverity
-import com.intellij.openapi.application.{ApplicationManager, ReadAction}
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.editor.{Editor, EditorFactory}
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import org.eclipse.lsp4j.*
@@ -20,7 +20,7 @@ class CodeActionProvider(projectManager: IntellijProjectManager):
     range: Range,
     context: CodeActionContext
   ): Seq[CodeAction] =
-    ReadAction.compute[Seq[CodeAction], RuntimeException]: () =>
+    projectManager.smartReadAction: () =>
       val result = for
         psiFile <- projectManager.findPsiFile(uri)
         vf <- projectManager.findVirtualFile(uri)

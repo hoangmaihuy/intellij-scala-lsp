@@ -165,6 +165,16 @@ class IntellijProjectManager:
   def getPsiDocumentManager: PsiDocumentManager =
     PsiDocumentManager.getInstance(getProject)
 
+  /** Run a read action that waits for smart mode (indexing complete) before executing.
+    * This prevents IndexNotReadyException when accessing stub indexes. */
+  def smartReadAction[T](compute: () => T): T =
+    try
+      DumbService.getInstance(getProject).runReadActionInSmartMode[T](() => compute())
+    catch
+      case _: IllegalStateException =>
+        // Fallback for test context where DumbService may not be fully initialized
+        ReadAction.compute[T, RuntimeException](() => compute())
+
   private def uriToPath(uri: String): String =
     if uri.startsWith("file://") then
       java.net.URI.create(uri).getPath

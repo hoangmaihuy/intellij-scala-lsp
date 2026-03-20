@@ -1,7 +1,6 @@
 package org.jetbrains.scalalsP.intellij
 
 import com.intellij.lang.folding.LanguageFolding
-import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import org.eclipse.lsp4j.{FoldingRange, FoldingRangeKind}
 
@@ -9,7 +8,7 @@ import org.eclipse.lsp4j.{FoldingRange, FoldingRangeKind}
 class FoldingRangeProvider(projectManager: IntellijProjectManager):
 
   def getFoldingRanges(uri: String): Seq[FoldingRange] =
-    ReadAction.compute[Seq[FoldingRange], RuntimeException]: () =>
+    projectManager.smartReadAction: () =>
       val result = for
         psiFile <- projectManager.findPsiFile(uri)
         vf <- projectManager.findVirtualFile(uri)

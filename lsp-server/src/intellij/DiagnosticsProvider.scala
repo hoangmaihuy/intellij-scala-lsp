@@ -3,7 +3,6 @@ package org.jetbrains.scalalsP.intellij
 import com.intellij.codeInsight.daemon.DaemonCodeAnalyzer
 import com.intellij.codeInsight.daemon.impl.{DaemonCodeAnalyzerImpl, HighlightInfo}
 import com.intellij.lang.annotation.HighlightSeverity
-import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.fileEditor.{FileDocumentManager, FileEditor, TextEditor}
 import com.intellij.openapi.project.Project
 import org.eclipse.lsp4j.*
@@ -60,7 +59,7 @@ class DiagnosticsProvider(projectManager: IntellijProjectManager):
     client.publishDiagnostics(params)
 
   def collectDiagnostics(uri: String): Seq[Diagnostic] =
-    ReadAction.compute[Seq[Diagnostic], RuntimeException]: () =>
+    projectManager.smartReadAction: () =>
       val result = for
         vf <- projectManager.findVirtualFile(uri)
         document <- Option(FileDocumentManager.getInstance().getDocument(vf))

@@ -1,6 +1,5 @@
 package org.jetbrains.scalalsP.intellij
 
-import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.psi.{PsiElement, PsiFile, PsiNamedElement, PsiReference}
 import com.intellij.psi.search.GlobalSearchScope
@@ -17,7 +16,7 @@ class CallHierarchyProvider(projectManager: IntellijProjectManager):
   // Returns CallHierarchyItem for the element at the given position.
 
   def prepare(uri: String, position: Position): Seq[CallHierarchyItem] =
-    ReadAction.compute[Seq[CallHierarchyItem], RuntimeException]: () =>
+    projectManager.smartReadAction: () =>
       val result = for
         psiFile <- projectManager.findPsiFile(uri)
         vf <- projectManager.findVirtualFile(uri)
@@ -33,7 +32,7 @@ class CallHierarchyProvider(projectManager: IntellijProjectManager):
   // Finds all functions that call the given item.
 
   def incomingCalls(item: CallHierarchyItem): Seq[CallHierarchyIncomingCall] =
-    ReadAction.compute[Seq[CallHierarchyIncomingCall], RuntimeException]: () =>
+    projectManager.smartReadAction: () =>
       val target = findElementFromItem(item)
       target match
         case Some(element) =>
@@ -68,7 +67,7 @@ class CallHierarchyProvider(projectManager: IntellijProjectManager):
   // Finds all functions called from within the given item.
 
   def outgoingCalls(item: CallHierarchyItem): Seq[CallHierarchyOutgoingCall] =
-    ReadAction.compute[Seq[CallHierarchyOutgoingCall], RuntimeException]: () =>
+    projectManager.smartReadAction: () =>
       val target = findElementFromItem(item)
       target match
         case Some(element) =>

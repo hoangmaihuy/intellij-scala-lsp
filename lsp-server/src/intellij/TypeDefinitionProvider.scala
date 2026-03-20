@@ -1,6 +1,5 @@
 package org.jetbrains.scalalsP.intellij
 
-import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.psi.PsiElement
 import org.eclipse.lsp4j.{Location, Position}
@@ -10,7 +9,7 @@ import org.eclipse.lsp4j.{Location, Position}
 class TypeDefinitionProvider(projectManager: IntellijProjectManager):
 
   def getTypeDefinition(uri: String, position: Position): Seq[Location] =
-    ReadAction.compute[Seq[Location], RuntimeException]: () =>
+    projectManager.smartReadAction: () =>
       val result = for
         psiFile <- projectManager.findPsiFile(uri)
         vf <- projectManager.findVirtualFile(uri)

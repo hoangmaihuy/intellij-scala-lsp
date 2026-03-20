@@ -1,6 +1,5 @@
 package org.jetbrains.scalalsP.intellij
 
-import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.navigation.{ChooseByNameContributor, ChooseByNameContributorEx, NavigationItem}
 import com.intellij.psi.*
@@ -16,7 +15,7 @@ class SymbolProvider(projectManager: IntellijProjectManager):
   // --- textDocument/documentSymbol ---
 
   def documentSymbols(uri: String): Seq[DocumentSymbol] =
-    ReadAction.compute[Seq[DocumentSymbol], RuntimeException]: () =>
+    projectManager.smartReadAction: () =>
       val result = for
         psiFile <- projectManager.findPsiFile(uri)
         vf <- projectManager.findVirtualFile(uri)
@@ -88,7 +87,7 @@ class SymbolProvider(projectManager: IntellijProjectManager):
   def workspaceSymbols(query: String): Seq[SymbolInformation] =
     if query.isEmpty then return Seq.empty
 
-    ReadAction.compute[Seq[SymbolInformation], RuntimeException]: () =>
+    projectManager.smartReadAction: () =>
       val project = projectManager.getProject
       searchViaContributors(project, query)
 

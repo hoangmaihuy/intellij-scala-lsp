@@ -11,7 +11,7 @@ import org.eclipse.lsp4j.{Hover, MarkupContent, MarkupKind, Position}
 class HoverProvider(projectManager: IntellijProjectManager):
 
   def getHover(uri: String, position: Position): Option[Hover] =
-    ReadAction.compute[Option[Hover], RuntimeException]: () =>
+    projectManager.smartReadAction: () =>
       for
         psiFile <- projectManager.findPsiFile(uri)
         vf <- projectManager.findVirtualFile(uri)

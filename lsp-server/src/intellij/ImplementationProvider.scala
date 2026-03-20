@@ -14,7 +14,7 @@ import scala.jdk.CollectionConverters.*
 class ImplementationProvider(projectManager: IntellijProjectManager):
 
   def getImplementations(uri: String, position: Position): Seq[Location] =
-    ReadAction.compute[Seq[Location], RuntimeException]: () =>
+    projectManager.smartReadAction: () =>
       val result = for
         psiFile <- projectManager.findPsiFile(uri)
         vf <- projectManager.findVirtualFile(uri)

@@ -1,6 +1,5 @@
 package org.jetbrains.scalalsP.intellij
 
-import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.psi.{PsiElement, PsiNamedElement}
 import com.intellij.psi.search.GlobalSearchScope
@@ -15,7 +14,7 @@ import scala.jdk.CollectionConverters.*
 class TypeHierarchyProvider(projectManager: IntellijProjectManager):
 
   def prepare(uri: String, position: Position): Seq[TypeHierarchyItem] =
-    ReadAction.compute[Seq[TypeHierarchyItem], RuntimeException]: () =>
+    projectManager.smartReadAction: () =>
       val result = for
         psiFile <- projectManager.findPsiFile(uri)
         vf <- projectManager.findVirtualFile(uri)
@@ -28,14 +27,14 @@ class TypeHierarchyProvider(projectManager: IntellijProjectManager):
       result.getOrElse(Seq.empty)
 
   def supertypes(item: TypeHierarchyItem): Seq[TypeHierarchyItem] =
-    ReadAction.compute[Seq[TypeHierarchyItem], RuntimeException]: () =>
+    projectManager.smartReadAction: () =>
       findElementFromItem(item) match
         case Some(element) =>
           getSupertypes(element).flatMap(toTypeHierarchyItem)
         case None => Seq.empty
 
   def subtypes(item: TypeHierarchyItem): Seq[TypeHierarchyItem] =
-    ReadAction.compute[Seq[TypeHierarchyItem], RuntimeException]: () =>
+    projectManager.smartReadAction: () =>
       findElementFromItem(item) match
         case Some(element) =>
           try

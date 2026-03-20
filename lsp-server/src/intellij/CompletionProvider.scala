@@ -18,7 +18,7 @@ class CompletionProvider(projectManager: IntellijProjectManager):
   def getCompletions(uri: String, position: Position): Seq[CompletionItem] =
     // Resolve file/document in ReadAction, then do completion outside it
     // (completion needs EDT for editor creation, can't nest inside ReadAction)
-    val context = ReadAction.compute[(Option[com.intellij.psi.PsiFile], Option[com.intellij.openapi.editor.Document], Int), RuntimeException]: () =>
+    val context = projectManager.smartReadAction: () =>
       val psiFile = projectManager.findPsiFile(uri)
       val doc = projectManager.findVirtualFile(uri).flatMap(vf =>
         Option(FileDocumentManager.getInstance().getDocument(vf)))

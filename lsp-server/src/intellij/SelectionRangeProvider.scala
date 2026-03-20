@@ -1,6 +1,5 @@
 package org.jetbrains.scalalsP.intellij
 
-import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.psi.PsiElement
 import org.eclipse.lsp4j.{Position, SelectionRange}
@@ -10,7 +9,7 @@ import org.eclipse.lsp4j.{Position, SelectionRange}
 class SelectionRangeProvider(projectManager: IntellijProjectManager):
 
   def getSelectionRanges(uri: String, positions: Seq[Position]): Seq[SelectionRange] =
-    ReadAction.compute[Seq[SelectionRange], RuntimeException]: () =>
+    projectManager.smartReadAction: () =>
       val result = for
         psiFile <- projectManager.findPsiFile(uri)
         vf <- projectManager.findVirtualFile(uri)

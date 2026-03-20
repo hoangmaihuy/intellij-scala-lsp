@@ -1,6 +1,5 @@
 package org.jetbrains.scalalsP.intellij
 
-import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.psi.PsiElement
 import org.eclipse.lsp4j.{InlayHint, InlayHintKind, Position, Range}
@@ -13,7 +12,7 @@ import scala.jdk.CollectionConverters.*
 class InlayHintProvider(projectManager: IntellijProjectManager):
 
   def getInlayHints(uri: String, range: Range): Seq[InlayHint] =
-    ReadAction.compute[Seq[InlayHint], RuntimeException]: () =>
+    projectManager.smartReadAction: () =>
       val result = for
         psiFile <- projectManager.findPsiFile(uri)
         vf <- projectManager.findVirtualFile(uri)

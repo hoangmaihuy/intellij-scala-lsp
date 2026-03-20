@@ -11,7 +11,7 @@ import org.eclipse.lsp4j.{Location, Position}
 class DefinitionProvider(projectManager: IntellijProjectManager):
 
   def getDefinition(uri: String, position: Position): Seq[Location] =
-    ReadAction.compute[Seq[Location], RuntimeException]: () =>
+    projectManager.smartReadAction: () =>
       val result = for
         psiFile <- projectManager.findPsiFile(uri)
         vf <- projectManager.findVirtualFile(uri)

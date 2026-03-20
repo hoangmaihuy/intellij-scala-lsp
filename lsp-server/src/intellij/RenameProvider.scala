@@ -1,6 +1,5 @@
 package org.jetbrains.scalalsP.intellij
 
-import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.psi.{PsiElement, PsiNameIdentifierOwner, PsiNamedElement}
 import com.intellij.psi.search.GlobalSearchScope
@@ -17,7 +16,7 @@ import scala.jdk.CollectionConverters.*
 class RenameProvider(projectManager: IntellijProjectManager):
 
   def prepareRename(uri: String, position: Position): PrepareRenameResult | Null =
-    ReadAction.compute[PrepareRenameResult | Null, RuntimeException]: () =>
+    projectManager.smartReadAction: () =>
       val named = findNamedElementAt(uri, position)
       named match
         case Some(element) =>
@@ -43,7 +42,7 @@ class RenameProvider(projectManager: IntellijProjectManager):
 
   def rename(uri: String, position: Position, newName: String): WorkspaceEdit | Null =
     if newName == null || newName.isBlank then return null
-    ReadAction.compute[WorkspaceEdit | Null, RuntimeException]: () =>
+    projectManager.smartReadAction: () =>
       val named = findNamedElementAt(uri, position)
       named match
         case Some(target) =>
