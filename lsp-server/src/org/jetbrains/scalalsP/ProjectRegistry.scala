@@ -21,6 +21,10 @@ class ProjectRegistry:
   private[scalalsP] def registerForTesting(path: String, project: Project): Unit =
     projects.put(canonicalize(path), project)
 
+  /** For testing — unregister a project without closing it (to avoid disposing test-managed projects) */
+  private[scalalsP] def unregisterForTesting(path: String): Unit =
+    projects.remove(canonicalize(path))
+
   def closeAll(): Unit =
     projects.values().asScala.foreach: project =>
       try
