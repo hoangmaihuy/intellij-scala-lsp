@@ -5,6 +5,8 @@ import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.{PsiElement, PsiFile, PsiNameIdentifierOwner, PsiNamedElement}
 import org.eclipse.lsp4j.{Location, Position, Range, SymbolKind}
 
+import java.nio.file.{Files, Path}
+
 /**
  * Utilities for converting between IntelliJ's offset-based positions
  * and LSP's line:character positions.
@@ -32,7 +34,11 @@ object PsiUtils:
     val end = offsetToPosition(document, element.getTextRange.getEndOffset)
     Range(start, end)
 
-  /** Convert a PsiElement to an LSP Location (file URI + range) */
+  private val CACHE_DIR: Path = Path.of(System.getProperty("user.home"), ".cache", "intellij-scala-lsp", "sources")
+
+  /** Convert a PsiElement to an LSP Location (file URI + range).
+    * For JAR-internal files, extracts the decompiled/source text to a cache directory
+    * and returns a file:// URI so clients can open it directly. */
   def elementToLocation(element: PsiElement): Option[Location] =
     for
       file <- Option(element.getContainingFile)
@@ -41,9 +47,46 @@ object PsiUtils:
         com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().getDocument(vf)
       )
     yield
-      val uri = vfToUri(vf)
       val range = elementToRange(document, element)
-      Location(uri, range)
+      val vfPath = vf.getPath
+      if vfPath.contains("!/") then
+        // JAR-internal file — cache the decompiled text and return file:// URI
+        val cachedUri = cacheJarEntry(file, vf)
+        Location(cachedUri, range)
+      else
+        Location(vfToUri(vf), range)
+
+  /** Extract a JAR-internal file's content to the cache directory.
+    * Uses IntelliJ's decompiled PSI text (which is already available for .class files). */
+  private[intellij] def cacheJarEntry(psiFile: PsiFile, vf: VirtualFile): String =
+    try
+      val vfPath = vf.getPath
+      val separatorIndex = vfPath.indexOf("!/")
+      val jarName = Path.of(vfPath.substring(0, separatorIndex)).getFileName.toString
+      val entryPath = vfPath.substring(separatorIndex + 2)
+
+      // Create a stable cache path: ~/.cache/intellij-scala-lsp/sources/<jar-name>/<entry-path>
+      // Map .class to .scala for decompiled Scala, .java for Java
+      val cachedEntryPath = if entryPath.endsWith(".class") then
+        entryPath.replaceAll("\\.class$", ".scala")
+      else entryPath
+      val cachePath = CACHE_DIR.resolve(jarName).resolve(cachedEntryPath)
+
+      if !Files.exists(cachePath) then
+        Files.createDirectories(cachePath.getParent)
+        // Use PSI text — IntelliJ already decompiles .class files into readable source
+        val text = psiFile.getText
+        if text != null && text.nonEmpty then
+          Files.writeString(cachePath, text)
+        else
+          Files.writeString(cachePath, s"// Could not decompile: $vfPath")
+
+      s"file://${cachePath.toAbsolutePath}"
+    catch
+      case e: Exception =>
+        System.err.println(s"[PsiUtils] Failed to cache JAR entry: ${e.getMessage}")
+        // Fallback to jar: URI
+        vfToUri(vf)
 
   /** Get the name range for a named element (just the identifier, not the whole declaration) */
   def nameElementToRange(document: Document, element: PsiElement): Range =
