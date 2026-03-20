@@ -8,9 +8,14 @@ import java.util.concurrent.CompletableFuture
 
 // Main LSP server implementation using lsp4j.
 // Delegates textDocument and workspace requests to specialized services.
-class ScalaLspServer(projectPath: String, projectManager: IntellijProjectManager) extends LanguageServer with LanguageClientAware:
+class ScalaLspServer(
+  projectPath: String,
+  projectManager: IntellijProjectManager,
+  daemonMode: Boolean = false
+) extends LanguageServer with LanguageClientAware:
 
-  def this(projectPath: String) = this(projectPath, IntellijProjectManager())
+  def this(projectPath: String) = this(projectPath, IntellijProjectManager(), false)
+  def this(projectPath: String, pm: IntellijProjectManager) = this(projectPath, pm, false)
 
   import scala.compiletime.uninitialized
   private var client: LanguageClient = uninitialized
@@ -110,12 +115,12 @@ class ScalaLspServer(projectPath: String, projectManager: IntellijProjectManager
   override def shutdown(): CompletableFuture[AnyRef] =
     CompletableFuture.supplyAsync: () =>
       System.err.println("[ScalaLsp] Shutting down...")
-      projectManager.closeProject()
+      if !daemonMode then projectManager.closeProject()
       null
 
   override def exit(): Unit =
     System.err.println("[ScalaLsp] Exiting")
-    System.exit(0)
+    if !daemonMode then System.exit(0)
 
   override def getTextDocumentService: TextDocumentService = textDocumentService
 
