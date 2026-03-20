@@ -51,6 +51,17 @@ class LspProtocolTest:
       assertTrue(capabilities.getSelectionRangeProvider.getLeft.booleanValue())
       assertTrue(capabilities.getCallHierarchyProvider.getLeft.booleanValue())
 
+      // New capabilities (remaining LSP features)
+      assertTrue(capabilities.getDocumentFormattingProvider.getLeft.booleanValue())
+      assertTrue(capabilities.getDocumentRangeFormattingProvider.getLeft.booleanValue())
+      assertTrue(capabilities.getCompletionProvider.getResolveProvider.booleanValue())
+      assertNotNull(capabilities.getSignatureHelpProvider)
+      assertNotNull(capabilities.getDocumentLinkProvider)
+      assertNotNull(capabilities.getSemanticTokensProvider)
+      assertNotNull(capabilities.getWorkspace)
+      assertNotNull(capabilities.getWorkspace.getWorkspaceFolders)
+      assertTrue(capabilities.getWorkspace.getWorkspaceFolders.getSupported.booleanValue())
+
       assertEquals(TextDocumentSyncKind.Full, capabilities.getTextDocumentSync.getLeft)
 
       assertEquals("intellij-scala-lsp", result.getServerInfo.getName)
