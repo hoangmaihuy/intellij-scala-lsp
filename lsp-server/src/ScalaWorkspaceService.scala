@@ -173,7 +173,8 @@ class ScalaWorkspaceService(projectManager: IntellijProjectManager) extends Work
           System.err.println(s"[WorkspaceService] willRenameFiles error: ${e.getMessage}")
           WorkspaceEdit()
 
-  override def didChangeConfiguration(params: DidChangeConfigurationParams): Unit = ()
+  override def didChangeConfiguration(params: DidChangeConfigurationParams): Unit =
+    System.err.println(s"[WorkspaceService] Configuration changed: ${params.getSettings}")
 
   override def didChangeWatchedFiles(params: DidChangeWatchedFilesParams): Unit =
     if params.getChanges == null || params.getChanges.isEmpty then return
