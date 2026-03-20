@@ -225,9 +225,16 @@ class SemanticTokensProvider(projectManager: IntellijProjectManager):
       val elementType = element.getNode.getElementType.toString
       val text = element.getText
       if isStringToken(elementType) then
-        // Split string into segments: non-escape parts (type 10) and escape sequences (type 15)
-        val subTokens = splitStringEscapes(textRange.getStartOffset, text)
-        tokens ++= subTokens
+        // Check if this is a raw interpolated string (raw"..." or r"...") — no escape splitting
+        val prevSiblingText = Option(element.getPrevSibling).map(_.getText).getOrElse("")
+        val isRawString = prevSiblingText == "raw" || prevSiblingText == "r"
+        if isRawString then
+          // Raw strings: emit the whole token as a plain string (no escape highlighting)
+          tokens += ((textRange.getStartOffset, textRange.getLength, 10, 0))
+        else
+          // Split string into segments: non-escape parts (type 10) and escape sequences (type 15)
+          val subTokens = splitStringEscapes(textRange.getStartOffset, text)
+          tokens ++= subTokens
       else
         classifyLeafToken(elementType, text) match
           case Some(tokenType) =>
@@ -267,7 +274,10 @@ class SemanticTokensProvider(projectManager: IntellijProjectManager):
     case _: ScClass           => Some((2, 0)) // class
     case _: ScTrait           => Some((3, 4)) // interface + abstract
     case _: ScObject          => Some((2, 2)) // class + static
-    case _: ScFunction        => Some((5, 0)) // method
+    case f: ScFunction =>
+      val name = try f.getName catch case _: Exception => null
+      if name != null && isOperatorName(name) then Some((14, 0)) // operator
+      else Some((5, 0)) // method
     case _: ScTypeAlias       => Some((1, 0)) // type
     case _: ScGiven           => Some((5, 0)) // method (given)
     case bp: ScBindingPattern => Some(classifyBindingDeclaration(bp))
