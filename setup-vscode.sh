@@ -117,18 +117,59 @@ cat > "$EXT_DIR/package.json" << 'PKGJSON'
 }
 PKGJSON
 
-# extension.js
-cat > "$EXT_DIR/extension.js" << EXTJS
+# extension.js — copy from the version-controlled source
+cp "$SCRIPT_DIR/vscode-extension/extension.js" "$EXT_DIR/extension.js" 2>/dev/null || \
+cat > "$EXT_DIR/extension.js" << 'EXTJS'
 const { LanguageClient, TransportKind } = require("vscode-languageclient/node");
 const vscode = require("vscode");
 const path = require("path");
+const fs = require("fs");
 
 let client;
 
+function findProjectRoot(extPath) {
+  let dir = fs.realpathSync(extPath);
+  for (let i = 0; i < 5; i++) {
+    const candidate = path.join(dir, "launcher", "launch-lsp.sh");
+    if (fs.existsSync(candidate)) return dir;
+    dir = path.dirname(dir);
+  }
+  return null;
+}
+
+function findIntellijSdk(projectRoot) {
+  const cacheDir = path.join(
+    process.env.HOME || process.env.USERPROFILE || "",
+    ".intellij-scala-lspPluginIC",
+    "sdk"
+  );
+  if (fs.existsSync(cacheDir)) {
+    const versions = fs.readdirSync(cacheDir).filter(f =>
+      fs.statSync(path.join(cacheDir, f)).isDirectory()
+    ).sort().reverse();
+    if (versions.length > 0) {
+      return path.join(cacheDir, versions[0]);
+    }
+  }
+  return null;
+}
+
 function activate(context) {
   const config = vscode.workspace.getConfiguration("intellijScalaLsp");
-  const launcher = config.get("launcher") || "$LAUNCHER";
-  const intellijHome = config.get("intellijHome") || "$IDEA_HOME";
+  const extPath = context.extensionPath;
+  const projectRoot = findProjectRoot(extPath);
+
+  const launcher = config.get("launcher") ||
+    (projectRoot ? path.join(projectRoot, "launcher", "launch-lsp.sh") : "");
+  const intellijHome = config.get("intellijHome") ||
+    (projectRoot ? findIntellijSdk(projectRoot) : "") || "";
+
+  if (!launcher || !fs.existsSync(launcher)) {
+    vscode.window.showErrorMessage(
+      "IntelliJ Scala LSP: launcher not found. Set intellijScalaLsp.launcher in settings."
+    );
+    return;
+  }
 
   const serverOptions = {
     command: "bash",
