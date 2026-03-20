@@ -30,7 +30,6 @@ abstract class E2eTestBase extends BasePlatformTestCase:
       override def processError(category: String, message: String, details: Array[String], t: Throwable): java.util.Set[LoggedErrorProcessor.Action] =
         EnumSet.of(LoggedErrorProcessor.Action.STDERR)
     )
-    ScalaLspMain.notificationsEnabled = false
     BootstrapState.bootstrapComplete.countDown()
     projectManager = IntellijProjectManager()
     projectManager.setProjectForTesting(getProject)

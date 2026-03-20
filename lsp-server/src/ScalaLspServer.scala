@@ -38,7 +38,6 @@ class ScalaLspServer(
         case None => projectPath
 
       System.err.println(s"[ScalaLsp] Initializing with project: $effectivePath")
-      ScalaLspMain.notify("Scala LSP", s"Opening project: ${java.nio.file.Path.of(effectivePath).getFileName}")
 
       // Wait for IntelliJ platform bootstrap (started by ScalaLspMain in background)
       // In test mode, the latch is pre-counted down by ScalaLspTestBase.setUp()
@@ -149,12 +148,10 @@ class ScalaLspServer(
       projectManager.waitForSmartMode()
       textDocumentService.registerDaemonListener()
       System.err.println("[ScalaLsp] Project indexing complete, ready for requests")
-      ScalaLspMain.notify("Scala LSP", "Indexing complete, ready for requests")
 
   override def shutdown(): CompletableFuture[AnyRef] =
     CompletableFuture.supplyAsync: () =>
       System.err.println("[ScalaLsp] Shutting down...")
-      ScalaLspMain.notify("Scala LSP", "Shutting down...")
       if !daemonMode then projectManager.closeProject()
       null
 

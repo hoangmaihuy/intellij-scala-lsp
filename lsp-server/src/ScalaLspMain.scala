@@ -19,21 +19,6 @@ object ScalaLspMain:
 
   private val CACHE_DIR = s"${System.getProperty("user.home")}/.cache/intellij-scala-lsp"
 
-  /** Disable notifications in test mode. */
-  @volatile var notificationsEnabled: Boolean = true
-
-  /** Send a macOS notification for key lifecycle events.
-    * Disabled in test mode via notificationsEnabled flag. */
-  def notify(title: String, message: String): Unit =
-    if !notificationsEnabled then return
-    try
-      val escaped = message.replace("\"", "\\\"").replace("\\", "\\\\")
-      Runtime.getRuntime.exec(Array(
-        "osascript", "-e",
-        s"""display notification "$escaped" with title "$title""""
-      ))
-    catch case _: Exception => () // Silently ignore if not on macOS or osascript unavailable
-
   def main(args: Array[String]): Unit =
     args.toList match
       case "--daemon" :: projects => daemonMode(projects)
@@ -42,7 +27,6 @@ object ScalaLspMain:
 
   private def daemonMode(projectPaths: List[String]): Unit =
     System.err.println("[ScalaLsp] Starting daemon mode...")
-    notify("Scala LSP", "Starting daemon...")
     val port = Option(System.getenv("LSP_PORT")).map(_.toInt).getOrElse(5007)
 
     System.setOut(new PrintStream(System.err, true))
@@ -72,7 +56,6 @@ object ScalaLspMain:
     catch
       case e: Exception =>
         System.err.println(s"[ScalaLsp] Bootstrap failed: ${e.getMessage}")
-        notify("Scala LSP", s"Bootstrap failed: ${e.getMessage}")
         e.printStackTrace(System.err)
         System.exit(1)
 
@@ -102,7 +85,6 @@ object ScalaLspMain:
       java.nio.file.Files.writeString(java.nio.file.Path.of(s"$CACHE_DIR/daemon.pid"), ProcessHandle.current().pid().toString)
       java.nio.file.Files.writeString(java.nio.file.Path.of(s"$CACHE_DIR/daemon.port"), boundPort.toString)
       System.err.println(s"[ScalaLsp] Daemon ready on port $boundPort")
-      notify("Scala LSP", s"Daemon ready on port $boundPort")
       daemon.acceptLoop() // blocks
     catch
       case e: java.net.BindException =>

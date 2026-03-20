@@ -19,7 +19,6 @@ abstract class ScalaLspTestBase extends BasePlatformTestCase:
   override def setUp(): Unit =
     super.setUp()
     // In tests, IntelliJ is already bootstrapped by BasePlatformTestCase
-    ScalaLspMain.notificationsEnabled = false
     BootstrapState.bootstrapComplete.countDown()
     projectManager = IntellijProjectManager()
     projectManager.setProjectForTesting(getProject)

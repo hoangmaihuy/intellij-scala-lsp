@@ -4,10 +4,21 @@ const path = require("path");
 const fs = require("fs");
 
 let client;
+let outputChannel;
+let statusBarItem;
+
+function log(message) {
+  const ts = new Date().toISOString().replace("T", " ").replace("Z", "");
+  outputChannel.appendLine(`[${ts}] ${message}`);
+}
+
+function setStatus(text, tooltip) {
+  statusBarItem.text = `$(symbol-class) ${text}`;
+  statusBarItem.tooltip = tooltip || text;
+  statusBarItem.show();
+}
 
 function findProjectRoot(extPath) {
-  // Extension lives at <project>/vscode-extension or is symlinked there
-  // Walk up to find launcher/launch-lsp.sh
   let dir = fs.realpathSync(extPath);
   for (let i = 0; i < 5; i++) {
     const candidate = path.join(dir, "launcher", "launch-lsp.sh");
@@ -17,15 +28,13 @@ function findProjectRoot(extPath) {
   return null;
 }
 
-function findIntellijSdk(projectRoot) {
-  // Check common locations for the sbt-downloaded SDK
+function findIntellijSdk() {
   const cacheDir = path.join(
     process.env.HOME || process.env.USERPROFILE || "",
     ".intellij-scala-lspPluginIC",
     "sdk"
   );
   if (fs.existsSync(cacheDir)) {
-    // Pick the latest SDK version directory
     const versions = fs.readdirSync(cacheDir).filter(f =>
       fs.statSync(path.join(cacheDir, f)).isDirectory()
     ).sort().reverse();
@@ -37,20 +46,45 @@ function findIntellijSdk(projectRoot) {
 }
 
 function activate(context) {
+  outputChannel = vscode.window.createOutputChannel("IntelliJ Scala LSP");
+  context.subscriptions.push(outputChannel);
+
+  statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 0);
+  statusBarItem.command = "intellijScalaLsp.showOutput";
+  context.subscriptions.push(statusBarItem);
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand("intellijScalaLsp.showOutput", () => {
+      outputChannel.show();
+    })
+  );
+
+  log("Activating IntelliJ Scala LSP extension");
+  setStatus("Scala LSP: Starting", "IntelliJ Scala LSP — starting server");
+
   const config = vscode.workspace.getConfiguration("intellijScalaLsp");
   const extPath = context.extensionPath;
   const projectRoot = findProjectRoot(extPath);
 
   const launcher = config.get("launcher") ||
     (projectRoot ? path.join(projectRoot, "launcher", "launch-lsp.sh") : "");
-  const intellijHome = config.get("intellijHome") ||
-    (projectRoot ? findIntellijSdk(projectRoot) : "") || "";
+  const intellijHome = config.get("intellijHome") || findIntellijSdk() || "";
+
+  log(`Extension path: ${extPath}`);
+  log(`Project root: ${projectRoot || "(not found)"}`);
+  log(`Launcher: ${launcher || "(not set)"}`);
+  log(`IntelliJ SDK: ${intellijHome || "(not set)"}`);
 
   if (!launcher || !fs.existsSync(launcher)) {
-    vscode.window.showErrorMessage(
-      "IntelliJ Scala LSP: launcher not found. Set intellijScalaLsp.launcher in settings."
-    );
+    const msg = `Launcher not found: ${launcher || "(empty)"}. Set intellijScalaLsp.launcher in settings.`;
+    log(`ERROR: ${msg}`);
+    setStatus("Scala LSP: Error", msg);
+    vscode.window.showErrorMessage(`IntelliJ Scala LSP: ${msg}`);
     return;
+  }
+
+  if (!intellijHome) {
+    log("WARNING: IntelliJ SDK not detected. Server may fail to start.");
   }
 
   const serverOptions = {
@@ -71,7 +105,7 @@ function activate(context) {
       { scheme: "file", pattern: "**/*.scala" },
       { scheme: "file", pattern: "**/*.sc" },
     ],
-    outputChannelName: "IntelliJ Scala LSP",
+    outputChannel: outputChannel,
   };
 
   client = new LanguageClient(
@@ -81,13 +115,34 @@ function activate(context) {
     clientOptions
   );
 
-  client.start();
-  context.subscriptions.push(client);
+  client.onDidChangeState(({ oldState, newState }) => {
+    const states = { 1: "Stopped", 2: "Starting", 3: "Running" };
+    const newName = states[newState] || `Unknown(${newState})`;
+    log(`Client state: ${states[oldState] || oldState} -> ${newName}`);
+    if (newState === 3) {
+      setStatus("Scala LSP", "IntelliJ Scala LSP — running");
+    } else if (newState === 1) {
+      setStatus("Scala LSP: Stopped", "IntelliJ Scala LSP — stopped");
+    } else {
+      setStatus("Scala LSP: Starting", "IntelliJ Scala LSP — starting");
+    }
+  });
 
-  vscode.window.showInformationMessage("IntelliJ Scala LSP starting...");
+  log("Starting language client");
+  client.start().then(
+    () => log("Language client started successfully"),
+    (err) => {
+      log(`ERROR: Failed to start language client: ${err.message}`);
+      setStatus("Scala LSP: Error", `Failed to start: ${err.message}`);
+      vscode.window.showErrorMessage(`IntelliJ Scala LSP failed to start: ${err.message}`);
+    }
+  );
+
+  context.subscriptions.push(client);
 }
 
 function deactivate() {
+  if (statusBarItem) statusBarItem.dispose();
   if (client) {
     return client.stop();
   }
