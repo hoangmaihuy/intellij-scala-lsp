@@ -50,6 +50,28 @@ class JarSourceCacheIntegrationTest extends ScalaLspTestBase:
           content.nonEmpty
         )
 
+  def testExternalDefinitionContainsRealSource(): Unit =
+    val uri = configureScalaFile(
+      """object Main:
+        |  val xs: List[Int] = List(1, 2, 3)
+        |""".stripMargin
+    )
+    val result = getDefinition(uri, positionAt(1, 10))
+    if result.nonEmpty then
+      val defUri = result.head.getUri
+      if defUri.startsWith("file://") then
+        val path = java.nio.file.Path.of(java.net.URI.create(defUri).getPath)
+        val content = java.nio.file.Files.readString(path)
+        // Real source should contain Scaladoc or copyright comments
+        // Decompiled stubs typically lack these
+        assertTrue(
+          "Source should contain real Scala source (not just decompiled stub). Content starts with: " +
+            content.take(200),
+          content.contains("@author") || content.contains("Copyright") ||
+            content.contains("Licensed") || content.contains("scala.collection") ||
+            content.length > 1000 // Real source files are substantial
+        )
+
   def testLocalDefinitionStillUsesFileUri(): Unit =
     val uri = configureScalaFile(
       """object Main:
