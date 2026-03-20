@@ -36,6 +36,7 @@ class ScalaTextDocumentService(projectManager: IntellijProjectManager) extends T
   private val documentLinkProvider = DocumentLinkProvider(projectManager)
   private val semanticTokensProvider = SemanticTokensProvider(projectManager)
   private val documentHighlightProvider = DocumentHighlightProvider(projectManager)
+  private val codeLensProvider = CodeLensProvider(projectManager, List(SuperMethodCodeLens()))
 
   def connect(client: LanguageClient): Unit =
     this.client = client
@@ -264,3 +265,13 @@ class ScalaTextDocumentService(projectManager: IntellijProjectManager) extends T
         params.getTextDocument.getUri,
         params.getPosition
       ).asJava
+
+  // --- Code Lens ---
+
+  override def codeLens(params: CodeLensParams): CompletableFuture[util.List[? <: CodeLens]] =
+    CompletableFuture.supplyAsync: () =>
+      codeLensProvider.getCodeLenses(params.getTextDocument.getUri).asJava
+
+  override def resolveCodeLens(codeLens: CodeLens): CompletableFuture[CodeLens] =
+    CompletableFuture.supplyAsync: () =>
+      codeLensProvider.resolveCodeLens(codeLens)

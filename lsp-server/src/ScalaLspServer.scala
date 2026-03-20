@@ -88,9 +88,14 @@ class ScalaLspServer(
       // Type hierarchy
       capabilities.setTypeHierarchyProvider(true)
 
+      // Code lens with resolve support
+      val codeLensOptions = CodeLensOptions()
+      codeLensOptions.setResolveProvider(true)
+      capabilities.setCodeLensProvider(codeLensOptions)
+
       // Execute commands
       val executeCommandOptions = ExecuteCommandOptions(
-        java.util.List.of("scala.organizeImports", "scala.reformat")
+        java.util.List.of("scala.organizeImports", "scala.reformat", "scala.gotoLocation")
       )
       capabilities.setExecuteCommandProvider(executeCommandOptions)
 

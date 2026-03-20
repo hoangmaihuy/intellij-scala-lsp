@@ -39,6 +39,16 @@ class ScalaWorkspaceService(projectManager: IntellijProjectManager) extends Work
       case "scala.reformat" =>
         executeOnFile(args): psiFile =>
           CodeStyleManager.getInstance(projectManager.getProject).reformat(psiFile)
+      case "scala.gotoLocation" =>
+        if client != null && args != null && args.size() >= 3 then
+          val targetUri = args.get(0).toString.replaceAll("\"", "")
+          val targetLine = args.get(1).toString.replaceAll("\"", "").toInt
+          val targetChar = args.get(2).toString.replaceAll("\"", "").toInt
+          val showParams = ShowDocumentParams(targetUri)
+          showParams.setSelection(Range(Position(targetLine, targetChar), Position(targetLine, targetChar)))
+          showParams.setTakeFocus(true)
+          client.showDocument(showParams).get()
+        null
       case _ =>
         System.err.println(s"[WorkspaceService] Unknown command: $command")
         null
