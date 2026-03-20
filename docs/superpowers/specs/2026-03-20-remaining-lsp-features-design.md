@@ -16,7 +16,8 @@ With VS Code now supported as a client, we implement 6 remaining LSP features to
 
 - `getFormatting(uri: String): Seq[TextEdit]` — reformats entire file via `CodeStyleManager.reformat()`, returns diff as text edits
 - `getRangeFormatting(uri: String, range: Range): Seq[TextEdit]` — reformats selected range via `CodeStyleManager.reformatRange()`
-- Both methods capture document text before write action, run `CodeStyleManager` in a `WriteCommandAction`, capture after, return full-replacement text edit
+- Both methods use a format-then-undo pattern: capture document text before, run `CodeStyleManager` inside a `WriteCommandAction`, capture the formatted text, then undo the write action. Return the diff as text edits to the client. The client applies the edits — the server must NOT leave the document mutated, otherwise formatting would be double-applied.
+- Alternative approach if undo proves tricky: format a copy of the PsiFile (via `PsiFileFactory.createFileFromText`) and diff against the original.
 
 **Capability registration:**
 ```scala
@@ -24,7 +25,7 @@ capabilities.setDocumentFormattingProvider(true)
 capabilities.setDocumentRangeFormattingProvider(true)
 ```
 
-**Wiring:** Override `formatting()` and `rangeFormatting()` in `ScalaTextDocumentService`. Same `CompletableFuture.supplyAsync` + write action pattern as existing workspace reformat.
+**Wiring:** Override `formatting()` and `rangeFormatting()` in `ScalaTextDocumentService` using `CompletableFuture.supplyAsync`.
 
 **Reuse:** Delegates to the same `CodeStyleManager` API already used by `scala.reformat` in `ScalaWorkspaceService`.
 
@@ -41,7 +42,7 @@ capabilities.setDocumentRangeFormattingProvider(true)
   - `documentation` — ScalaDoc/JavaDoc via `LanguageDocumentation`
   - `additionalTextEdits` — auto-import edits
 
-**Caching:** Store `LookupElement` array after `getCompletions()` in a short-lived cache (keyed by request, cleared on next completion call or after 30s TTL). Resolve looks up by index.
+**Caching:** Store `LookupElement` array after `getCompletions()` in a synchronized, short-lived cache (keyed by a monotonic request ID, cleared on next completion call or after 30s TTL). The `data` field includes the request ID + index. Resolve validates the request ID matches the current cache — on mismatch (stale request), return the item unchanged rather than erroring.
 
 **Capability registration:**
 ```scala
@@ -62,7 +63,7 @@ val completionOptions = CompletionOptions(true, java.util.List.of(".", " "))  //
 - Maps each variant to `SignatureInformation` with `ParameterInformation` entries
 - Sets `activeSignature` (best-matching overload) and `activeParameter` (cursor position in arg list)
 
-**Fallback:** If `ParameterInfoHandler` proves difficult outside editor context, fall back to resolving the method reference at/before `(` and extracting signatures via reflection on Scala plugin's `ScFunction` class.
+**Fallback:** If `ParameterInfoHandler` proves difficult outside editor context, fall back to resolving the method reference at/before `(` and extracting signatures via reflection on Scala plugin's `ScFunction` class (specifically `effectiveParameterClauses` for parameter lists and `returnType` for return type). This is a best-effort fallback — reflection on plugin internals may break across Scala plugin versions.
 
 **Capability registration:**
 ```scala
@@ -85,7 +86,7 @@ capabilities.setSignatureHelpProvider(signatureHelpOptions)
 
 1. **URLs in comments/strings:** Regex `https?://[^\s"')>]+`. Target is the URL itself.
 2. **File paths in strings:** Detect string literals containing relative paths (e.g., `"src/main/resources/app.conf"`). Resolve against project root. Target is `file://` URI. Only emit link if file exists on disk.
-3. **SBT dependency coordinates:** Pattern `"org" %% "artifact" % "version"` in `.sbt`/`.scala` files. Link to `https://search.maven.org/artifact/{group}/{artifact}/{version}`. Regex: `"([^"]+)"\s+%%?\s+"([^"]+)"\s+%\s+"([^"]+)"`.
+3. **SBT dependency coordinates:** Pattern `"org" %% "artifact" % "version"` in `.sbt`/`.scala` files. Regex: `"([^"]+)"\s+%{1,3}\s+"([^"]+)"\s+%\s+"([^"]+)"` (handles `%`, `%%`, and `%%%` for Scala.js). Link to `https://search.maven.org/search?q=g:{group}+a:{artifact}*` (wildcard search handles the Scala version suffix that `%%`/`%%%` dependencies add to artifact names).
 
 **Capability registration:**
 ```scala
@@ -100,9 +101,10 @@ capabilities.setDocumentLinkProvider(DocumentLinkOptions())
 
 **Changes to `IntellijProjectManager`:**
 
-- Currently holds a single `project` field. Add `projects: TrieMap[String, Project]` to map folder paths to projects.
+- Currently holds a single `project` field with a guard in `openProject()` that returns early if already set. Refactor to use `projects: TrieMap[String, Project]` to map folder paths to projects. Remove the early-return guard and route opens/closes by path.
 - `findPsiFile(uri)` searches across all open projects by matching the file's path against project base paths.
-- `getProject` remains for single-project compatibility; add `getProjectForUri(uri: String): Project` for multi-project routing.
+- `getProject` remains for single-project compatibility (returns the first/primary project); add `getProjectForUri(uri: String): Project` for multi-project routing.
+- `closeProject()` gains a path parameter: `closeProject(folderPath: String)` to close a specific project.
 
 **Changes to `ScalaWorkspaceService`:**
 
@@ -181,7 +183,10 @@ capabilities.setSemanticTokensProvider(semanticTokensOptions)
 
 **Wiring:** Override `semanticTokensFull()` and `semanticTokensRange()` in `ScalaTextDocumentService`.
 
-**Key risk:** IntelliJ's `TextAttributesKey` names are internal to the Scala plugin. We discover actual key names at runtime and maintain best-effort mapping, falling back to skipping unmapped keys.
+**Key risks:**
+- IntelliJ's `TextAttributesKey` names are internal to the Scala plugin. We discover actual key names at runtime and maintain best-effort mapping, falling back to skipping unmapped keys.
+- `DaemonCodeAnalyzerImpl.getHighlights()` returns cached results from a prior daemon pass. For freshly opened files that haven't been analyzed yet, this returns empty. Semantic tokens may be empty until the daemon finishes — the client should re-request after receiving `textDocument/publishDiagnostics` (which signals analysis completion).
+- The `lazy` modifier is a custom modifier not in the LSP standard. Most clients will silently ignore it.
 
 ## Implementation Order
 
@@ -192,6 +197,10 @@ capabilities.setSemanticTokensProvider(semanticTokensOptions)
 5. **Workspace Folders** — cross-cutting change to `IntellijProjectManager`
 6. **Semantic Tokens** — most complex, depends on understanding IntelliJ highlighting internals
 
+## Error Handling
+
+All providers follow the existing codebase pattern: catch exceptions, log to stderr, and return empty/null results. No provider should propagate exceptions to the LSP framework — failed requests return empty responses gracefully.
+
 ## Files Changed Summary
 
 **New files (4):**
@@ -200,7 +209,7 @@ capabilities.setSemanticTokensProvider(semanticTokensOptions)
 - `lsp-server/src/intellij/DocumentLinkProvider.scala`
 - `lsp-server/src/intellij/SemanticTokensProvider.scala`
 
-**Modified files (4):**
+**Modified files (5):**
 - `lsp-server/src/ScalaLspServer.scala` — capability registration for all 6 features
 - `lsp-server/src/ScalaTextDocumentService.scala` — new provider fields + override methods
 - `lsp-server/src/ScalaWorkspaceService.scala` — `didChangeWorkspaceFolders` handler
