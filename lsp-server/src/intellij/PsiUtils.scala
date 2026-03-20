@@ -42,14 +42,18 @@ object PsiUtils:
     * For JAR-internal files, tries to find the original source from source JARs first,
     * falls back to decompiled text. Caches to a file:// URI so all clients can open it. */
   def elementToLocation(element: PsiElement): Option[Location] =
+    // Try to navigate to real source (e.g., from decompiled stub to source JAR)
+    val navElement = element.getNavigationElement
+    val effectiveElement = if navElement != null && navElement != element then navElement else element
+
     for
-      file <- Option(element.getContainingFile)
+      file <- Option(effectiveElement.getContainingFile)
       vf <- Option(file.getVirtualFile)
       document <- Option(
         com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().getDocument(vf)
       )
     yield
-      val range = elementToRange(document, element)
+      val range = elementToRange(document, effectiveElement)
       val vfPath = vf.getPath
       if vfPath.contains("!/") then
         val cachedUri = cacheJarEntry(file, vf)
