@@ -313,9 +313,74 @@ if [ -d "$IDEA_HOME/plugins/java" ]; then
 fi
 JVM_ARGS+=("-Dplugin.path=$PLUGIN_PATH")
 
+# --- Daemon management ---
+
+daemon_running() {
+  local pidfile="$CACHE_DIR/daemon.pid"
+  local portfile="$CACHE_DIR/daemon.port"
+  [ -f "$pidfile" ] && [ -f "$portfile" ] || return 1
+  local pid
+  pid=$(cat "$pidfile")
+  kill -0 "$pid" 2>/dev/null
+}
+
+wait_for_port_file() {
+  local timeout=$1
+  local portfile="$CACHE_DIR/daemon.port"
+  local elapsed=0
+  while [ ! -f "$portfile" ] && [ $elapsed -lt $timeout ]; do
+    sleep 1
+    elapsed=$((elapsed + 1))
+  done
+  [ -f "$portfile" ]
+}
+
+start_daemon_background() {
+  echo "[launch-lsp] Starting daemon in background..." >&2
+  "$JAVA" "${JVM_ARGS[@]}" -cp "$CLASSPATH" \
+    org.jetbrains.scalalsP.ScalaLspMain --daemon "$@" \
+    >> "$LSP_LOG" 2>&1 &
+  echo "[launch-lsp] Daemon PID: $!" >&2
+}
+
+proxy_stdio_to_tcp() {
+  local port=$1
+  if ! command -v socat >/dev/null 2>&1; then
+    echo "[launch-lsp] ERROR: socat is required for daemon mode. Install with: brew install socat" >&2
+    exit 1
+  fi
+  exec socat STDIO TCP:localhost:"$port"
+}
+
 # --- Launch ---
 
-exec "$JAVA" \
-  "${JVM_ARGS[@]}" \
-  -cp "$CLASSPATH" \
-  org.jetbrains.scalalsP.ScalaLspMain "$@"
+case "${1:-}" in
+  --daemon)
+    shift
+    exec "$JAVA" "${JVM_ARGS[@]}" -cp "$CLASSPATH" \
+      org.jetbrains.scalalsP.ScalaLspMain --daemon "$@"
+    ;;
+  --stop)
+    exec "$JAVA" "${JVM_ARGS[@]}" -cp "$CLASSPATH" \
+      org.jetbrains.scalalsP.ScalaLspMain --stop
+    ;;
+  *)
+    # Connect mode: proxy to daemon, auto-start if needed
+    if daemon_running; then
+      DAEMON_PORT=$(cat "$CACHE_DIR/daemon.port")
+      echo "[launch-lsp] Connecting to daemon on port $DAEMON_PORT" >&2
+      proxy_stdio_to_tcp "$DAEMON_PORT"
+    else
+      # Auto-start daemon with project path
+      start_daemon_background "$@"
+      if wait_for_port_file 60; then
+        DAEMON_PORT=$(cat "$CACHE_DIR/daemon.port")
+        echo "[launch-lsp] Daemon started, connecting on port $DAEMON_PORT" >&2
+        proxy_stdio_to_tcp "$DAEMON_PORT"
+      else
+        echo "[launch-lsp] ERROR: Daemon failed to start within 60s. Check $LSP_LOG" >&2
+        exit 1
+      fi
+    fi
+    ;;
+esac
