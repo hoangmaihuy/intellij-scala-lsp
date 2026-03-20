@@ -7,6 +7,8 @@ import com.intellij.psi.PsiFileFactory
 import com.intellij.psi.codeStyle.CodeStyleManager
 import org.eclipse.lsp4j.*
 
+// Uses format-on-copy approach (PsiFileFactory.createFileFromText) instead of format-then-undo
+// because undo is unreliable in headless IntelliJ mode. Returns full-file replacement edit.
 class FormattingProvider(projectManager: IntellijProjectManager):
 
   def getFormatting(uri: String): Seq[TextEdit] =

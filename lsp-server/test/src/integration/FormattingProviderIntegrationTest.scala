@@ -60,3 +60,4 @@ class FormattingProviderIntegrationTest extends ScalaLspTestBase:
     val range = Range(Position(1, 0), Position(3, 4))
     val edits = provider.getRangeFormatting(uri, range)
     assertNotNull("Range formatting should return edits", edits)
+    assertFalse("Range formatting of unformatted range should produce edits", edits.isEmpty)
