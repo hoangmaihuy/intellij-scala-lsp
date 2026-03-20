@@ -51,14 +51,19 @@ function shortUri(uri) {
   return match ? match[1] : uri;
 }
 
-// Middleware that logs requests with timing
+// Middleware that logs requests with timing.
+// vscode-languageclient middleware signature: (params, token, next) => result
+// where `next` is the default handler provided by the framework.
 function createLoggingMiddleware() {
-  function wrapRequest(method, next) {
-    return async function (params, token) {
+  function wrap(method) {
+    return async function (...args) {
+      // Last arg is always `next`, params is first, token may be in between
+      const next = args[args.length - 1];
+      const params = args[0];
       const file = params?.textDocument?.uri ? ` [${shortUri(params.textDocument.uri)}]` : "";
       const start = Date.now();
       try {
-        const result = await next(params, token);
+        const result = await next(...args.slice(0, -1));
         const ms = Date.now() - start;
         log(`${method}${file} -> ${ms}ms`);
         return result;
@@ -71,17 +76,17 @@ function createLoggingMiddleware() {
   }
 
   return {
-    provideCompletionItem: wrapRequest("textDocument/completion", (p, t) => client.sendRequest("textDocument/completion", p, t)),
-    provideHover: wrapRequest("textDocument/hover", (p, t) => client.sendRequest("textDocument/hover", p, t)),
-    provideDefinition: wrapRequest("textDocument/definition", (p, t) => client.sendRequest("textDocument/definition", p, t)),
-    provideTypeDefinition: wrapRequest("textDocument/typeDefinition", (p, t) => client.sendRequest("textDocument/typeDefinition", p, t)),
-    provideImplementation: wrapRequest("textDocument/implementation", (p, t) => client.sendRequest("textDocument/implementation", p, t)),
-    provideReferences: wrapRequest("textDocument/references", (p, t) => client.sendRequest("textDocument/references", p, t)),
-    provideDocumentSymbols: wrapRequest("textDocument/documentSymbol", (p, t) => client.sendRequest("textDocument/documentSymbol", p, t)),
-    provideSignatureHelp: wrapRequest("textDocument/signatureHelp", (p, t) => client.sendRequest("textDocument/signatureHelp", p, t)),
-    provideDocumentFormattingEdits: wrapRequest("textDocument/formatting", (p, t) => client.sendRequest("textDocument/formatting", p, t)),
-    provideRenameEdits: wrapRequest("textDocument/rename", (p, t) => client.sendRequest("textDocument/rename", p, t)),
-    provideCodeActions: wrapRequest("textDocument/codeAction", (p, t) => client.sendRequest("textDocument/codeAction", p, t)),
+    provideCompletionItem: wrap("textDocument/completion"),
+    provideHover: wrap("textDocument/hover"),
+    provideDefinition: wrap("textDocument/definition"),
+    provideTypeDefinition: wrap("textDocument/typeDefinition"),
+    provideImplementation: wrap("textDocument/implementation"),
+    provideReferences: wrap("textDocument/references"),
+    provideDocumentSymbols: wrap("textDocument/documentSymbol"),
+    provideSignatureHelp: wrap("textDocument/signatureHelp"),
+    provideDocumentFormattingEdits: wrap("textDocument/formatting"),
+    provideRenameEdits: wrap("textDocument/rename"),
+    provideCodeActions: wrap("textDocument/codeAction"),
   };
 }
 
