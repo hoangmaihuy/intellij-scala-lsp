@@ -55,9 +55,19 @@ object PsiUtils:
       case _ =>
         elementToRange(document, element)
 
-  /** Convert a VirtualFile to a file:// URI */
+  /** Convert a VirtualFile to a URI string.
+    * For local files: file:///path/to/file
+    * For JAR-internal files: jar:file:///path/to.jar!/internal/path */
   def vfToUri(vf: VirtualFile): String =
-    s"file://${vf.getPath}"
+    val path = vf.getPath
+    if path.contains("!/") then
+      // JAR-internal file — split into jar path and entry path
+      val separatorIndex = path.indexOf("!/")
+      val jarPath = path.substring(0, separatorIndex)
+      val entryPath = path.substring(separatorIndex)
+      s"jar:file://$jarPath$entryPath"
+    else
+      s"file://$path"
 
   /** Find the PsiElement at a given offset that is most suitable for navigation */
   def findElementAtOffset(psiFile: PsiFile, offset: Int): Option[PsiElement] =

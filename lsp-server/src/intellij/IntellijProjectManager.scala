@@ -109,8 +109,16 @@ class IntellijProjectManager(registry: Option[ProjectRegistry] = None, daemonMod
 
   def findVirtualFile(uri: String): Option[VirtualFile] =
     virtualFileCache.get(uri).orElse:
-      val path = uriToPath(uri)
-      Option(LocalFileSystem.getInstance().findFileByPath(path))
+      if uri.startsWith("jar:") then
+        // JAR-internal URI: jar:file:///path/to.jar!/entry/path
+        // Convert to IntelliJ VFS URL: jar:///path/to.jar!/entry/path
+        val vfsUrl = uri.replace("jar:file://", "jar://")
+        Option(com.intellij.openapi.vfs.VirtualFileManager.getInstance().findFileByUrl(vfsUrl))
+      else
+        val path = uriToPath(uri)
+        // Try local filesystem first, then VirtualFileManager as fallback
+        Option(LocalFileSystem.getInstance().findFileByPath(path))
+          .orElse(Option(com.intellij.openapi.vfs.VirtualFileManager.getInstance().findFileByUrl(uri)))
 
   def findPsiFile(uri: String): Option[PsiFile] =
     findVirtualFile(uri).flatMap: vf =>
