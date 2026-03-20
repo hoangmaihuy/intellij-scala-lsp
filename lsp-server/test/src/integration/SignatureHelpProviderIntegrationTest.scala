@@ -8,7 +8,7 @@ class SignatureHelpProviderIntegrationTest extends ScalaLspTestBase:
 
   private def provider = SignatureHelpProvider(projectManager)
 
-  def testSignatureHelpInMethodCall(): Unit =
+  def testSignatureLabelFormat(): Unit =
     val uri = configureScalaFile(
       """object Main:
         |  def add(a: Int, b: Int): Int = a + b
@@ -16,15 +16,40 @@ class SignatureHelpProviderIntegrationTest extends ScalaLspTestBase:
         |""".stripMargin
     )
     val help = provider.getSignatureHelp(uri, positionAt(2, 19))
-    assertNotNull("Should return signature help inside method call", help)
-    help.foreach: sh =>
-      assertFalse("Should have at least one signature", sh.getSignatures.isEmpty)
-      val sig = sh.getSignatures.get(0)
-      assertTrue("Signature should contain method name", sig.getLabel.contains("add"))
-      assertNotNull("Should have parameters", sig.getParameters)
-      assertEquals("Should have 2 parameters", 2, sig.getParameters.size())
+    assertTrue("Should return signature help inside method call", help.isDefined)
+    val sig = help.get.getSignatures.get(0)
+    val label = sig.getLabel
+    assertTrue("Label should start with method name 'add'", label.startsWith("add"))
+    assertTrue(s"Label should contain 'a: Int', got: $label", label.contains("a: Int"))
+    assertTrue(s"Label should contain 'b: Int', got: $label", label.contains("b: Int"))
+    assertTrue(s"Label should contain return type annotation ': Int', got: $label",
+      label.contains(": Int") || label.contains(":Int"))
 
-  def testSignatureHelpActiveParameter(): Unit =
+  def testSignatureParameterCount(): Unit =
+    val uri = configureScalaFile(
+      """object Main:
+        |  def add(a: Int, b: Int): Int = a + b
+        |  val result = add(
+        |""".stripMargin
+    )
+    val help = provider.getSignatureHelp(uri, positionAt(2, 19))
+    assertTrue("Should return signature help", help.isDefined)
+    val sig = help.get.getSignatures.get(0)
+    assertNotNull("Should have parameters list", sig.getParameters)
+    assertEquals("Should have exactly 2 parameters", 2, sig.getParameters.size())
+
+  def testActiveParameterAtFirstArg(): Unit =
+    val uri = configureScalaFile(
+      """object Main:
+        |  def add(a: Int, b: Int): Int = a + b
+        |  val result = add(
+        |""".stripMargin
+    )
+    val help = provider.getSignatureHelp(uri, positionAt(2, 19))
+    assertTrue("Should return signature help", help.isDefined)
+    assertEquals("Active parameter should be 0 (first param)", 0, help.get.getActiveParameter.intValue())
+
+  def testActiveParameterAtSecondArg(): Unit =
     val uri = configureScalaFile(
       """object Main:
         |  def add(a: Int, b: Int): Int = a + b
@@ -32,8 +57,8 @@ class SignatureHelpProviderIntegrationTest extends ScalaLspTestBase:
         |""".stripMargin
     )
     val help = provider.getSignatureHelp(uri, positionAt(2, 22))
-    help.foreach: sh =>
-      assertEquals("Active parameter should be 1 (second param)", 1, sh.getActiveParameter.intValue())
+    assertTrue("Should return signature help", help.isDefined)
+    assertEquals("Active parameter should be 1 (second param, after comma)", 1, help.get.getActiveParameter.intValue())
 
   def testSignatureHelpOutsideMethodCall(): Unit =
     val uri = configureScalaFile(
@@ -67,12 +92,49 @@ class SignatureHelpProviderIntegrationTest extends ScalaLspTestBase:
         |""".stripMargin
     )
     val help = provider.getSignatureHelp(uri, positionAt(2, 19))
-    assertNotNull("Should return signature help", help)
-    help.foreach: sh =>
-      assertFalse("Should have at least one signature", sh.getSignatures.isEmpty)
-      val sig = sh.getSignatures.get(0)
-      assertTrue("Signature label should contain return type annotation",
-        sig.getLabel.contains(": Int") || sig.getLabel.contains(":Int"))
+    assertTrue("Should return signature help", help.isDefined)
+    val sig = help.get.getSignatures.get(0)
+    val label = sig.getLabel
+    assertTrue(
+      s"Signature label should contain return type annotation ': Int', got: $label",
+      label.contains(": Int") || label.contains(":Int")
+    )
+
+  def testSignatureParameterInfoLabels(): Unit =
+    val uri = configureScalaFile(
+      """object Main:
+        |  def add(a: Int, b: Int): Int = a + b
+        |  val result = add(
+        |""".stripMargin
+    )
+    val help = provider.getSignatureHelp(uri, positionAt(2, 19))
+    assertTrue("Should return signature help", help.isDefined)
+    val sig = help.get.getSignatures.get(0)
+    val paramLabels = (0 until sig.getParameters.size()).map(sig.getParameters.get(_).getLabel.getLeft).toList
+    assertTrue(
+      s"First parameter label should contain 'a', got: $paramLabels",
+      paramLabels.exists(_.contains("a"))
+    )
+    assertTrue(
+      s"Second parameter label should contain 'b', got: $paramLabels",
+      paramLabels.exists(_.contains("b"))
+    )
+
+  def testImplicitClauseInLabel(): Unit =
+    val uri = configureScalaFile(
+      """object Main:
+        |  def sorted[A](list: List[A])(implicit ord: Ordering[A]): List[A] = list.sorted
+        |  val result = sorted(
+        |""".stripMargin
+    )
+    val help = provider.getSignatureHelp(uri, positionAt(2, 22))
+    assertTrue("Should return signature help", help.isDefined)
+    val sig = help.get.getSignatures.get(0)
+    val label = sig.getLabel
+    assertTrue(
+      s"Signature label should contain 'implicit' keyword, got: $label",
+      label.contains("implicit")
+    )
 
   def testSignatureIncludesDocumentation(): Unit =
     val uri = configureScalaFile(
@@ -83,25 +145,9 @@ class SignatureHelpProviderIntegrationTest extends ScalaLspTestBase:
         |""".stripMargin
     )
     val help = provider.getSignatureHelp(uri, positionAt(3, 19))
-    assertNotNull("Should return signature help", help)
-    help.foreach: sh =>
-      assertFalse("Should have at least one signature", sh.getSignatures.isEmpty)
-      val sig = sh.getSignatures.get(0)
-      // Documentation may or may not be available depending on the IntelliJ version
-      // Just verify we got a signature with the right label
-      assertTrue("Signature should contain method name", sig.getLabel.contains("add"))
-
-  def testImplicitParameterClause(): Unit =
-    val uri = configureScalaFile(
-      """object Main:
-        |  def sorted[A](list: List[A])(implicit ord: Ordering[A]): List[A] = list.sorted
-        |  val result = sorted(
-        |""".stripMargin
+    assertTrue("Should return signature help", help.isDefined)
+    val sig = help.get.getSignatures.get(0)
+    assertTrue(
+      s"Signature label should contain method name 'add', got: ${sig.getLabel}",
+      sig.getLabel.contains("add")
     )
-    val help = provider.getSignatureHelp(uri, positionAt(2, 22))
-    assertNotNull("Should return signature help", help)
-    help.foreach: sh =>
-      assertFalse("Should have at least one signature", sh.getSignatures.isEmpty)
-      val sig = sh.getSignatures.get(0)
-      assertTrue("Signature label should contain 'implicit'",
-        sig.getLabel.contains("implicit"))
