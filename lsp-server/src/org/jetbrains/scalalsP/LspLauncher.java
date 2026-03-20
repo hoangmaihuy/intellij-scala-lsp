@@ -153,6 +153,7 @@ public final class LspLauncher {
         @Override public CompletableFuture<java.util.List<TypeHierarchyItem>> prepareTypeHierarchy(TypeHierarchyPrepareParams params) { return delegate.prepareTypeHierarchy(params); }
         @Override public CompletableFuture<java.util.List<TypeHierarchyItem>> typeHierarchySupertypes(TypeHierarchySupertypesParams params) { return delegate.typeHierarchySupertypes(params); }
         @Override public CompletableFuture<java.util.List<TypeHierarchyItem>> typeHierarchySubtypes(TypeHierarchySubtypesParams params) { return delegate.typeHierarchySubtypes(params); }
+        @Override public CompletableFuture<SignatureHelp> signatureHelp(SignatureHelpParams params) { return delegate.signatureHelp(params); }
         @Override public CompletableFuture<java.util.List<? extends TextEdit>> formatting(DocumentFormattingParams params) { return delegate.formatting(params); }
         @Override public CompletableFuture<java.util.List<? extends TextEdit>> rangeFormatting(DocumentRangeFormattingParams params) { return delegate.rangeFormatting(params); }
         @Override public void didOpen(DidOpenTextDocumentParams params) { delegate.didOpen(params); }

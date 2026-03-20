@@ -30,6 +30,7 @@ class ScalaTextDocumentService(projectManager: IntellijProjectManager) extends T
   private val codeActionProvider = CodeActionProvider(projectManager)
   private val renameProvider = RenameProvider(projectManager)
   private val typeHierarchyProvider = TypeHierarchyProvider(projectManager)
+  private val signatureHelpProvider = SignatureHelpProvider(projectManager)
   private val formattingProvider = FormattingProvider(projectManager)
 
   def connect(client: LanguageClient): Unit =
@@ -155,6 +156,15 @@ class ScalaTextDocumentService(projectManager: IntellijProjectManager) extends T
   override def resolveCompletionItem(unresolved: CompletionItem): CompletableFuture[CompletionItem] =
     CompletableFuture.supplyAsync: () =>
       completionProvider.resolveCompletion(unresolved)
+
+  // --- Signature Help ---
+
+  override def signatureHelp(params: SignatureHelpParams): CompletableFuture[SignatureHelp] =
+    CompletableFuture.supplyAsync: () =>
+      signatureHelpProvider.getSignatureHelp(
+        params.getTextDocument.getUri,
+        params.getPosition
+      ).orNull
 
   // --- Code Actions ---
 

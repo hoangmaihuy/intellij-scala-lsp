@@ -68,6 +68,10 @@ class ScalaLspServer(
       // Inlay hints
       capabilities.setInlayHintProvider(true)
 
+      // Signature help with trigger characters
+      val signatureHelpOptions = SignatureHelpOptions(java.util.List.of("(", ","))
+      capabilities.setSignatureHelpProvider(signatureHelpOptions)
+
       // Completion with trigger characters
       capabilities.setCompletionProvider(
         CompletionOptions(true, java.util.List.of(".", " "))

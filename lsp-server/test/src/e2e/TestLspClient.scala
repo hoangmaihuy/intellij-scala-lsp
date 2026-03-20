@@ -187,6 +187,14 @@ class TestLspClient private (
       clientProxy.getTextDocumentService.resolveCompletionItem(item).get(10, TimeUnit.SECONDS)
     }
 
+  def signatureHelp(uri: String, line: Int, char: Int): Option[SignatureHelp] =
+    requestOffEdt() {
+      val params = new SignatureHelpParams()
+      params.setTextDocument(new TextDocumentIdentifier(uri))
+      params.setPosition(new Position(line, char))
+      Option(clientProxy.getTextDocumentService.signatureHelp(params).get(10, TimeUnit.SECONDS))
+    }
+
   def documentSymbols(uri: String): List[DocumentSymbol] =
     requestOffEdt() {
       val params = new DocumentSymbolParams()
