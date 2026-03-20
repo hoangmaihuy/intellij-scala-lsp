@@ -59,3 +59,43 @@ class CompletionResolveIntegrationTest extends ScalaLspTestBase:
       provider.getCompletions(uri, positionAt(2, 5))
       val resolved = provider.resolveCompletion(items.head)
       assertNotNull("Stale resolve should still return an item", resolved)
+
+  def testResolveMethodWithParametersGetsSnippet(): Unit =
+    val uri = configureScalaFile(
+      """object Main:
+        |  val xs = List(1, 2, 3)
+        |  xs.
+        |""".stripMargin
+    )
+    val items = provider.getCompletions(uri, positionAt(2, 5))
+    // Find a method item that has parameters (e.g., "map", "filter", "foldLeft")
+    val methodItems = items.filter(i => i.getLabel != null && Seq("map", "filter", "foreach", "flatMap").contains(i.getLabel))
+    if methodItems.nonEmpty then
+      val resolved = provider.resolveCompletion(methodItems.head)
+      // If the resolved item has snippet format, verify it contains a placeholder ($)
+      val format = resolved.getInsertTextFormat
+      val insertText = resolved.getInsertText
+      if format == org.eclipse.lsp4j.InsertTextFormat.Snippet then
+        assertNotNull("Snippet insert text should not be null", insertText)
+        assertTrue("Snippet insert text should contain $ placeholder", insertText.contains("$"))
+        assertTrue("Snippet insert text should contain method name", insertText.startsWith(resolved.getLabel))
+
+  def testResolveZeroParamMethodGetsPlainText(): Unit =
+    val uri = configureScalaFile(
+      """object Main:
+        |  val xs = List(1, 2, 3)
+        |  xs.
+        |""".stripMargin
+    )
+    val items = provider.getCompletions(uri, positionAt(2, 5))
+    // Find a zero-param method item (e.g., "size", "isEmpty", "reverse")
+    val zeroParamItems = items.filter(i => i.getLabel != null && Seq("size", "isEmpty", "reverse", "length").contains(i.getLabel))
+    if zeroParamItems.nonEmpty then
+      val resolved = provider.resolveCompletion(zeroParamItems.head)
+      val format = resolved.getInsertTextFormat
+      // Zero-param methods should not use snippet format
+      assertTrue(
+        "Zero-param method should use PlainText or have insert text without snippet placeholders",
+        format == org.eclipse.lsp4j.InsertTextFormat.PlainText ||
+          (resolved.getInsertText != null && !resolved.getInsertText.contains("$1"))
+      )

@@ -7,7 +7,9 @@ import com.intellij.openapi.application.{ApplicationManager, ReadAction}
 import com.intellij.openapi.editor.{Editor, EditorFactory}
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.google.gson.JsonObject
+import com.intellij.psi.{PsiMethod, PsiNamedElement}
 import org.eclipse.lsp4j.*
+import org.jetbrains.plugins.scala.lang.psi.api.statements.ScFunction
 
 import java.util.concurrent.atomic.AtomicLong
 import scala.jdk.CollectionConverters.*
@@ -85,6 +87,10 @@ class CompletionProvider(projectManager: IntellijProjectManager):
         if doc != null then
           getAutoImportEdit(elem, doc).foreach: edit =>
             item.setAdditionalTextEdits(java.util.List.of(edit))
+
+        // Generate snippet insert text for methods with parameters
+        if psi != null then
+          generateSnippet(psi, item)
 
       item
     catch
@@ -202,6 +208,52 @@ class CompletionProvider(projectManager: IntellijProjectManager):
       case SymbolKind.TypeParameter  => CompletionItemKind.TypeParameter
       case SymbolKind.Package        => CompletionItemKind.Module
       case _                         => CompletionItemKind.Text
+
+  private def hasOverloads(fn: PsiNamedElement): Boolean =
+    val name = fn.getName
+    val parent = fn.getParent
+    if parent == null || name == null then false
+    else parent.getChildren.count {
+      case f: PsiNamedElement => f.getName == name
+      case _ => false
+    } > 1
+
+  private def generateSnippet(psi: com.intellij.psi.PsiElement, item: CompletionItem): Unit =
+    val methodName = item.getLabel
+    psi match
+      case fn: ScFunction =>
+        val params = fn.parameters
+        if params.isEmpty then
+          // Zero-param: insert as plain text (no change needed, already set)
+          ()
+        else if hasOverloads(fn) then
+          // Overloaded: just insert the name, let signature help guide
+          item.setInsertText(methodName)
+          item.setInsertTextFormat(InsertTextFormat.PlainText)
+        else
+          // Generate snippet with placeholders
+          val placeholders = params.zipWithIndex.map { (p, i) =>
+            s"$${${i + 1}:${p.getName}}"
+          }.mkString(", ")
+          item.setInsertText(s"$methodName($placeholders)")
+          item.setInsertTextFormat(InsertTextFormat.Snippet)
+      case method: PsiMethod =>
+        val params = method.getParameterList.getParameters
+        if params.isEmpty then
+          // Zero-param: insert as plain text
+          ()
+        else if hasOverloads(method) then
+          // Overloaded: just insert the name
+          item.setInsertText(methodName)
+          item.setInsertTextFormat(InsertTextFormat.PlainText)
+        else
+          // Generate snippet with placeholders
+          val placeholders = params.zipWithIndex.map { (p, i) =>
+            s"$${${i + 1}:${p.getName}}"
+          }.mkString(", ")
+          item.setInsertText(s"$methodName($placeholders)")
+          item.setInsertTextFormat(InsertTextFormat.Snippet)
+      case _ => ()
 
   private def getAutoImportEdit(
     elem: LookupElement,
