@@ -14,7 +14,8 @@ import scala.jdk.CollectionConverters.*
 
 // Implements textDocument/inlayHint by walking the PSI tree and extracting
 // type information from Scala typed definitions that lack explicit type annotations.
-// Also extracts parameter name hints at call sites.
+// Also extracts parameter name hints at call sites, implicit argument hints,
+// implicit conversion hints, and type parameter hints.
 class InlayHintProvider(projectManager: IntellijProjectManager):
 
   def getInlayHints(uri: String, range: Range): Seq[InlayHint] =
@@ -30,8 +31,14 @@ class InlayHintProvider(projectManager: IntellijProjectManager):
         visitElements(psiFile, startOffset, endOffset): elem =>
           collectTypeHint(elem, document).foreach(hints += _)
           collectParameterNameHints(elem, document).foreach(hints += _)
+          collectImplicitArgumentHints(elem, document).foreach(hints += _)
+          collectImplicitConversionHints(elem, document).foreach(hints += _)
+          collectTypeParameterHints(elem, document).foreach(hints += _)
         hints.result()
       result.getOrElse(Seq.empty)
+
+  /** Resolve an inlay hint — currently returns the hint as-is (infrastructure for future enrichment). */
+  def resolveInlayHint(hint: InlayHint): InlayHint = hint
 
   // --- Type Hints ---
 
@@ -129,6 +136,146 @@ class InlayHintProvider(projectManager: IntellijProjectManager):
       if params.nonEmpty then Some(params.map(_.name).toSeq)
       else None
     case _ => None
+
+  // --- Implicit Argument Hints ---
+
+  private def collectImplicitArgumentHints(
+    element: PsiElement,
+    document: com.intellij.openapi.editor.Document
+  ): Seq[InlayHint] =
+    try
+      import org.jetbrains.plugins.scala.lang.psi.api.ImplicitArgumentsOwner
+      element match
+        case owner: ImplicitArgumentsOwner =>
+          // Skip argument lists themselves — we only want the call expression
+          if element.isInstanceOf[ScArgumentExprList] then return Seq.empty
+          val clauses = owner.findImplicitArguments
+          if clauses.isEmpty then return Seq.empty
+
+          val argNames = clauses.flatMap: clause =>
+            clause.args.flatMap: arg =>
+              Option(arg.element).map(_.getName)
+          if argNames.isEmpty then return Seq.empty
+
+          // Show implicit args after the expression
+          val offset = element.getTextRange.getEndOffset
+          val pos = PsiUtils.offsetToPosition(document, offset)
+          val label = argNames.mkString("(", ", ", ")")
+          val hint = InlayHint()
+          hint.setPosition(pos)
+          hint.setLabel(LspEither.forLeft(label))
+          hint.setKind(InlayHintKind.Parameter)
+          hint.setPaddingLeft(false)
+          Seq(hint)
+        case _ => Seq.empty
+    catch
+      case _: Exception => Seq.empty
+
+  // --- Implicit Conversion Hints ---
+
+  private def collectImplicitConversionHints(
+    element: PsiElement,
+    document: com.intellij.openapi.editor.Document
+  ): Seq[InlayHint] =
+    try
+      import org.jetbrains.plugins.scala.lang.psi.api.expr.ScExpression
+      element match
+        case expr: ScExpression =>
+          expr.implicitConversion() match
+            case Some(result) =>
+              val name = result.element.getName
+              if name == null || name.isEmpty then return Seq.empty
+
+              // "conversionName(" before the expression
+              val startOffset = expr.getTextRange.getStartOffset
+              val startPos = PsiUtils.offsetToPosition(document, startOffset)
+              val beforeHint = InlayHint()
+              beforeHint.setPosition(startPos)
+              beforeHint.setLabel(LspEither.forLeft(s"$name("))
+              beforeHint.setKind(InlayHintKind.Parameter)
+              beforeHint.setPaddingRight(false)
+
+              // ")" after the expression
+              val endOffset = expr.getTextRange.getEndOffset
+              val endPos = PsiUtils.offsetToPosition(document, endOffset)
+              val afterHint = InlayHint()
+              afterHint.setPosition(endPos)
+              afterHint.setLabel(LspEither.forLeft(")"))
+              afterHint.setKind(InlayHintKind.Parameter)
+              afterHint.setPaddingLeft(false)
+
+              Seq(beforeHint, afterHint)
+            case None => Seq.empty
+        case _ => Seq.empty
+    catch
+      case _: Exception => Seq.empty
+
+  // --- Type Parameter Hints ---
+
+  private def collectTypeParameterHints(
+    element: PsiElement,
+    document: com.intellij.openapi.editor.Document
+  ): Seq[InlayHint] =
+    try
+      element match
+        case ref: ScReferenceExpression =>
+          // Only show type param hints if there are no explicit type arguments
+          if hasExplicitTypeArguments(ref) then return Seq.empty
+
+          import org.jetbrains.plugins.scala.lang.psi.api.base.ScReference
+          val refAsScRef = ref.asInstanceOf[ScReference]
+          refAsScRef.bind() match
+            case Some(resolveResult) =>
+              val resolved = resolveResult.element
+              val typeParams = resolved match
+                case fn: ScFunction => fn.typeParameters
+                case _ => Seq.empty
+
+              if typeParams.isEmpty then return Seq.empty
+
+              val substitutor = resolveResult.substitutor
+              val typeTexts = typeParams.flatMap: tp =>
+                try
+                  import org.jetbrains.plugins.scala.lang.psi.types.api.TypeParameterType
+                  val tpType = TypeParameterType(tp)
+                  val substituted = substitutor(tpType)
+                  // Don't show if the type parameter was not substituted (still abstract/undefined)
+                  import org.jetbrains.plugins.scala.lang.psi.types.{TypePresentationContext, Context}
+                  implicit val tpc: TypePresentationContext = TypePresentationContext(element)
+                  implicit val ctx: Context = Context(element)
+                  val text = substituted.presentableText
+                  if text.contains("Nothing") || text.contains("Any") ||
+                     text.contains("?") || text == tp.name then None
+                  else Some(text)
+                catch
+                  case _: Exception => None
+
+              if typeTexts.isEmpty then return Seq.empty
+
+              val offset = ref.getTextRange.getEndOffset
+              val pos = PsiUtils.offsetToPosition(document, offset)
+              val label = typeTexts.mkString("[", ", ", "]")
+              val hint = InlayHint()
+              hint.setPosition(pos)
+              hint.setLabel(LspEither.forLeft(label))
+              hint.setKind(InlayHintKind.Type)
+              hint.setPaddingLeft(false)
+              Seq(hint)
+            case None => Seq.empty
+        case _ => Seq.empty
+    catch
+      case _: Exception => Seq.empty
+
+  /** Check if a reference expression already has explicit type arguments (e.g. foo[Int](...)) */
+  private def hasExplicitTypeArguments(ref: ScReferenceExpression): Boolean =
+    try
+      // If the parent is a generic call with type args, skip
+      val parent = ref.getParent
+      if parent == null then return false
+      val parentName = parent.getClass.getName
+      parentName.contains("ScGenericCall")
+    catch
+      case _: Exception => false
 
   // --- PSI tree walking ---
 

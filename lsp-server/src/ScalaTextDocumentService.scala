@@ -147,6 +147,10 @@ class ScalaTextDocumentService(projectManager: IntellijProjectManager) extends T
         params.getRange
       ).asJava
 
+  override def resolveInlayHint(hint: InlayHint): CompletableFuture[InlayHint] =
+    CompletableFuture.supplyAsync: () =>
+      inlayHintProvider.resolveInlayHint(hint)
+
   // --- Completion ---
 
   override def completion(params: CompletionParams): CompletableFuture[LspEither[util.List[CompletionItem], CompletionList]] =

@@ -66,8 +66,10 @@ class ScalaLspServer(
       capabilities.setCallHierarchyProvider(true)
       capabilities.setDocumentHighlightProvider(true)
 
-      // Inlay hints
-      capabilities.setInlayHintProvider(true)
+      // Inlay hints with resolve support
+      val inlayHintOptions = InlayHintRegistrationOptions()
+      inlayHintOptions.setResolveProvider(true)
+      capabilities.setInlayHintProvider(inlayHintOptions)
 
       // Signature help with trigger characters
       val signatureHelpOptions = SignatureHelpOptions(java.util.List.of("(", ","))
