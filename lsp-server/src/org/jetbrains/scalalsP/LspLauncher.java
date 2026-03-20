@@ -71,7 +71,9 @@ public final class LspLauncher {
         server.connect(client);
 
         System.err.println("[ScalaLsp] LSP server started, listening on stdin/stdout");
+        System.err.println("[ScalaLsp] Waiting for LSP messages on stdin...");
         launcher.startListening().get();
+        System.err.println("[ScalaLsp] LSP listener stopped");
     }
 
     /**
