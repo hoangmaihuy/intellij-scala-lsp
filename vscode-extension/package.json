@@ -1,0 +1,41 @@
+{
+  "name": "intellij-scala-lsp",
+  "displayName": "IntelliJ Scala LSP",
+  "description": "Scala code intelligence powered by IntelliJ IDEA's analysis engine",
+  "version": "0.5.0",
+  "publisher": "intellij-scala-lsp",
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": ["Programming Languages"],
+  "activationEvents": [
+    "onLanguage:scala"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "scala",
+        "extensions": [".scala", ".sc"]
+      }
+    ],
+    "configuration": {
+      "title": "IntelliJ Scala LSP",
+      "properties": {
+        "intellijScalaLsp.launcher": {
+          "type": "string",
+          "default": "",
+          "description": "Path to launch-lsp.sh (auto-detected if empty)"
+        },
+        "intellijScalaLsp.intellijHome": {
+          "type": "string",
+          "default": "",
+          "description": "Path to IntelliJ SDK (auto-detected if empty)"
+        }
+      }
+    }
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  }
+}
