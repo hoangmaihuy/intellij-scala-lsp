@@ -22,7 +22,13 @@ class CodeActionE2eTest extends E2eTestBase:
     openFixture("service/ShapeRepository.scala")
     openFixture("service/Repository.scala")
     val actions = client.codeActions(uri, 4, 0, 14, 0)
-    // If there are any actions, resolve the first one
+    // Light test framework may not produce highlighting/intentions.
+    // When actions ARE available, assert the full resolve round-trip works.
+    assertFalse(
+      "codeActions round-trip was NOT tested because the light test framework " +
+        "produced no actions. If this starts failing, the fixture needs updating.",
+      actions.isEmpty && sys.env.contains("CI")
+    )
     if actions.nonEmpty then
       val firstAction = actions.head
       assertNotNull("Action should have data", firstAction.getData)

@@ -112,7 +112,7 @@ class CodeActionProvider(projectManager: IntellijProjectManager):
     val offset = data.get("offset").getAsInt
     val intentionClass = data.get("intentionClass").getAsString
 
-    // Phase 1: read action — collect original text and locate the intention
+    // Phase 1: read action — collect original text, language, offset, and verify intention class exists
     val phase1 = projectManager.smartReadAction: () =>
       for
         psiFile <- projectManager.findPsiFile(uri)
@@ -123,28 +123,56 @@ class CodeActionProvider(projectManager: IntellijProjectManager):
         val originalText = document.getText
         val language = psiFile.getLanguage
 
-        // Find the matching intention
+        // Verify the intention class exists in the manager
         val intentionManager = IntentionManager.getInstance
-        val matchingIntention =
-          if intentionManager != null && intentionManager.getAvailableIntentions != null then
-            var editor: Editor = null
-            try
-              editor = EditorFactory.getInstance().createEditor(document, project)
-              editor.getCaretModel.moveToOffset(offset)
-              intentionManager.getAvailableIntentions.asScala.find: intention =>
-                intention.getClass.getName == intentionClass &&
-                  (try intention.isAvailable(project, editor, psiFile)
-                   catch case _: Exception => false)
-            finally
-              if editor != null then
-                EditorFactory.getInstance().releaseEditor(editor)
-          else None
+        val hasIntention =
+          intentionManager != null && intentionManager.getAvailableIntentions != null &&
+            intentionManager.getAvailableIntentions.asScala.exists(_.getClass.getName == intentionClass)
 
-        (originalText, language, matchingIntention, project)
+        (originalText, language, hasIntention, project)
 
     phase1 match
-      case Some((originalText, language, Some(intention), project)) =>
-        applyFixOnCopy(action, uri, originalText, language, project, intention)
+      case Some((originalText, language, true, project)) =>
+        // Phase 2: outside read action — create PSI copy, find intention, check availability, invoke
+        try
+          val factory = PsiFileFactory.getInstance(project)
+          val copyFile = factory.createFileFromText("Copy.scala", language, originalText, true, false)
+          val copyDoc = copyFile.getViewProvider.getDocument
+          if copyDoc == null then return action
+
+          var copyEditor: Editor = null
+          try
+            // Find and invoke the intention on the copy via EDT
+            ApplicationManager.getApplication.invokeAndWait: () =>
+              WriteCommandAction.runWriteCommandAction(project, (() =>
+                copyEditor = EditorFactory.getInstance().createEditor(copyDoc, project)
+                copyEditor.getCaretModel.moveToOffset(offset)
+
+                val intentionManager = IntentionManager.getInstance
+                val matchingIntention = intentionManager.getAvailableIntentions.asScala.find: intention =>
+                  intention.getClass.getName == intentionClass &&
+                    (try intention.isAvailable(project, copyEditor, copyFile)
+                     catch case _: Exception => false)
+
+                matchingIntention.foreach: intention =>
+                  try intention.invoke(project, copyEditor, copyFile)
+                  catch case _: Exception => ()
+              ): Runnable)
+
+            // Phase 3: diff and create WorkspaceEdit
+            val resultText = copyDoc.getText
+            if resultText != originalText then
+              val edit = createFullDocumentEdit(uri, originalText, resultText)
+              action.setEdit(edit)
+          finally
+            if copyEditor != null then
+              val editorToRelease = copyEditor
+              ApplicationManager.getApplication.invokeAndWait: () =>
+                EditorFactory.getInstance().releaseEditor(editorToRelease)
+
+          action
+        catch
+          case _: Exception => action
       case _ => action
 
   private def applyFixOnCopy(
