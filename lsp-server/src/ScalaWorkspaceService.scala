@@ -97,6 +97,24 @@ class ScalaWorkspaceService(projectManager: IntellijProjectManager) extends Work
 
     null
 
+  override def didChangeWorkspaceFolders(params: DidChangeWorkspaceFoldersParams): Unit =
+    val event = params.getEvent
+    if event == null then return
+    if event.getAdded != null then
+      event.getAdded.asScala.foreach: folder =>
+        val uri = folder.getUri
+        val path = if uri.startsWith("file://") then java.net.URI.create(uri).getPath else uri
+        System.err.println(s"[WorkspaceService] Adding workspace folder: $path")
+        try projectManager.openProject(path)
+        catch case e: Exception =>
+          System.err.println(s"[WorkspaceService] Failed to open folder: ${e.getMessage}")
+    if event.getRemoved != null then
+      event.getRemoved.asScala.foreach: folder =>
+        val uri = folder.getUri
+        val path = if uri.startsWith("file://") then java.net.URI.create(uri).getPath else uri
+        System.err.println(s"[WorkspaceService] Removing workspace folder: $path")
+        projectManager.closeProject(path)
+
   override def didChangeConfiguration(params: DidChangeConfigurationParams): Unit = ()
 
   override def didChangeWatchedFiles(params: DidChangeWatchedFilesParams): Unit = ()

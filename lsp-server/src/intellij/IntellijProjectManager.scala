@@ -17,16 +17,21 @@ class IntellijProjectManager(registry: Option[ProjectRegistry] = None, daemonMod
   import scala.compiletime.uninitialized
   @volatile private var project: Project = uninitialized
 
+  // Map of base path -> Project for multi-workspace support
+  private val projects = scala.collection.concurrent.TrieMap[String, Project]()
+
   // Cache for virtual files that are not on the local filesystem (e.g., in-memory test files)
   private val virtualFileCache = scala.collection.concurrent.TrieMap[String, VirtualFile]()
 
   /** For testing only — allows injecting a project from test fixtures */
   private[scalalsP] def setProjectForTesting(p: Project): Unit =
     project = p
+    if p != null && p.getBasePath != null then projects.put(p.getBasePath, p)
 
   /** For daemon mode — set a project from ProjectRegistry without opening it */
   private[scalalsP] def setProjectForSession(p: Project): Unit =
     project = p
+    if p != null && p.getBasePath != null then projects.put(p.getBasePath, p)
 
   /** For testing only — registers an in-memory virtual file by URI */
   private[scalalsP] def registerVirtualFile(uri: String, vf: VirtualFile): Unit =
@@ -37,15 +42,38 @@ class IntellijProjectManager(registry: Option[ProjectRegistry] = None, daemonMod
     if p == null then throw IllegalStateException("No project is open")
     p
 
+  def getProjectForUri(uri: String): Project =
+    val path = uriToPath(uri)
+    projects.find((basePath, _) => path.startsWith(basePath))
+      .map(_(1))
+      .getOrElse(getProject)
+
   def openProject(projectPath: String): Unit =
     if project != null then
-      System.err.println(s"[ProjectManager] Project already open: ${project.getName}")
+      // Check if this path is already tracked
+      val normalizedPath = Path.of(projectPath).toString
+      if projects.keys.exists(bp => bp == normalizedPath || normalizedPath == project.getBasePath) then
+        System.err.println(s"[ProjectManager] Folder already open: $projectPath")
+        return
+      System.err.println(s"[ProjectManager] Primary project already open: ${project.getName}, opening additional folder: $projectPath")
+      // Open additional project for multi-workspace support
+      registry match
+        case Some(reg) =>
+          val additional = reg.openProject(projectPath)
+          if additional != null && additional.getBasePath != null then
+            projects.put(additional.getBasePath, additional)
+        case None =>
+          val additional = ProjectManager.getInstance().loadAndOpenProject(normalizedPath)
+          if additional != null && additional.getBasePath != null then
+            projects.put(additional.getBasePath, additional)
       return
 
     registry match
       case Some(reg) =>
         System.err.println(s"[ProjectManager] Delegating to ProjectRegistry for: $projectPath")
         project = reg.openProject(projectPath)
+        if project != null && project.getBasePath != null then
+          projects.put(project.getBasePath, project)
         return
       case None => ()
 
@@ -57,6 +85,9 @@ class IntellijProjectManager(registry: Option[ProjectRegistry] = None, daemonMod
 
     if project == null then
       throw RuntimeException(s"Failed to open project at $projectPath")
+
+    if project.getBasePath != null then
+      projects.put(project.getBasePath, project)
 
     System.err.println(s"[ProjectManager] Project opened: ${project.getName}")
 
@@ -99,13 +130,22 @@ class IntellijProjectManager(registry: Option[ProjectRegistry] = None, daemonMod
       if daemonMode then
         // In daemon mode, only clear local state — the project lives in ProjectRegistry
         project = null
+        projects.clear()
         virtualFileCache.clear()
         System.err.println("[ProjectManager] Session cleared (daemon mode)")
       else
         ApplicationManager.getApplication.invokeAndWait: () =>
           ProjectManager.getInstance().closeAndDispose(p)
         project = null
+        projects.clear()
         System.err.println("[ProjectManager] Project closed")
+
+  def closeProject(folderPath: String): Unit =
+    projects.remove(folderPath).foreach: p =>
+      if !daemonMode then
+        ApplicationManager.getApplication.invokeAndWait: () =>
+          ProjectManager.getInstance().closeAndDispose(p)
+      if project == p then project = projects.values.headOption.orNull
 
   def findVirtualFile(uri: String): Option[VirtualFile] =
     virtualFileCache.get(uri).orElse:

@@ -5,6 +5,7 @@ import org.eclipse.lsp4j.services.*
 import org.jetbrains.scalalsP.intellij.IntellijProjectManager
 
 import java.util.concurrent.CompletableFuture
+import scala.jdk.CollectionConverters.*
 
 // Main LSP server implementation using lsp4j.
 // Delegates textDocument and workspace requests to specialized services.
@@ -109,6 +110,25 @@ class ScalaLspServer(
       // Formatting
       capabilities.setDocumentFormattingProvider(true)
       capabilities.setDocumentRangeFormattingProvider(true)
+
+      // Workspace folders
+      val workspaceFolderOptions = WorkspaceFoldersOptions()
+      workspaceFolderOptions.setSupported(true)
+      workspaceFolderOptions.setChangeNotifications(true)
+      val workspaceCapabilities = WorkspaceServerCapabilities(workspaceFolderOptions)
+      capabilities.setWorkspace(workspaceCapabilities)
+
+      // Open initial workspace folders (beyond the root)
+      val workspaceFolders = Option(params.getWorkspaceFolders)
+      workspaceFolders.foreach: folders =>
+        folders.asScala.foreach: folder =>
+          val uri = folder.getUri
+          val folderPath = if uri.startsWith("file://") then java.net.URI.create(uri).getPath else uri
+          if folderPath != effectivePath then
+            System.err.println(s"[ScalaLsp] Opening additional workspace folder: $folderPath")
+            try projectManager.openProject(folderPath)
+            catch case e: Exception =>
+              System.err.println(s"[ScalaLsp] Failed to open workspace folder: ${e.getMessage}")
 
       System.err.println("[ScalaLsp] Server capabilities configured")
 
