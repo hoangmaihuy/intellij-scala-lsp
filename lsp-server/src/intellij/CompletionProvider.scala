@@ -5,7 +5,6 @@ import com.intellij.codeInsight.lookup.{LookupElement, LookupElementPresentation
 import com.intellij.openapi.application.{ApplicationManager, ReadAction}
 import com.intellij.openapi.editor.{Editor, EditorFactory}
 import com.intellij.openapi.fileEditor.FileDocumentManager
-import com.intellij.psi.PsiNamedElement
 import org.eclipse.lsp4j.*
 
 import scala.jdk.CollectionConverters.*
@@ -90,99 +89,9 @@ class CompletionProvider(projectManager: IntellijProjectManager):
     offset: Int,
     results: scala.collection.mutable.ArrayBuffer[LookupElement]
   ): Unit =
-    // Use reflection to invoke fillCompletionVariants if direct API isn't accessible
-    // The standard approach: create CompletionParameters and a result consumer
-    try
-      // Try to use CompletionParameters.createParameters (may be internal API)
-      val paramsClass = Class.forName("com.intellij.codeInsight.completion.CompletionParameters")
-      // Fallback: just collect what we can from the PSI context
-      collectFromPsiContext(element, results)
-    catch
-      case _: Exception =>
-        collectFromPsiContext(element, results)
-
-  private def collectFromPsiContext(
-    element: com.intellij.psi.PsiElement,
-    results: scala.collection.mutable.ArrayBuffer[LookupElement]
-  ): Unit =
-    // Strategy: Walk the scope to find visible declarations
-    // This is a simplified fallback when the full CompletionService isn't available
-    import com.intellij.codeInsight.lookup.LookupElementBuilder
-
-    val project = projectManager.getProject
-
-    // 1. Collect from the current file's scope
-    var scope = element.getParent
-    while scope != null do
-      scope.getChildren.foreach: child =>
-        child match
-          case named: PsiNamedElement =>
-            val name = named.getName
-            if name != null && name.nonEmpty then
-              val lookup = LookupElementBuilder.create(named, name)
-                .withTypeText(getTypeText(named))
-              results += lookup
-          case _ => ()
-      scope = scope.getParent
-
-    // 2. Try to collect from Scala plugin's implicit scope via reference completion
-    try
-      val ref = element.getReference
-      if ref != null then
-        ref match
-          case poly: com.intellij.psi.PsiPolyVariantReference =>
-            poly.multiResolve(true).foreach: rr =>
-              Option(rr.getElement).foreach:
-                case named: PsiNamedElement =>
-                  val name = named.getName
-                  if name != null && name.nonEmpty then
-                    results += LookupElementBuilder.create(named, name)
-                      .withTypeText(getTypeText(named))
-                case _ => ()
-          case _ =>
-            Option(ref.resolve()).foreach:
-              case named: PsiNamedElement =>
-                // If resolved to a type, get its members
-                collectMembers(named, results)
-              case _ => ()
-    catch
-      case _: Exception => ()
-
-  private def collectMembers(
-    element: com.intellij.psi.PsiElement,
-    results: scala.collection.mutable.ArrayBuffer[LookupElement]
-  ): Unit =
-    import com.intellij.codeInsight.lookup.LookupElementBuilder
-    try
-      // For classes/objects, collect their members
-      val className = element.getClass.getName
-      if className.contains("ScObject") || className.contains("ScClass") ||
-         className.contains("ScTrait") || className.contains("PsiClass") then
-        element.getChildren.foreach: child =>
-          child match
-            case named: PsiNamedElement =>
-              val name = named.getName
-              if name != null && name.nonEmpty then
-                results += LookupElementBuilder.create(named, name)
-                  .withTypeText(getTypeText(named))
-            case _ => ()
-    catch
-      case _: Exception => ()
-
-  private def getTypeText(element: com.intellij.psi.PsiElement): String =
-    try
-      val method = element.getClass.getMethod("getType")
-      val typeResult = method.invoke(element)
-      if typeResult == null then ""
-      else
-        try
-          val getMethod = typeResult.getClass.getMethod("get")
-          val scType = getMethod.invoke(typeResult)
-          if scType != null then scType.toString else ""
-        catch
-          case _: Exception => typeResult.toString
-    catch
-      case _: Exception => ""
+    // CompletionContributor.forLanguage() already provides the right contributors.
+    // If they don't produce results for this context, returning empty is correct.
+    ()
 
   private def toLspCompletionItem(
     elem: LookupElement,
@@ -223,25 +132,17 @@ class CompletionProvider(projectManager: IntellijProjectManager):
     val psiElement = elem.getPsiElement
     if psiElement == null then return CompletionItemKind.Text
 
-    val className = psiElement.getClass.getName
-    if className.contains("ScFunction") || className.contains("PsiMethod") then
-      CompletionItemKind.Method
-    else if className.contains("ScClass") || className.contains("PsiClass") then
-      CompletionItemKind.Class
-    else if className.contains("ScTrait") then
-      CompletionItemKind.Interface
-    else if className.contains("ScObject") then
-      CompletionItemKind.Module
-    else if className.contains("ScValue") || className.contains("PsiField") then
-      CompletionItemKind.Field
-    else if className.contains("ScVariable") then
-      CompletionItemKind.Variable
-    else if className.contains("ScTypeAlias") then
-      CompletionItemKind.TypeParameter
-    else if className.contains("ScPackage") || className.contains("PsiPackage") then
-      CompletionItemKind.Module
-    else
-      CompletionItemKind.Text
+    import org.eclipse.lsp4j.SymbolKind
+    PsiUtils.getSymbolKind(psiElement) match
+      case SymbolKind.Class          => CompletionItemKind.Class
+      case SymbolKind.Interface      => CompletionItemKind.Interface
+      case SymbolKind.Module         => CompletionItemKind.Module
+      case SymbolKind.Method         => CompletionItemKind.Method
+      case SymbolKind.Field          => CompletionItemKind.Field
+      case SymbolKind.Variable       => CompletionItemKind.Variable
+      case SymbolKind.TypeParameter  => CompletionItemKind.TypeParameter
+      case SymbolKind.Package        => CompletionItemKind.Module
+      case _                         => CompletionItemKind.Text
 
   private def getAutoImportEdit(
     elem: LookupElement,
@@ -251,13 +152,15 @@ class CompletionProvider(projectManager: IntellijProjectManager):
       val psi = elem.getPsiElement
       if psi == null then return None
 
+      import com.intellij.navigation.NavigationItem
       val qualifiedName = psi match
-        case named: PsiNamedElement =>
-          try
-            val method = named.getClass.getMethod("qualifiedName")
-            Option(method.invoke(named)).map(_.toString)
-          catch
-            case _: NoSuchMethodException => None
+        case nav: NavigationItem =>
+          Option(nav.getPresentation).flatMap(p => Option(p.getLocationString))
+            .filter(_.contains("."))
+            .orElse {
+              // Fall back to name if presentation doesn't give a qualified name
+              Option(nav.getName).filter(_.contains("."))
+            }
         case _ => None
 
       qualifiedName.flatMap: qName =>

@@ -5,7 +5,7 @@ import com.intellij.navigation.{ChooseByNameContributor, ChooseByNameContributor
 import com.intellij.psi.*
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.util.indexing.FindSymbolParameters
-import org.eclipse.lsp4j.{DocumentSymbol, SymbolInformation, SymbolKind, Location as LspLocation}
+import org.eclipse.lsp4j.{DocumentSymbol, SymbolInformation, Location as LspLocation}
 
 import scala.jdk.CollectionConverters.*
 
@@ -35,7 +35,7 @@ class SymbolProvider(projectManager: IntellijProjectManager):
       child match
         case named: PsiNamedElement if isSignificantElement(named) =>
           val name = Option(named.getName).getOrElse("<anonymous>")
-          val kind = getSymbolKind(named)
+          val kind = PsiUtils.getSymbolKind(named)
           val range = PsiUtils.elementToRange(document, child)
           val selectionRange = PsiUtils.nameElementToRange(document, child)
           val symbol = new DocumentSymbol(name, kind, range, selectionRange)
@@ -69,18 +69,6 @@ class SymbolProvider(projectManager: IntellijProjectManager):
     className.contains("ScPackaging") ||
     className.contains("PsiClass") ||
     className.contains("PsiMethod")
-
-  private def getSymbolKind(element: PsiNamedElement): SymbolKind =
-    val className = element.getClass.getName
-    if className.contains("ScClass") || className.contains("PsiClass") then SymbolKind.Class
-    else if className.contains("ScTrait") then SymbolKind.Interface
-    else if className.contains("ScObject") then SymbolKind.Module
-    else if className.contains("ScFunction") || className.contains("PsiMethod") then SymbolKind.Method
-    else if className.contains("ScVariable") then SymbolKind.Variable
-    else if className.contains("ScValue") then SymbolKind.Field
-    else if className.contains("ScTypeAlias") then SymbolKind.TypeParameter
-    else if className.contains("ScPackaging") then SymbolKind.Package
-    else SymbolKind.Variable
 
   // --- workspace/symbol ---
 
@@ -135,7 +123,7 @@ class SymbolProvider(projectManager: IntellijProjectManager):
                             val key = s"${named.getName}@${loc.getUri}:${loc.getRange.getStart.getLine}"
                             if !seen.contains(key) then
                               seen += key
-                              val kind = getSymbolKind(named)
+                              val kind = PsiUtils.getSymbolKind(named)
                               val containerName = getContainerName(psi)
                               results += new SymbolInformation(named.getName, kind, loc, containerName)
                         case _ => ()
@@ -160,7 +148,7 @@ class SymbolProvider(projectManager: IntellijProjectManager):
                             val key = s"${psi.getName}@${loc.getUri}:${loc.getRange.getStart.getLine}"
                             if !seen.contains(key) then
                               seen += key
-                              results += new SymbolInformation(psi.getName, getSymbolKind(psi), loc, getContainerName(psi))
+                              results += new SymbolInformation(psi.getName, PsiUtils.getSymbolKind(psi), loc, getContainerName(psi))
                         case _ => ()
             catch
               case _: Exception => ()

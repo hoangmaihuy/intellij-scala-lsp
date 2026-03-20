@@ -3,7 +3,7 @@ package org.jetbrains.scalalsP.intellij
 import com.intellij.openapi.editor.Document
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.{PsiElement, PsiFile, PsiNameIdentifierOwner, PsiNamedElement}
-import org.eclipse.lsp4j.{Location, Position, Range}
+import org.eclipse.lsp4j.{Location, Position, Range, SymbolKind}
 
 /**
  * Utilities for converting between IntelliJ's offset-based positions
@@ -62,6 +62,22 @@ object PsiUtils:
   /** Find the PsiElement at a given offset that is most suitable for navigation */
   def findElementAtOffset(psiFile: PsiFile, offset: Int): Option[PsiElement] =
     Option(psiFile.findElementAt(offset))
+
+  /** Determine the LSP SymbolKind for a PSI element based on its class name.
+   * Shared by SymbolProvider, CompletionProvider, and CallHierarchyProvider. */
+  def getSymbolKind(element: PsiElement): SymbolKind =
+    val cls = element.getClass.getName
+    if cls.contains("ScClass") then SymbolKind.Class
+    else if cls.contains("ScTrait") then SymbolKind.Interface
+    else if cls.contains("ScObject") then SymbolKind.Module
+    else if cls.contains("ScFunction") || cls.contains("PsiMethod") then SymbolKind.Method
+    else if cls.contains("ScValue") || cls.contains("ScPatternDefinition") then SymbolKind.Variable
+    else if cls.contains("ScVariable") || cls.contains("ScVariableDefinition") then SymbolKind.Variable
+    else if cls.contains("ScTypeAlias") then SymbolKind.TypeParameter
+    else if cls.contains("ScPackaging") then SymbolKind.Package
+    else if cls.contains("PsiClass") then SymbolKind.Class
+    else if cls.contains("PsiField") then SymbolKind.Field
+    else SymbolKind.Variable
 
   /** Walk up from a leaf element to find the nearest reference or named element */
   def findReferenceElementAt(psiFile: PsiFile, offset: Int): Option[PsiElement] =

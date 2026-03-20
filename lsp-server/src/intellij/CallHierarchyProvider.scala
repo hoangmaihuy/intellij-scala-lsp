@@ -111,7 +111,7 @@ class CallHierarchyProvider(projectManager: IntellijProjectManager):
           val uri = PsiUtils.vfToUri(vf)
           val range = PsiUtils.elementToRange(document, element)
           val selectionRange = PsiUtils.nameElementToRange(document, element)
-          val kind = getSymbolKind(named)
+          val kind = PsiUtils.getSymbolKind(named)
           val detail = getContainerName(element)
           val item = new CallHierarchyItem(name, kind, uri, range, selectionRange)
           if detail != null then item.setDetail(detail)
@@ -168,17 +168,6 @@ class CallHierarchyProvider(projectManager: IntellijProjectManager):
           val ranges = calleeMap.getOrElseUpdate(resolved, scala.collection.mutable.ArrayBuffer())
           ranges += PsiUtils.elementToRange(document, child)
       collectOutgoingRefs(child, document, calleeMap)
-
-  private def getSymbolKind(element: PsiNamedElement): SymbolKind =
-    val className = element.getClass.getName
-    if className.contains("ScClass") || className.contains("PsiClass") then SymbolKind.Class
-    else if className.contains("ScTrait") then SymbolKind.Interface
-    else if className.contains("ScObject") then SymbolKind.Module
-    else if className.contains("ScFunction") || className.contains("PsiMethod") then SymbolKind.Method
-    else if className.contains("ScVariable") then SymbolKind.Variable
-    else if className.contains("ScValue") then SymbolKind.Field
-    else if className.contains("ScTypeAlias") then SymbolKind.TypeParameter
-    else SymbolKind.Function
 
   private def getContainerName(element: PsiElement): String =
     var parent = element.getParent
