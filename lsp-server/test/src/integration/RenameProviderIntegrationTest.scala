@@ -4,6 +4,8 @@ import org.eclipse.lsp4j.Position
 import org.jetbrains.scalalsP.intellij.RenameProvider
 import org.junit.Assert.*
 
+import scala.jdk.CollectionConverters.*
+
 class RenameProviderIntegrationTest extends ScalaLspTestBase:
 
   private def provider = RenameProvider(projectManager)
@@ -38,6 +40,33 @@ class RenameProviderIntegrationTest extends ScalaLspTestBase:
     // Position on an empty line — nothing to rename
     val result = provider.prepareRename(uri, positionAt(2, 0))
     assertNull("Empty line should not be renameable", result)
+
+  def testPrepareRenameForbiddenEquals(): Unit =
+    val uri = configureScalaFile(
+      """class Foo:
+        |  override def equals(other: Any): Boolean = false
+        |""".stripMargin
+    )
+    val result = provider.prepareRename(uri, positionAt(1, 15))
+    assertNull("Forbidden symbol 'equals' should not be renameable", result)
+
+  def testPrepareRenameForbiddenHashCode(): Unit =
+    val uri = configureScalaFile(
+      """class Foo:
+        |  override def hashCode(): Int = 0
+        |""".stripMargin
+    )
+    val result = provider.prepareRename(uri, positionAt(1, 15))
+    assertNull("Forbidden symbol 'hashCode' should not be renameable", result)
+
+  def testPrepareRenameForbiddenToString(): Unit =
+    val uri = configureScalaFile(
+      """class Foo:
+        |  override def toString: String = "foo"
+        |""".stripMargin
+    )
+    val result = provider.prepareRename(uri, positionAt(1, 15))
+    assertNull("Forbidden symbol 'toString' should not be renameable", result)
 
   def testRenameLocalVariable(): Unit =
     val uri = configureScalaFile(
@@ -96,3 +125,50 @@ class RenameProviderIntegrationTest extends ScalaLspTestBase:
     // Cross-file resolution may not work in light test mode
     if result != null then
       assertNotNull(result.getChanges)
+
+  def testRenameTopLevelClassIncludesFileRename(): Unit =
+    // Use addScalaFile so the virtual file actually gets the name "MyClass.scala"
+    val uri = addScalaFile("MyClass.scala",
+      """class MyClass:
+        |  def hello(): Unit = ()
+        |""".stripMargin
+    )
+    val result = provider.rename(uri, positionAt(0, 6), "NewClass")
+    assertNotNull("Rename of top-level class should produce edits", result)
+    // When class name matches filename, we expect documentChanges (with RenameFile)
+    val docChanges = result.getDocumentChanges
+    assertNotNull("Should use documentChanges for file rename", docChanges)
+    val hasRenameFileOp = docChanges.asScala.exists: change =>
+      change.isRight && change.getRight.isInstanceOf[org.eclipse.lsp4j.RenameFile]
+    assertTrue("Should include a RenameFile resource operation", hasRenameFileOp)
+
+  def testRenameTopLevelClassNoFileRenameWhenNamesDiffer(): Unit =
+    // Use addScalaFile so the virtual file gets the name "SomeFile.scala"
+    val uri = addScalaFile("SomeFile.scala",
+      """class MyClass:
+        |  def hello(): Unit = ()
+        |""".stripMargin
+    )
+    val result = provider.rename(uri, positionAt(0, 6), "NewClass")
+    // File name "SomeFile" != class name "MyClass", so no file rename should occur
+    if result != null then
+      val docChanges = result.getDocumentChanges
+      if docChanges != null then
+        val hasRenameFileOp = docChanges.asScala.exists: change =>
+          change.isRight && change.getRight.isInstanceOf[org.eclipse.lsp4j.RenameFile]
+        assertFalse("Should NOT include RenameFile when class name doesn't match filename", hasRenameFileOp)
+
+  def testRenameClassWithCompanionObject(): Unit =
+    val uri = configureScalaFile(
+      """class MyData(val x: Int)
+        |object MyData:
+        |  def empty: MyData = MyData(0)
+        |""".stripMargin
+    )
+    val result = provider.rename(uri, positionAt(0, 6), "YourData")
+    assertNotNull("Rename of class with companion should produce edits", result)
+    // Both the class and its companion object declarations should be renamed.
+    // We just verify that edits are produced — the companion rename is included.
+    val hasEdits = if result.getDocumentChanges != null then !result.getDocumentChanges.isEmpty
+                   else result.getChanges != null && !result.getChanges.isEmpty
+    assertTrue("Should have edits for class and companion rename", hasEdits)
