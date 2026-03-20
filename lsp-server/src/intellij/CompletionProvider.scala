@@ -2,17 +2,28 @@ package org.jetbrains.scalalsP.intellij
 
 import com.intellij.codeInsight.completion.*
 import com.intellij.codeInsight.lookup.{LookupElement, LookupElementPresentation}
+import com.intellij.lang.LanguageDocumentation
 import com.intellij.openapi.application.{ApplicationManager, ReadAction}
 import com.intellij.openapi.editor.{Editor, EditorFactory}
 import com.intellij.openapi.fileEditor.FileDocumentManager
+import com.google.gson.JsonObject
 import org.eclipse.lsp4j.*
 
+import java.util.concurrent.atomic.AtomicLong
 import scala.jdk.CollectionConverters.*
 
 // Implements textDocument/completion by invoking IntelliJ's completion contributors.
-// The Scala plugin registers CompletionContributors for Scala-specific completions
-// (methods, types, imports, postfix templates, etc.).
+// Completion items are returned lean (no docs, no detail, no auto-import edits).
+// Those fields are lazy-loaded via completionItem/resolve using a cached lookup elements array.
 class CompletionProvider(projectManager: IntellijProjectManager):
+
+  // Cache fields for resolve support
+  private val requestIdCounter = AtomicLong(0L)
+  @volatile private var cachedElements: Array[LookupElement] = Array.empty
+  @volatile private var cachedRequestId: Long = -1L
+  @volatile private var cacheTimestamp: Long = 0L
+  @volatile private var cachedDocument: com.intellij.openapi.editor.Document = null
+  private val CacheTtlMs = 30_000L
 
   def getCompletions(uri: String, position: Position): Seq[CompletionItem] =
     // Resolve file/document in ReadAction, then do completion outside it
@@ -31,6 +42,55 @@ class CompletionProvider(projectManager: IntellijProjectManager):
     yield
       performCompletion(psiFile, document, projectManager.getProject, offset)
     ).getOrElse(Seq.empty)
+
+  def resolveCompletion(item: CompletionItem): CompletionItem =
+    try
+      val data = item.getData match
+        case obj: JsonObject => obj
+        case _ => return item
+      val requestId = data.get("requestId").getAsLong
+      val index = data.get("index").getAsInt
+
+      if requestId != cachedRequestId then return item
+      if System.currentTimeMillis() - cacheTimestamp > CacheTtlMs then return item
+      if index < 0 || index >= cachedElements.length then return item
+
+      val elem = cachedElements(index)
+      val doc = cachedDocument
+      projectManager.smartReadAction: () =>
+        // Populate detail from LookupElementPresentation
+        val presentation = LookupElementPresentation()
+        elem.renderElement(presentation)
+        val detail = Seq(
+          Option(presentation.getTypeText).filter(_.nonEmpty),
+          Option(presentation.getTailText).filter(_.nonEmpty)
+        ).flatten.mkString(" ")
+        if detail.nonEmpty then item.setDetail(detail)
+
+        // Populate documentation via LanguageDocumentation
+        val psi = elem.getPsiElement
+        if psi != null then
+          try
+            val lang = psi.getLanguage
+            val docProvider = LanguageDocumentation.INSTANCE.forLanguage(lang)
+            if docProvider != null then
+              val docText = docProvider.generateDoc(psi, null)
+              if docText != null && docText.nonEmpty then
+                val clean = docText.replaceAll("<[^>]+>", "").trim
+                if clean.nonEmpty then
+                  item.setDocumentation(MarkupContent(MarkupKind.MARKDOWN, clean))
+          catch case _: Exception => ()
+
+        // Populate auto-import edits
+        if doc != null then
+          getAutoImportEdit(elem, doc).foreach: edit =>
+            item.setAdditionalTextEdits(java.util.List.of(edit))
+
+      item
+    catch
+      case e: Exception =>
+        System.err.println(s"[CompletionProvider] Resolve error: ${e.getMessage}")
+        item
 
   private def performCompletion(
     psiFile: com.intellij.psi.PsiFile,
@@ -64,9 +124,17 @@ class CompletionProvider(projectManager: IntellijProjectManager):
               catch
                 case _: Exception => ()
 
-      // Convert to LSP CompletionItems
-      lookupElements.take(200).zipWithIndex.map: (elem, idx) =>
-        toLspCompletionItem(elem, document, idx)
+      // Store in cache for resolve
+      val elements = lookupElements.take(200).toArray
+      val newRequestId = requestIdCounter.incrementAndGet()
+      cachedElements = elements
+      cachedRequestId = newRequestId
+      cacheTimestamp = System.currentTimeMillis()
+      cachedDocument = document
+
+      // Convert to lean LSP CompletionItems (no detail, no docs, no auto-import)
+      elements.zipWithIndex.map: (elem, idx) =>
+        toLspCompletionItem(elem, newRequestId, idx)
       .toSeq
     catch
       case e: Exception =>
@@ -95,22 +163,11 @@ class CompletionProvider(projectManager: IntellijProjectManager):
 
   private def toLspCompletionItem(
     elem: LookupElement,
-    document: com.intellij.openapi.editor.Document,
+    requestId: Long,
     sortIndex: Int
   ): CompletionItem =
     val item = CompletionItem()
     item.setLabel(elem.getLookupString)
-
-    // Get presentation details
-    val presentation = LookupElementPresentation()
-    elem.renderElement(presentation)
-
-    // Build detail from type and tail text
-    val detail = Seq(
-      Option(presentation.getTypeText).filter(_.nonEmpty),
-      Option(presentation.getTailText).filter(_.nonEmpty)
-    ).flatten.mkString(" ")
-    if detail.nonEmpty then item.setDetail(detail)
 
     // Determine CompletionItemKind
     item.setKind(getCompletionKind(elem))
@@ -122,9 +179,11 @@ class CompletionProvider(projectManager: IntellijProjectManager):
     item.setInsertText(elem.getLookupString)
     item.setInsertTextFormat(InsertTextFormat.PlainText)
 
-    // Auto-import
-    getAutoImportEdit(elem, document).foreach: edit =>
-      item.setAdditionalTextEdits(java.util.List.of(edit))
+    // Data field for resolve (requestId + index)
+    val data = JsonObject()
+    data.addProperty("requestId", requestId)
+    data.addProperty("index", sortIndex)
+    item.setData(data)
 
     item
 

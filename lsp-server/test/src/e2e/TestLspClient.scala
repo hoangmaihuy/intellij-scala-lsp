@@ -182,6 +182,11 @@ class TestLspClient private (
       else result.getRight.getItems.asScala.toList
     }
 
+  def resolveCompletionItem(item: CompletionItem): CompletionItem =
+    requestOffEdt() {
+      clientProxy.getTextDocumentService.resolveCompletionItem(item).get(10, TimeUnit.SECONDS)
+    }
+
   def documentSymbols(uri: String): List[DocumentSymbol] =
     requestOffEdt() {
       val params = new DocumentSymbolParams()

@@ -152,6 +152,10 @@ class ScalaTextDocumentService(projectManager: IntellijProjectManager) extends T
       )
       LspEither.forLeft(items.asJava)
 
+  override def resolveCompletionItem(unresolved: CompletionItem): CompletableFuture[CompletionItem] =
+    CompletableFuture.supplyAsync: () =>
+      completionProvider.resolveCompletion(unresolved)
+
   // --- Code Actions ---
 
   override def codeAction(params: CodeActionParams): CompletableFuture[util.List[LspEither[Command, CodeAction]]] =

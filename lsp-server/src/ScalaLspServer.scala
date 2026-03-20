@@ -70,7 +70,7 @@ class ScalaLspServer(
 
       // Completion with trigger characters
       capabilities.setCompletionProvider(
-        CompletionOptions(false, java.util.List.of(".", " "))
+        CompletionOptions(true, java.util.List.of(".", " "))
       )
 
       // Rename
