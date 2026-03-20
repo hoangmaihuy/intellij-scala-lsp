@@ -30,6 +30,7 @@ class ScalaTextDocumentService(projectManager: IntellijProjectManager) extends T
   private val codeActionProvider = CodeActionProvider(projectManager)
   private val renameProvider = RenameProvider(projectManager)
   private val typeHierarchyProvider = TypeHierarchyProvider(projectManager)
+  private val formattingProvider = FormattingProvider(projectManager)
 
   def connect(client: LanguageClient): Unit =
     this.client = client
@@ -196,3 +197,16 @@ class ScalaTextDocumentService(projectManager: IntellijProjectManager) extends T
   override def typeHierarchySubtypes(params: TypeHierarchySubtypesParams): CompletableFuture[util.List[TypeHierarchyItem]] =
     CompletableFuture.supplyAsync: () =>
       typeHierarchyProvider.subtypes(params.getItem).asJava
+
+  // --- Formatting ---
+
+  override def formatting(params: DocumentFormattingParams): CompletableFuture[util.List[? <: TextEdit]] =
+    CompletableFuture.supplyAsync: () =>
+      formattingProvider.getFormatting(params.getTextDocument.getUri).asJava
+
+  override def rangeFormatting(params: DocumentRangeFormattingParams): CompletableFuture[util.List[? <: TextEdit]] =
+    CompletableFuture.supplyAsync: () =>
+      formattingProvider.getRangeFormatting(
+        params.getTextDocument.getUri,
+        params.getRange
+      ).asJava

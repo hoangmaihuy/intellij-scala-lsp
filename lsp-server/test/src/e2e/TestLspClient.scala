@@ -247,6 +247,23 @@ class TestLspClient private (
       else result.asScala.map(_.getRight).toList
     }
 
+  def formatting(uri: String): java.util.List[? <: TextEdit] =
+    requestOffEdt() {
+      val params = new DocumentFormattingParams()
+      params.setTextDocument(new TextDocumentIdentifier(uri))
+      params.setOptions(new FormattingOptions(2, true))
+      clientProxy.getTextDocumentService.formatting(params).get(10, TimeUnit.SECONDS)
+    }
+
+  def rangeFormatting(uri: String, range: Range): java.util.List[? <: TextEdit] =
+    requestOffEdt() {
+      val params = new DocumentRangeFormattingParams()
+      params.setTextDocument(new TextDocumentIdentifier(uri))
+      params.setRange(range)
+      params.setOptions(new FormattingOptions(2, true))
+      clientProxy.getTextDocumentService.rangeFormatting(params).get(10, TimeUnit.SECONDS)
+    }
+
   def executeCommand(command: String, args: java.util.List[AnyRef]): AnyRef =
     requestOffEdt() {
       val params = new ExecuteCommandParams()

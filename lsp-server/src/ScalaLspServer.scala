@@ -99,6 +99,10 @@ class ScalaLspServer(
       )
       capabilities.setCodeActionProvider(codeActionOptions)
 
+      // Formatting
+      capabilities.setDocumentFormattingProvider(true)
+      capabilities.setDocumentRangeFormattingProvider(true)
+
       System.err.println("[ScalaLsp] Server capabilities configured")
 
       val serverInfo = ServerInfo("intellij-scala-lsp", "0.1.0")
