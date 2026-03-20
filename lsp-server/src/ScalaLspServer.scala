@@ -146,12 +146,42 @@ class ScalaLspServer(
     // to avoid blocking the lsp4j message processing thread
     java.util.concurrent.CompletableFuture.runAsync: () =>
       if client != null then
-        client.logMessage(MessageParams(MessageType.Info, "Indexing project..."))
-      projectManager.waitForSmartMode()
+        reportIndexingProgress()
+      else
+        projectManager.waitForSmartMode()
       textDocumentService.registerDaemonListener()
       System.err.println("[ScalaLsp] Project indexing complete, ready for requests")
       if client != null then
         client.logMessage(MessageParams(MessageType.Info, "Indexing complete, ready for requests"))
+
+  private def reportIndexingProgress(): Unit =
+    import org.eclipse.lsp4j.jsonrpc.messages.{Either as LspEither}
+    val token = "indexing"
+    val createParams = WorkDoneProgressCreateParams()
+    createParams.setToken(token)
+    try client.createProgress(createParams).get()
+    catch case _: Exception => ()
+
+    val begin = WorkDoneProgressBegin()
+    begin.setTitle("Indexing")
+    begin.setMessage("Scanning project files...")
+    begin.setCancellable(false)
+    client.notifyProgress(ProgressParams(LspEither.forLeft(token), LspEither.forLeft(begin)))
+
+    val project = projectManager.getProject
+    val dumbService = com.intellij.openapi.project.DumbService.getInstance(project)
+    val startTime = System.currentTimeMillis()
+    while dumbService.isDumb do
+      val elapsed = (System.currentTimeMillis() - startTime) / 1000
+      val report = WorkDoneProgressReport()
+      report.setMessage(s"Indexing... (${elapsed}s)")
+      client.notifyProgress(ProgressParams(LspEither.forLeft(token), LspEither.forLeft(report)))
+      try Thread.sleep(1000)
+      catch case _: InterruptedException => ()
+
+    val end = WorkDoneProgressEnd()
+    end.setMessage("Indexing complete")
+    client.notifyProgress(ProgressParams(LspEither.forLeft(token), LspEither.forLeft(end)))
 
   override def shutdown(): CompletableFuture[AnyRef] =
     CompletableFuture.supplyAsync: () =>

@@ -76,12 +76,15 @@ class ProjectRegistry:
   private def findJdkHome(): Option[String] =
     val candidates = Seq(
       Option(System.getenv("JAVA_HOME")),
-      Some(com.intellij.openapi.application.PathManager.getHomePath + "/jbr/Contents/Home"),
-      Some(com.intellij.openapi.application.PathManager.getHomePath + "/jbr"),
+      Some("/opt/homebrew/opt/openjdk/libexec/openjdk.jdk/Contents/Home"),
       Some("/Library/Java/JavaVirtualMachines/openjdk-21.jdk/Contents/Home"),
       Some("/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home"),
-    ).flatten
-    candidates.find(p => java.io.File(p + "/bin/java").exists())
+      Some(com.intellij.openapi.application.PathManager.getHomePath + "/jbr/Contents/Home"),
+      Some(com.intellij.openapi.application.PathManager.getHomePath + "/jbr"),
+    ).flatten.filter(p => java.io.File(p + "/bin/java").exists())
+    // Prefer JDKs that have src.zip (needed for source navigation)
+    val withSources = candidates.find(p => java.io.File(p + "/lib/src.zip").exists())
+    withSources.orElse(candidates.headOption)
 
   private def canonicalize(path: String): String =
     Path.of(path).toAbsolutePath.normalize.toString
