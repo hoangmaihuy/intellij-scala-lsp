@@ -44,6 +44,65 @@ class SemanticTokensProviderIntegrationTest extends ScalaLspTestBase:
     val result = provider.getSemanticTokensRange(uri, range)
     assertNotNull("Range tokens should return non-null", result)
 
+  /** Decode delta-encoded semantic tokens into (line, char, length, tokenType, modifiers) tuples */
+  private def decodeTokens(data: java.util.List[Integer]): Seq[(Int, Int, Int, Int, Int)] =
+    val result = scala.collection.mutable.ArrayBuffer[(Int, Int, Int, Int, Int)]()
+    var prevLine = 0
+    var prevChar = 0
+    var i = 0
+    while i + 4 < data.size() do
+      val deltaLine = data.get(i)
+      val deltaChar = data.get(i + 1)
+      val length = data.get(i + 2)
+      val tokenType = data.get(i + 3)
+      val modifiers = data.get(i + 4)
+      val line = prevLine + deltaLine.intValue
+      val char = if deltaLine == 0 then prevChar + deltaChar.intValue else deltaChar.intValue
+      result += ((line, char, length, tokenType, modifiers))
+      prevLine = line
+      prevChar = char
+      i += 5
+    result.toSeq
+
+  /** Find a token at a specific line and character position */
+  private def findTokenAt(tokens: Seq[(Int, Int, Int, Int, Int)], line: Int, char: Int): Option[(Int, Int, Int, Int, Int)] =
+    tokens.find((l, c, len, _, _) => l == line && c <= char && char < c + len)
+
+  def testParameterAndTypeHaveDifferentTokenTypes(): Unit =
+    val uri = configureScalaFile(
+      """final case class CreateInput(
+        |  batchUploadId: BatchUploadId,
+        |  params: Option[String]
+        |)
+        |class BatchUploadId
+        |""".stripMargin
+    )
+    myFixture.doHighlighting()
+    val result = provider.getSemanticTokensFull(uri)
+    val tokens = decodeTokens(result.getData)
+
+    val tokenTypeNames = SemanticTokensProvider.tokenTypes
+
+    // Print all tokens for debugging
+    for (line, char, len, tt, mods) <- tokens do
+      System.err.println(s"  token: line=$line char=$char len=$len type=${tokenTypeNames.get(tt)}($tt) mods=$mods")
+
+    // Find token for "batchUploadId" (line 1, starts at col 2)
+    val paramToken = findTokenAt(tokens, 1, 2)
+    // Find token for "BatchUploadId" (line 1, after ": ", starts at col 17)
+    val typeToken = findTokenAt(tokens, 1, 17)
+
+    assertTrue(s"Should have a token for parameter 'batchUploadId', tokens: $tokens", paramToken.isDefined)
+    assertTrue(s"Should have a token for type 'BatchUploadId', tokens: $tokens", typeToken.isDefined)
+
+    if paramToken.isDefined && typeToken.isDefined then
+      val paramType = paramToken.get._4
+      val typeType = typeToken.get._4
+      assertNotEquals(
+        s"Parameter '${tokenTypeNames.get(paramType)}' and type '${tokenTypeNames.get(typeType)}' should have different token types",
+        paramType, typeType
+      )
+
   def testTokenTypeMappingKnown(): Unit =
     val legend = SemanticTokensProvider.legend
     assertNotNull(legend)

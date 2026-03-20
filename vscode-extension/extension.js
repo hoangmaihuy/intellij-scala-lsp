@@ -54,6 +54,29 @@ function shortUri(uri) {
 // Middleware that logs requests with timing.
 // vscode-languageclient middleware signature: (params, token, next) => result
 // where `next` is the default handler provided by the framework.
+function summarizeResult(result) {
+  try {
+    if (result == null) return "null";
+    if (Array.isArray(result)) {
+      const count = result.length;
+      if (count === 0) return "[]";
+      const first = result[0];
+      if (first?.uri) {
+        const uri = typeof first.uri === "string" ? shortUri(first.uri) : String(first.uri);
+        return `${count} locations [${uri}:${first.range?.start?.line ?? "?"}]`;
+      }
+      if (first?.label) return `${count} items`;
+      return `${count} results`;
+    }
+    if (result?.contents) return "hover";
+    if (result?.signatures) return `${result.signatures.length} signatures`;
+    if (result?.changes || result?.documentChanges) return "workspace edit";
+    return typeof result;
+  } catch {
+    return "?";
+  }
+}
+
 function createLoggingMiddleware() {
   function wrap(method) {
     return async function (...args) {
@@ -61,15 +84,18 @@ function createLoggingMiddleware() {
       const next = args[args.length - 1];
       const params = args[0];
       const file = params?.textDocument?.uri ? ` [${shortUri(params.textDocument.uri)}]` : "";
+      const pos = params?.position ? `:${params.position.line}:${params.position.character}` : "";
       const start = Date.now();
       try {
         const result = await next(...args.slice(0, -1));
         const ms = Date.now() - start;
-        log(`${method}${file} -> ${ms}ms`);
+        let summary;
+        try { summary = summarizeResult(result); } catch { summary = "?"; }
+        log(`${method}${file}${pos} -> ${ms}ms ${summary}`);
         return result;
       } catch (err) {
         const ms = Date.now() - start;
-        log(`${method}${file} -> ERROR ${ms}ms: ${err.message}`);
+        log(`${method}${file}${pos} -> ERROR ${ms}ms: ${err?.message || err}`);
         throw err;
       }
     };

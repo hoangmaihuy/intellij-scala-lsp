@@ -28,14 +28,29 @@ class DefinitionProvider(projectManager: IntellijProjectManager):
       case Some(element) =>
         val ref = element.getReference
         if ref != null then
-          // Try multiResolve for Scala references first
-          element match
-            case polyRef: com.intellij.psi.PsiPolyVariantReference =>
-              polyRef.multiResolve(false)
+          // Try multiResolve for poly-variant references (check ref, not element)
+          val polyRefOpt: Option[com.intellij.psi.PsiPolyVariantReference] = ref match
+            case pr: com.intellij.psi.PsiPolyVariantReference => Some(pr)
+            case _ => element match
+              case pr: com.intellij.psi.PsiPolyVariantReference => Some(pr)
+              case _ => None
+
+          polyRefOpt match
+            case Some(polyRef) =>
+              // Try strict resolve first, then fallback to incomplete results
+              val strict = polyRef.multiResolve(false)
+              val results = if strict.nonEmpty then strict else polyRef.multiResolve(true)
+              val locations = results
                 .flatMap(rr => Option(rr.getElement))
                 .flatMap(target => PsiUtils.elementToLocation(target))
                 .toSeq
-            case _ =>
+              // If multiResolve found elements but elementToLocation failed, try resolve() as fallback
+              if locations.isEmpty then
+                Option(ref.resolve())
+                  .flatMap(target => PsiUtils.elementToLocation(target))
+                  .toSeq
+              else locations
+            case None =>
               Option(ref.resolve())
                 .flatMap(target => PsiUtils.elementToLocation(target))
                 .toSeq

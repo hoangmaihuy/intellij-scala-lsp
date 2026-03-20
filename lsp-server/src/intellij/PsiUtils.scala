@@ -46,6 +46,40 @@ object PsiUtils:
     val navElement = element.getNavigationElement
     val effectiveElement = if navElement != null && navElement != element then navElement else element
 
+    elementToLocationDirect(effectiveElement)
+      .orElse:
+        // Fallback for synthetic elements (e.g., case class apply methods) that have no VirtualFile.
+        // Walk up the PSI tree and try parent elements, then try the containing class.
+        findOriginalElement(element).flatMap(elementToLocationDirect)
+
+  /** Try to find the original source element for a synthetic element.
+    * For synthetic methods (like case class apply), navigates to the containing class. */
+  private def findOriginalElement(element: PsiElement): Option[PsiElement] =
+    // Try 1: If element is a PsiMethod, get its containing class
+    element match
+      case method: com.intellij.psi.PsiMethod =>
+        val cls = method.getContainingClass
+        if cls != null then
+          val nav = cls.getNavigationElement
+          val effective = if nav != null && nav != cls then nav else cls
+          if effective.getContainingFile != null && effective.getContainingFile.getVirtualFile != null then
+            return Some(effective)
+      case _ => ()
+
+    // Try 2: Walk up parents looking for one with a real VirtualFile
+    var parent = element.getParent
+    var depth = 0
+    while parent != null && depth < 10 do
+      val nav = parent.getNavigationElement
+      val effective = if nav != null && nav != parent then nav else parent
+      val hasVf = effective.getContainingFile != null && effective.getContainingFile.getVirtualFile != null
+      if hasVf then return Some(effective)
+      parent = parent.getParent
+      depth += 1
+
+    None
+
+  private def elementToLocationDirect(effectiveElement: PsiElement): Option[Location] =
     for
       file <- Option(effectiveElement.getContainingFile)
       vf <- Option(file.getVirtualFile)
@@ -190,8 +224,16 @@ object PsiUtils:
     else if cls.contains("PsiField") then SymbolKind.Field
     else SymbolKind.Variable
 
-  /** Walk up from a leaf element to find the nearest reference or named element */
+  /** Walk up from a leaf element to find the nearest reference or named element.
+    * Uses IntelliJ's findReferenceAt first for accurate reference detection,
+    * then falls back to manual tree walk. */
   def findReferenceElementAt(psiFile: PsiFile, offset: Int): Option[PsiElement] =
+    // Try IntelliJ's built-in reference finder first — handles contributed references,
+    // injection hosts, and other edge cases that manual walk-up misses
+    val builtinRef = Option(psiFile.findReferenceAt(offset))
+    if builtinRef.isDefined then
+      return builtinRef.map(_.getElement)
+
     findElementAtOffset(psiFile, offset).map: leaf =>
       // Walk up to find element with a reference
       var current = leaf

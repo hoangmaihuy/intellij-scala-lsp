@@ -36,12 +36,17 @@ class ReferencesProvider(projectManager: IntellijProjectManager):
         val project = projectManager.getProject
         val scope = GlobalSearchScope.projectScope(project)
 
-        val references = ReferencesSearch.search(target, scope, false)
-          .findAll()
-          .asScala
-          .flatMap(ref => PsiUtils.elementToLocation(ref.getElement))
-          .toSeq
+        // Use forEach instead of findAll to collect partial results if search crashes partway
+        val refsBuffer = scala.collection.mutable.ArrayBuffer[Location]()
+        try
+          ReferencesSearch.search(target, scope, false).forEach: (ref: com.intellij.psi.PsiReference) =>
+            PsiUtils.elementToLocation(ref.getElement).foreach(refsBuffer += _)
+            true
+        catch
+          case e: Exception =>
+            System.err.println(s"[References] ReferencesSearch partially failed: ${e.getClass.getSimpleName}: ${e.getMessage}")
 
+        val references = refsBuffer.toSeq
         if includeDeclaration then
           val declLocation = PsiUtils.elementToLocation(target).toSeq
           (declLocation ++ references).distinct

@@ -42,14 +42,15 @@ object SemanticTokensProvider:
     * Uses class name matching to avoid compile-time dependency on Scala plugin classes. */
   def classifyElement(element: PsiElement): Option[Int] =
     val cls = element.getClass.getName
-    if cls.contains("ScClass") || cls.contains("PsiClass") then Some(2)       // class
-    else if cls.contains("ScTrait") then Some(3)                                // interface
-    else if cls.contains("ScObject") then Some(2)                               // class (object)
-    else if cls.contains("ScEnum") then Some(4)                                 // enum
-    else if cls.contains("ScTypeAlias") then Some(1)                            // type
-    else if cls.contains("ScTypeParam") then Some(9)                            // typeParameter
+    // ScClassParameter/ScParameter must be checked before ScClass (substring match)
+    if cls.contains("ScParameter") then Some(8)                                  // parameter (covers ScClassParameter too)
+    else if cls.contains("ScClass") || cls.contains("PsiClass") then Some(2)     // class
+    else if cls.contains("ScTrait") then Some(3)                                 // interface
+    else if cls.contains("ScObject") then Some(2)                                // class (object)
+    else if cls.contains("ScEnum") then Some(4)                                  // enum
+    else if cls.contains("ScTypeAlias") then Some(1)                             // type
+    else if cls.contains("ScTypeParam") then Some(9)                             // typeParameter
     else if cls.contains("ScFunction") || cls.contains("PsiMethod") then Some(5) // method
-    else if cls.contains("ScParameter") then Some(8)                            // parameter
     else if cls.contains("ScBindingPattern") then
       // Distinguish field vs local variable by checking parent context
       val ctx = element.getParent
@@ -193,17 +194,36 @@ class SemanticTokensProvider(projectManager: IntellijProjectManager):
     val cls = element.getClass.getName
     cls.contains("ScClass") || cls.contains("ScTrait") || cls.contains("ScObject") ||
     cls.contains("ScEnum") || cls.contains("ScFunctionDefinition") || cls.contains("ScFunctionDeclaration") ||
-    cls.contains("ScTypeAlias") || cls.contains("ScGiven")
+    cls.contains("ScTypeAlias") || cls.contains("ScGiven") ||
+    cls.contains("ScClassParameter") || cls.contains("ScParameter") ||
+    cls.contains("ScBindingPattern")
 
   private def classifyDeclaration(element: PsiElement): Option[(Int, Int)] =
     val cls = element.getClass.getName
-    if cls.contains("ScClass") then Some((2, 0))       // class
+    // ScClassParameter must be checked before ScClass (substring match)
+    if cls.contains("ScClassParameter") || cls.contains("ScParameter") then Some((8, 0)) // parameter
+    else if cls.contains("ScClass") then Some((2, 0))       // class
     else if cls.contains("ScTrait") then Some((3, 4))   // interface + abstract
     else if cls.contains("ScObject") then Some((2, 2))  // class + static
     else if cls.contains("ScEnum") then Some((4, 0))    // enum
     else if cls.contains("ScFunction") then Some((5, 0)) // method
     else if cls.contains("ScTypeAlias") then Some((1, 0)) // type
     else if cls.contains("ScGiven") then Some((5, 0))   // method (given)
+    else if cls.contains("ScBindingPattern") then
+      // Classify based on parent context (same logic as classifyElement)
+      val ctx = element.getParent
+      if ctx != null then
+        val ctxCls = ctx.getClass.getName
+        if ctxCls.contains("ScValue") || ctxCls.contains("ScPatternDefinition") then
+          val grandParent = ctx.getParent
+          if grandParent != null && grandParent.getClass.getName.contains("ScTemplateBody") then Some((6, 8)) // property + readonly
+          else Some((7, 8)) // variable + readonly (local val)
+        else if ctxCls.contains("ScVariable") then
+          val grandParent = ctx.getParent
+          if grandParent != null && grandParent.getClass.getName.contains("ScTemplateBody") then Some((6, 0)) // property
+          else Some((7, 0)) // variable (local var)
+        else Some((7, 0)) // variable (pattern, generator, etc.)
+      else Some((7, 0))
     else None
 
   private def getNameIdentifier(element: PsiElement): Option[(Int, Int)] =
