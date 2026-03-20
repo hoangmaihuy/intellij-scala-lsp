@@ -69,7 +69,6 @@ echo "  IntelliJ SDK: $IDEA_HOME"
 echo ""
 echo "[3/4] Creating VS Code extension..."
 
-rm -rf "$EXT_DIR"
 mkdir -p "$EXT_DIR"
 
 # package.json
@@ -117,8 +116,7 @@ cat > "$EXT_DIR/package.json" << 'PKGJSON'
 }
 PKGJSON
 
-# extension.js — copy from the version-controlled source
-cp "$SCRIPT_DIR/vscode-extension/extension.js" "$EXT_DIR/extension.js"
+# extension.js is already version-controlled in $EXT_DIR — no generation needed
 
 # Install npm dependencies
 echo "  Installing vscode-languageclient..."
