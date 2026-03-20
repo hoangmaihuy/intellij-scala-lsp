@@ -1,8 +1,7 @@
 package org.jetbrains.scalalsP.intellij
 
-import com.intellij.codeInsight.daemon.impl.DaemonCodeAnalyzerImpl
-import com.intellij.lang.annotation.HighlightSeverity
 import com.intellij.openapi.fileEditor.FileDocumentManager
+import com.intellij.psi.{PsiElement, PsiFile, PsiNamedElement, PsiPolyVariantReference}
 import org.eclipse.lsp4j.*
 
 import java.util.{List as JList}
@@ -39,43 +38,41 @@ object SemanticTokensProvider:
 
   val legend: SemanticTokensLegend = SemanticTokensLegend(tokenTypes, tokenModifiers)
 
-  val typeMapping: Map[String, Int] = Map(
-    "SCALA_KEYWORD" -> 0,
-    "SCALA_CLASS" -> 2,
-    "SCALA_TRAIT" -> 3,
-    "SCALA_OBJECT" -> 2,
-    "SCALA_CASE_CLASS" -> 2,
-    "SCALA_TYPE_ALIAS" -> 1,
-    "SCALA_LOCAL_VARIABLE" -> 7,
-    "SCALA_MUTABLE_LOCAL_VARIABLE" -> 7,
-    "SCALA_PARAMETER" -> 8,
-    "SCALA_METHOD" -> 5,
-    "SCALA_METHOD_CALL" -> 5,
-    "SCALA_FUNCTION" -> 13,
-    "SCALA_TYPE_PARAMETER" -> 9,
-    "SCALA_STRING" -> 10,
-    "SCALA_NUMBER" -> 11,
-    "SCALA_LINE_COMMENT" -> 12,
-    "SCALA_BLOCK_COMMENT" -> 12,
-    "SCALA_DOC_COMMENT" -> 12,
-    "SCALA_FIELD" -> 6,
-    "SCALA_PROPERTY" -> 6,
-    "DEFAULT_KEYWORD" -> 0,
-    "DEFAULT_STRING" -> 10,
-    "DEFAULT_NUMBER" -> 11,
-    "DEFAULT_LINE_COMMENT" -> 12,
-    "DEFAULT_BLOCK_COMMENT" -> 12,
-    "DEFAULT_DOC_COMMENT" -> 12
-  )
+  /** Classify a resolved PSI element into a semantic token type index.
+    * Uses class name matching to avoid compile-time dependency on Scala plugin classes. */
+  def classifyElement(element: PsiElement): Option[Int] =
+    val cls = element.getClass.getName
+    if cls.contains("ScClass") || cls.contains("PsiClass") then Some(2)       // class
+    else if cls.contains("ScTrait") then Some(3)                                // interface
+    else if cls.contains("ScObject") then Some(2)                               // class (object)
+    else if cls.contains("ScEnum") then Some(4)                                 // enum
+    else if cls.contains("ScTypeAlias") then Some(1)                            // type
+    else if cls.contains("ScTypeParam") then Some(9)                            // typeParameter
+    else if cls.contains("ScFunction") || cls.contains("PsiMethod") then Some(5) // method
+    else if cls.contains("ScParameter") then Some(8)                            // parameter
+    else if cls.contains("ScBindingPattern") then
+      // Distinguish field vs local variable by checking parent context
+      val ctx = element.getParent
+      if ctx != null then
+        val ctxCls = ctx.getClass.getName
+        if ctxCls.contains("ScValue") || ctxCls.contains("ScPatternDefinition") then
+          val grandParent = ctx.getParent
+          if grandParent != null && grandParent.getClass.getName.contains("ScTemplateBody") then Some(6) // property
+          else Some(7) // variable (local val)
+        else if ctxCls.contains("ScVariable") then
+          val grandParent = ctx.getParent
+          if grandParent != null && grandParent.getClass.getName.contains("ScTemplateBody") then Some(6) // property
+          else Some(7) // variable (local var)
+        else Some(7) // variable (pattern, generator, etc.)
+      else Some(7)
+    else None
 
-  val modifierMapping: Map[String, Int] = Map(
-    "SCALA_TRAIT" -> 4,           // abstract, bit 2
-    "SCALA_OBJECT" -> 2,          // static, bit 1
-    "SCALA_CASE_CLASS" -> 8,      // readonly, bit 3
-    "SCALA_DOC_COMMENT" -> 32,    // documentation, bit 5
-    "SCALA_IMPLICIT_CONVERSION" -> 16, // modification, bit 4
-    "SCALA_IMPLICIT_PARAMETER" -> 16
-  )
+  /** Get modifier bits for a resolved element */
+  def classifyModifiers(element: PsiElement): Int =
+    val cls = element.getClass.getName
+    if cls.contains("ScTrait") then 4          // abstract
+    else if cls.contains("ScObject") then 2    // static
+    else 0
 
 class SemanticTokensProvider(projectManager: IntellijProjectManager):
 
@@ -100,62 +97,167 @@ class SemanticTokensProvider(projectManager: IntellijProjectManager):
   private def computeTokens(uri: String, rangeOpt: Option[Range]): SemanticTokens =
     projectManager.smartReadAction: () =>
       val result = for
+        psiFile <- projectManager.findPsiFile(uri)
         vf <- projectManager.findVirtualFile(uri)
         document <- Option(FileDocumentManager.getInstance().getDocument(vf))
       yield
-        val project = projectManager.getProject
-        val highlights = DaemonCodeAnalyzerImpl.getHighlights(
-          document,
-          HighlightSeverity.INFORMATION,
-          project
-        )
+        val rangeStartOffset = rangeOpt.map(r => PsiUtils.positionToOffset(document, r.getStart)).getOrElse(0)
+        val rangeEndOffset = rangeOpt.map(r => PsiUtils.positionToOffset(document, r.getEnd)).getOrElse(document.getTextLength)
 
-        if highlights == null then SemanticTokens(java.util.Collections.emptyList())
-        else
-          // Filter highlights with known type mappings
-          val filtered = highlights.asScala.filter: h =>
-            h.`type`.getAttributesKey != null &&
-              typeMapping.contains(h.`type`.getAttributesKey.getExternalName)
+        // Collect semantic tokens by walking the PSI tree
+        val tokens = scala.collection.mutable.ArrayBuffer[(Int, Int, Int, Int)]() // (offset, length, tokenType, modifiers)
 
-          // Apply range filter if specified
-          val rangeFiltered = rangeOpt match
-            case Some(range) =>
-              val rangeStartOffset = PsiUtils.positionToOffset(document, range.getStart)
-              val rangeEndOffset = PsiUtils.positionToOffset(document, range.getEnd)
-              filtered.filter: h =>
-                h.startOffset >= rangeStartOffset && h.endOffset <= rangeEndOffset
-            case None => filtered
+        collectTokens(psiFile, rangeStartOffset, rangeEndOffset, tokens)
 
-          // Sort by position
-          val sorted = rangeFiltered.toSeq.sortBy(h => (h.startOffset, h.endOffset))
+        // Sort by position and delta-encode
+        val sorted = tokens.sortBy(_._1)
+        var prevLine = 0
+        var prevChar = 0
+        val data = new java.util.ArrayList[Integer]()
 
-          // Delta-encode
-          var prevLine = 0
-          var prevChar = 0
-          val data = new java.util.ArrayList[Integer]()
+        for (offset, length, tokenType, tokenModifiers) <- sorted do
+          val startPos = PsiUtils.offsetToPosition(document, offset)
+          val deltaLine = startPos.getLine - prevLine
+          val deltaStartChar =
+            if deltaLine == 0 then startPos.getCharacter - prevChar
+            else startPos.getCharacter
 
-          for h <- sorted do
-            val keyName = h.`type`.getAttributesKey.getExternalName
-            val tokenType = typeMapping(keyName)
-            val tokenModifiers = modifierMapping.getOrElse(keyName, 0)
+          data.add(deltaLine)
+          data.add(deltaStartChar)
+          data.add(length)
+          data.add(tokenType)
+          data.add(tokenModifiers)
 
-            val startPos = PsiUtils.offsetToPosition(document, h.startOffset)
-            val length = h.endOffset - h.startOffset
+          prevLine = startPos.getLine
+          prevChar = startPos.getCharacter
 
-            val deltaLine = startPos.getLine - prevLine
-            val deltaStartChar =
-              if deltaLine == 0 then startPos.getCharacter - prevChar
-              else startPos.getCharacter
-
-            data.add(deltaLine)
-            data.add(deltaStartChar)
-            data.add(length)
-            data.add(tokenType)
-            data.add(tokenModifiers)
-
-            prevLine = startPos.getLine
-            prevChar = startPos.getCharacter
-
-          SemanticTokens(data)
+        SemanticTokens(data)
 
       result.getOrElse(SemanticTokens(java.util.Collections.emptyList()))
+
+  /** Recursively walk the PSI tree and collect semantic tokens */
+  private def collectTokens(
+    element: PsiElement,
+    rangeStart: Int,
+    rangeEnd: Int,
+    tokens: scala.collection.mutable.ArrayBuffer[(Int, Int, Int, Int)]
+  ): Unit =
+    val textRange = element.getTextRange
+    if textRange == null || textRange.getEndOffset < rangeStart || textRange.getStartOffset > rangeEnd then
+      return // Skip elements outside the range
+
+    // Process leaf elements and references
+    val cls = element.getClass.getName
+
+    // Check if this is a reference that can be resolved
+    val ref = element.getReference
+    if ref != null && isIdentifierLike(element) then
+      val resolved = try
+        ref match
+          case poly: PsiPolyVariantReference =>
+            poly.multiResolve(false).flatMap(rr => Option(rr.getElement)).headOption
+          case _ =>
+            Option(ref.resolve())
+      catch
+        case _: Exception => None
+
+      resolved.flatMap(classifyElement).foreach: tokenType =>
+        val modifiers = resolved.map(classifyModifiers).getOrElse(0)
+        val nameRange = getNameRange(element)
+        tokens += ((nameRange._1, nameRange._2, tokenType, modifiers))
+        return // Don't recurse into children of resolved references
+
+    // Check for keyword tokens (leaf elements with keyword token type)
+    if element.getChildren.isEmpty then
+      val elementType = element.getNode.getElementType.toString
+      classifyLeafToken(elementType).foreach: tokenType =>
+        tokens += ((textRange.getStartOffset, textRange.getLength, tokenType, 0))
+
+    // Check for declarations (definitions that introduce names)
+    if isDeclaration(element) then
+      classifyDeclaration(element).foreach: (tokenType, modifiers) =>
+        getNameIdentifier(element).foreach: (offset, length) =>
+          tokens += ((offset, length, tokenType, modifiers | 1)) // bit 0 = declaration
+
+    // Recurse into children
+    var child = element.getFirstChild
+    while child != null do
+      collectTokens(child, rangeStart, rangeEnd, tokens)
+      child = child.getNextSibling
+
+  private def isIdentifierLike(element: PsiElement): Boolean =
+    val cls = element.getClass.getName
+    cls.contains("ScReference") || cls.contains("ScStableCodeReference")
+
+  private def isDeclaration(element: PsiElement): Boolean =
+    val cls = element.getClass.getName
+    cls.contains("ScClass") || cls.contains("ScTrait") || cls.contains("ScObject") ||
+    cls.contains("ScEnum") || cls.contains("ScFunctionDefinition") || cls.contains("ScFunctionDeclaration") ||
+    cls.contains("ScTypeAlias") || cls.contains("ScGiven")
+
+  private def classifyDeclaration(element: PsiElement): Option[(Int, Int)] =
+    val cls = element.getClass.getName
+    if cls.contains("ScClass") then Some((2, 0))       // class
+    else if cls.contains("ScTrait") then Some((3, 4))   // interface + abstract
+    else if cls.contains("ScObject") then Some((2, 2))  // class + static
+    else if cls.contains("ScEnum") then Some((4, 0))    // enum
+    else if cls.contains("ScFunction") then Some((5, 0)) // method
+    else if cls.contains("ScTypeAlias") then Some((1, 0)) // type
+    else if cls.contains("ScGiven") then Some((5, 0))   // method (given)
+    else None
+
+  private def getNameIdentifier(element: PsiElement): Option[(Int, Int)] =
+    element match
+      case named: PsiNamedElement =>
+        try
+          val nameId = named.getClass.getMethod("getNameIdentifier").invoke(named)
+          nameId match
+            case e: PsiElement =>
+              val r = e.getTextRange
+              if r != null then Some((r.getStartOffset, r.getLength)) else None
+            case _ => None
+        catch
+          case _: Exception => None
+      case _ => None
+
+  private def getNameRange(element: PsiElement): (Int, Int) =
+    // For references, try to get just the name part
+    try
+      val nameId = element.getClass.getMethod("nameId").invoke(element)
+      nameId match
+        case e: PsiElement =>
+          val r = e.getTextRange
+          if r != null then (r.getStartOffset, r.getLength)
+          else (element.getTextRange.getStartOffset, element.getTextRange.getLength)
+        case _ => (element.getTextRange.getStartOffset, element.getTextRange.getLength)
+    catch
+      case _: Exception =>
+        (element.getTextRange.getStartOffset, element.getTextRange.getLength)
+
+  /** Classify leaf token types (keywords, literals, comments) from element type names */
+  private def classifyLeafToken(elementType: String): Option[Int] =
+    if elementType.contains("KEYWORD") || elementType == "kDEF" || elementType == "kVAL" ||
+       elementType == "kVAR" || elementType == "kCLASS" || elementType == "kTRAIT" ||
+       elementType == "kOBJECT" || elementType == "kIMPORT" || elementType == "kPACKAGE" ||
+       elementType == "kEXTENDS" || elementType == "kWITH" || elementType == "kIF" ||
+       elementType == "kELSE" || elementType == "kMATCH" || elementType == "kCASE" ||
+       elementType == "kFOR" || elementType == "kWHILE" || elementType == "kDO" ||
+       elementType == "kRETURN" || elementType == "kTHROW" || elementType == "kTRY" ||
+       elementType == "kCATCH" || elementType == "kFINALLY" || elementType == "kYIELD" ||
+       elementType == "kNEW" || elementType == "kTHIS" || elementType == "kSUPER" ||
+       elementType == "kNULL" || elementType == "kTRUE" || elementType == "kFALSE" ||
+       elementType == "kTYPE" || elementType == "kABSTRACT" || elementType == "kFINAL" ||
+       elementType == "kIMPLICIT" || elementType == "kLAZY" || elementType == "kOVERRIDE" ||
+       elementType == "kPRIVATE" || elementType == "kPROTECTED" || elementType == "kSEALED" ||
+       elementType == "kGIVEN" || elementType == "kUSING" || elementType == "kENUM" ||
+       elementType == "kEXPORT" || elementType == "kTHEN" || elementType == "kEND" then
+      Some(0) // keyword
+    else if elementType.contains("string") || elementType.contains("STRING") ||
+            elementType == "tSTRING" || elementType == "tMULTILINE_STRING" then
+      Some(10) // string
+    else if elementType == "tINTEGER" || elementType == "tFLOAT" ||
+            elementType.contains("integer") || elementType.contains("float") then
+      Some(11) // number
+    else if elementType.contains("COMMENT") || elementType.contains("comment") then
+      Some(12) // comment
+    else None
