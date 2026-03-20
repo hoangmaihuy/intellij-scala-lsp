@@ -33,6 +33,7 @@ class ScalaTextDocumentService(projectManager: IntellijProjectManager) extends T
   private val signatureHelpProvider = SignatureHelpProvider(projectManager)
   private val formattingProvider = FormattingProvider(projectManager)
   private val documentLinkProvider = DocumentLinkProvider(projectManager)
+  private val semanticTokensProvider = SemanticTokensProvider(projectManager)
 
   def connect(client: LanguageClient): Unit =
     this.client = client
@@ -231,3 +232,16 @@ class ScalaTextDocumentService(projectManager: IntellijProjectManager) extends T
   override def documentLink(params: DocumentLinkParams): CompletableFuture[util.List[DocumentLink]] =
     CompletableFuture.supplyAsync: () =>
       documentLinkProvider.getDocumentLinks(params.getTextDocument.getUri).asJava
+
+  // --- Semantic Tokens ---
+
+  override def semanticTokensFull(params: SemanticTokensParams): CompletableFuture[SemanticTokens] =
+    CompletableFuture.supplyAsync: () =>
+      semanticTokensProvider.getSemanticTokensFull(params.getTextDocument.getUri)
+
+  override def semanticTokensRange(params: SemanticTokensRangeParams): CompletableFuture[SemanticTokens] =
+    CompletableFuture.supplyAsync: () =>
+      semanticTokensProvider.getSemanticTokensRange(
+        params.getTextDocument.getUri,
+        params.getRange
+      )

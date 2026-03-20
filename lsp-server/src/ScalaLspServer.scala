@@ -2,7 +2,7 @@ package org.jetbrains.scalalsP
 
 import org.eclipse.lsp4j.*
 import org.eclipse.lsp4j.services.*
-import org.jetbrains.scalalsP.intellij.IntellijProjectManager
+import org.jetbrains.scalalsP.intellij.{IntellijProjectManager, SemanticTokensProvider}
 
 import java.util.concurrent.CompletableFuture
 import scala.jdk.CollectionConverters.*
@@ -103,6 +103,12 @@ class ScalaLspServer(
         )
       )
       capabilities.setCodeActionProvider(codeActionOptions)
+
+      // Semantic tokens
+      val semanticTokensOptions = SemanticTokensWithRegistrationOptions(SemanticTokensProvider.legend)
+      semanticTokensOptions.setFull(true)
+      semanticTokensOptions.setRange(true)
+      capabilities.setSemanticTokensProvider(semanticTokensOptions)
 
       // Document links
       capabilities.setDocumentLinkProvider(DocumentLinkOptions())

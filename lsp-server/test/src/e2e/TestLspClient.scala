@@ -295,6 +295,15 @@ class TestLspClient private (
       if result == null then Nil else result.asScala.toList
     }
 
+  // --- Semantic Tokens ---
+
+  def semanticTokensFull(uri: String): SemanticTokens =
+    requestOffEdt() {
+      val params = new SemanticTokensParams()
+      params.setTextDocument(new TextDocumentIdentifier(uri))
+      clientProxy.getTextDocumentService.semanticTokensFull(params).get(10, TimeUnit.SECONDS)
+    }
+
   // --- Diagnostics ---
 
   def awaitDiagnostics(uri: String, timeoutMs: Long = 5000): List[Diagnostic] =
