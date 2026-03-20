@@ -84,7 +84,7 @@ class SymbolProvider(projectManager: IntellijProjectManager):
   private def searchViaContributors(project: com.intellij.openapi.project.Project, query: String): Seq[SymbolInformation] =
     try
       val results = Seq.newBuilder[SymbolInformation]
-      val scope = GlobalSearchScope.projectScope(project)
+      val scope = GlobalSearchScope.allScope(project)
       val lowerQuery = query.toLowerCase
 
       // Collect from both CLASS and SYMBOL extension points

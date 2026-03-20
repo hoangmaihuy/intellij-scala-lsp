@@ -92,12 +92,14 @@ class CallHierarchyProvider(projectManager: IntellijProjectManager):
   // --- Helpers ---
 
   private def resolveToDeclaration(psiFile: PsiFile, offset: Int): Option[PsiElement] =
-    PsiUtils.findReferenceElementAt(psiFile, offset).flatMap: element =>
-      val ref = element.getReference
-      if ref != null then
-        Option(ref.resolve()).orElse(Some(element))
-      else
-        Some(element)
+    // First resolve to the declaration (trait, class, method, etc.)
+    val declaration = PsiUtils.resolveToDeclaration(psiFile, offset)
+    // Then walk up to find the nearest callable element if the resolved element isn't one
+    declaration.map: elem =>
+      var current = elem
+      while current != null && !isCallable(current) && current != psiFile do
+        current = current.getParent
+      if current != null && current != psiFile then current else elem
 
   private def toCallHierarchyItem(element: PsiElement): Option[CallHierarchyItem] =
     element match
