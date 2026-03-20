@@ -145,9 +145,13 @@ class ScalaLspServer(
     // Run indexing wait and daemon registration in background
     // to avoid blocking the lsp4j message processing thread
     java.util.concurrent.CompletableFuture.runAsync: () =>
+      if client != null then
+        client.logMessage(MessageParams(MessageType.Info, "Indexing project..."))
       projectManager.waitForSmartMode()
       textDocumentService.registerDaemonListener()
       System.err.println("[ScalaLsp] Project indexing complete, ready for requests")
+      if client != null then
+        client.logMessage(MessageParams(MessageType.Info, "Indexing complete, ready for requests"))
 
   override def shutdown(): CompletableFuture[AnyRef] =
     CompletableFuture.supplyAsync: () =>
