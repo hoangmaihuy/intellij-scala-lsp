@@ -83,14 +83,17 @@ object SemanticTokensProvider:
 
   /** Classify a binding pattern as property (class member) or variable (local). */
   private def classifyBinding(element: PsiElement): Option[Int] =
-    element.getParent match
-      case _: ScValue | _: ScPatternDefinition =>
-        if element.getParent.getParent.isInstanceOf[ScTemplateBody] then Some(6) // property
-        else Some(7) // variable (local val)
-      case _: ScVariable =>
-        if element.getParent.getParent.isInstanceOf[ScTemplateBody] then Some(6) // property
-        else Some(7) // variable (local var)
-      case _ => Some(7) // variable (pattern, generator, etc.)
+    element match
+      case bp: ScBindingPattern =>
+        if bp.isClassMember then Some(6)  // property
+        else Some(7)                       // variable (local val/var/pattern)
+      case _ =>
+        element.getParent match
+          case _: ScValue | _: ScPatternDefinition =>
+            if element.getParent.getParent.isInstanceOf[ScTemplateBody] then Some(6) else Some(7)
+          case _: ScVariable =>
+            if element.getParent.getParent.isInstanceOf[ScTemplateBody] then Some(6) else Some(7)
+          case _ => Some(7)
 
   /** Classify a field identifier based on parent context. */
   private def classifyFieldId(element: PsiElement): Option[Int] =
@@ -284,14 +287,23 @@ class SemanticTokensProvider(projectManager: IntellijProjectManager):
     case _                    => None
 
   private def classifyBindingDeclaration(element: PsiElement): (Int, Int) =
-    element.getParent match
-      case _: ScValue | _: ScPatternDefinition =>
-        if element.getParent.getParent.isInstanceOf[ScTemplateBody] then (6, 8) // property + readonly
-        else (7, 8) // variable + readonly (local val)
-      case _: ScVariable =>
-        if element.getParent.getParent.isInstanceOf[ScTemplateBody] then (6, 0) // property
-        else (7, 0) // variable (local var)
-      case _ => (7, 0) // variable (pattern, generator, etc.)
+    element match
+      case bp: ScBindingPattern =>
+        val isMember = bp.isClassMember
+        if bp.isVal then
+          if isMember then (6, 8) // property + readonly
+          else (7, 8)             // variable + readonly (local val)
+        else if bp.isVar then
+          if isMember then (6, 0) // property (mutable)
+          else (7, 0)             // variable (local var)
+        else (7, 0)               // pattern/generator, no readonly
+      case _ =>
+        element.getParent match
+          case _: ScValue | _: ScPatternDefinition =>
+            if element.getParent.getParent.isInstanceOf[ScTemplateBody] then (6, 8) else (7, 8)
+          case _: ScVariable =>
+            if element.getParent.getParent.isInstanceOf[ScTemplateBody] then (6, 0) else (7, 0)
+          case _ => (7, 0)
 
   private def getNameIdentifier(element: PsiElement): Option[(Int, Int)] =
     element match
@@ -354,35 +366,51 @@ class SemanticTokensProvider(projectManager: IntellijProjectManager):
     flushNonEscape(pos)
     result.toSeq
 
-  private val scala3SoftKeywords = Set(
-    "using", "given", "extension", "derives", "end",
-    "inline", "opaque", "open", "transparent", "infix"
+  /**
+   * The Scala plugin represents keyword token types as ScalaKeywordTokenType(text) where text is the
+   * keyword itself (e.g. "object", "val", "def"). ScalaModifierTokenType also uses modifier text
+   * (e.g. "abstract", "final"). So elementType.toString() equals the keyword text directly.
+   * We match either the keyword text (modern Scala plugin) or the legacy "kXXX" names.
+   */
+  private val scalaKeywordTexts = Set(
+    // Declarations / structure
+    "def", "val", "var", "class", "trait", "object", "enum", "type", "given", "using",
+    "extension", "export",
+    // Imports/packages
+    "import", "package",
+    // Control flow
+    "if", "else", "match", "case", "for", "while", "do", "return", "throw", "try", "catch",
+    "finally", "yield", "then",
+    // Object-oriented
+    "extends", "with", "new", "this", "super",
+    // Literals
+    "null", "true", "false",
+    // Modifiers
+    "abstract", "final", "implicit", "lazy", "override", "private", "protected", "sealed",
+    "inline", "opaque", "open", "transparent", "infix",
+    // Misc Scala 3
+    "derives", "end",
+    // Legacy uppercase "k" names (older plugin versions)
+    "kDEF", "kVAL", "kVAR", "kCLASS", "kTRAIT", "kOBJECT", "kIMPORT", "kPACKAGE",
+    "kEXTENDS", "kWITH", "kIF", "kELSE", "kMATCH", "kCASE", "kFOR", "kWHILE", "kDO",
+    "kRETURN", "kTHROW", "kTRY", "kCATCH", "kFINALLY", "kYIELD", "kNEW", "kTHIS",
+    "kSUPER", "kNULL", "kTRUE", "kFALSE", "kTYPE", "kABSTRACT", "kFINAL", "kIMPLICIT",
+    "kLAZY", "kOVERRIDE", "kPRIVATE", "kPROTECTED", "kSEALED", "kGIVEN", "kUSING",
+    "kENUM", "kEXPORT", "kTHEN", "kEND"
   )
 
   /** Classify leaf token types (keywords, literals, comments) from element type names */
   private def classifyLeafToken(elementType: String, text: String): Option[Int] =
-    if elementType.contains("KEYWORD") || elementType == "kDEF" || elementType == "kVAL" ||
-       elementType == "kVAR" || elementType == "kCLASS" || elementType == "kTRAIT" ||
-       elementType == "kOBJECT" || elementType == "kIMPORT" || elementType == "kPACKAGE" ||
-       elementType == "kEXTENDS" || elementType == "kWITH" || elementType == "kIF" ||
-       elementType == "kELSE" || elementType == "kMATCH" || elementType == "kCASE" ||
-       elementType == "kFOR" || elementType == "kWHILE" || elementType == "kDO" ||
-       elementType == "kRETURN" || elementType == "kTHROW" || elementType == "kTRY" ||
-       elementType == "kCATCH" || elementType == "kFINALLY" || elementType == "kYIELD" ||
-       elementType == "kNEW" || elementType == "kTHIS" || elementType == "kSUPER" ||
-       elementType == "kNULL" || elementType == "kTRUE" || elementType == "kFALSE" ||
-       elementType == "kTYPE" || elementType == "kABSTRACT" || elementType == "kFINAL" ||
-       elementType == "kIMPLICIT" || elementType == "kLAZY" || elementType == "kOVERRIDE" ||
-       elementType == "kPRIVATE" || elementType == "kPROTECTED" || elementType == "kSEALED" ||
-       elementType == "kGIVEN" || elementType == "kUSING" || elementType == "kENUM" ||
-       elementType == "kEXPORT" || elementType == "kTHEN" || elementType == "kEND" then
+    if scalaKeywordTexts.contains(elementType) || elementType.contains("KEYWORD") then
       Some(0) // keyword
-    // Scala 3 soft keywords have element type "identifier" (tIDENTIFIER.toString) — match by text
-    else if (elementType == "identifier" || elementType == "tIDENTIFIER") && scala3SoftKeywords.contains(text) then
+    // "identifier" element type — match Scala 3 soft keywords by text (fallback for old plugin)
+    else if (elementType == "identifier" || elementType == "tIDENTIFIER") &&
+            scalaKeywordTexts.contains(text) then
       Some(0) // keyword
     else if elementType == "tINTEGER" || elementType == "tFLOAT" ||
             elementType.contains("integer") || elementType.contains("float") then
       Some(11) // number
-    else if elementType.contains("COMMENT") || elementType.contains("comment") then
+    else if elementType.contains("COMMENT") || elementType.contains("comment") ||
+            elementType == "DocComment" || elementType == "BlockComment" then
       Some(12) // comment
     else None
