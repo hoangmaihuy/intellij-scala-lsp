@@ -55,16 +55,20 @@ object PsiUtils:
   /** Try to find the original source element for a synthetic element.
     * For synthetic methods (like case class apply), navigates to the containing class. */
   private def findOriginalElement(element: PsiElement): Option[PsiElement] =
-    // Try 1: If element is a PsiMethod, get its containing class
-    element match
-      case method: com.intellij.psi.PsiMethod =>
-        val cls = method.getContainingClass
-        if cls != null then
+    // Try 1: If element has getContainingClass (methods), navigate to the class
+    // Use reflection to avoid compile-time dependency on PsiMethod which may not be on classpath
+    try
+      val containingClass = element.getClass.getMethod("getContainingClass").invoke(element)
+      containingClass match
+        case cls: PsiElement if cls != null =>
           val nav = cls.getNavigationElement
           val effective = if nav != null && nav != cls then nav else cls
           if effective.getContainingFile != null && effective.getContainingFile.getVirtualFile != null then
             return Some(effective)
-      case _ => ()
+        case _ => ()
+    catch
+      case _: NoSuchMethodException => () // not a method-like element
+      case _: Exception => ()
 
     // Try 2: Walk up parents looking for one with a real VirtualFile
     var parent = element.getParent

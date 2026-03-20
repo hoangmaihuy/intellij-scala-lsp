@@ -166,12 +166,11 @@ class SemanticTokensProvider(projectManager: IntellijProjectManager):
         val modifiers = resolved.map(classifyModifiers).getOrElse(0)
         val nameRange = getNameRange(element)
         tokens += ((nameRange._1, nameRange._2, tokenType, modifiers))
-        return // Don't recurse into children of resolved references
 
     // Check for keyword tokens (leaf elements with keyword token type)
     if element.getChildren.isEmpty then
       val elementType = element.getNode.getElementType.toString
-      classifyLeafToken(elementType).foreach: tokenType =>
+      classifyLeafToken(elementType, element.getText).foreach: tokenType =>
         tokens += ((textRange.getStartOffset, textRange.getLength, tokenType, 0))
 
     // Check for declarations (definitions that introduce names)
@@ -254,8 +253,13 @@ class SemanticTokensProvider(projectManager: IntellijProjectManager):
       case _: Exception =>
         (element.getTextRange.getStartOffset, element.getTextRange.getLength)
 
+  private val scala3SoftKeywords = Set(
+    "using", "given", "extension", "derives", "end",
+    "inline", "opaque", "open", "transparent", "infix"
+  )
+
   /** Classify leaf token types (keywords, literals, comments) from element type names */
-  private def classifyLeafToken(elementType: String): Option[Int] =
+  private def classifyLeafToken(elementType: String, text: String): Option[Int] =
     if elementType.contains("KEYWORD") || elementType == "kDEF" || elementType == "kVAL" ||
        elementType == "kVAR" || elementType == "kCLASS" || elementType == "kTRAIT" ||
        elementType == "kOBJECT" || elementType == "kIMPORT" || elementType == "kPACKAGE" ||
@@ -271,6 +275,9 @@ class SemanticTokensProvider(projectManager: IntellijProjectManager):
        elementType == "kPRIVATE" || elementType == "kPROTECTED" || elementType == "kSEALED" ||
        elementType == "kGIVEN" || elementType == "kUSING" || elementType == "kENUM" ||
        elementType == "kEXPORT" || elementType == "kTHEN" || elementType == "kEND" then
+      Some(0) // keyword
+    // Scala 3 soft keywords have element type tIDENTIFIER — match by text
+    else if elementType == "tIDENTIFIER" && scala3SoftKeywords.contains(text) then
       Some(0) // keyword
     else if elementType.contains("string") || elementType.contains("STRING") ||
             elementType == "tSTRING" || elementType == "tMULTILINE_STRING" then
