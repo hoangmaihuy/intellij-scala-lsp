@@ -76,7 +76,7 @@ class CompletionProvider(projectManager: IntellijProjectManager):
             if docProvider != null then
               val docText = docProvider.generateDoc(psi, null)
               if docText != null && docText.nonEmpty then
-                val clean = docText.replaceAll("<[^>]+>", "").trim
+                val clean = HoverProvider.htmlToMarkdown(docText)
                 if clean.nonEmpty then
                   item.setDocumentation(MarkupContent(MarkupKind.MARKDOWN, clean))
           catch case _: Exception => ()
