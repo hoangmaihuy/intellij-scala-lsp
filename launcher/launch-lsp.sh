@@ -349,6 +349,16 @@ proxy_stdio_to_tcp() {
     echo "[launch-lsp] ERROR: socat is required for daemon mode. Install with: brew install socat" >&2
     exit 1
   fi
+  # Retry connection — daemon may have bound the port but not yet called accept()
+  local retries=0
+  while [ $retries -lt 10 ]; do
+    if socat -T0.5 /dev/null TCP:localhost:"$port" 2>/dev/null; then
+      break
+    fi
+    retries=$((retries + 1))
+    echo "[launch-lsp] Waiting for daemon to accept connections (attempt $retries)..." >&2
+    sleep 1
+  done
   exec socat STDIO TCP:localhost:"$port"
 }
 
