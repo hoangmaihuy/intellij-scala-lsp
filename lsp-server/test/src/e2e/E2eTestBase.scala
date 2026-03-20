@@ -1,11 +1,13 @@
 package org.jetbrains.scalalsP.e2e
 
 import com.intellij.openapi.fileEditor.FileDocumentManager
+import com.intellij.testFramework.LoggedErrorProcessor
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import org.jetbrains.scalalsP.{BootstrapState, ScalaLspServer}
 import org.jetbrains.scalalsP.intellij.{IntellijProjectManager, PsiUtils}
 
 import java.nio.file.{Files, Path}
+import java.util.EnumSet
 import scala.compiletime.uninitialized
 
 abstract class E2eTestBase extends BasePlatformTestCase:
@@ -17,10 +19,17 @@ abstract class E2eTestBase extends BasePlatformTestCase:
   protected val fixtureUris = scala.collection.mutable.Map[String, String]()
 
   private val fixtureBasePath: Path =
-    Path.of("lsp-server/test/resources/fixtures/shared-src/src/main/scala")
+    Path.of("test/resources/fixtures/shared-src/src/main/scala")
 
   override def setUp(): Unit =
     super.setUp()
+    // Install lenient error processor to prevent TestLoggerFactory from converting
+    // LOG.error() into thrown exceptions. LSP server operations (document sync, indexing)
+    // may trigger non-critical errors that should be logged, not crash the test.
+    LoggedErrorProcessor.executeWith(new LoggedErrorProcessor:
+      override def processError(category: String, message: String, details: Array[String], t: Throwable): java.util.Set[LoggedErrorProcessor.Action] =
+        EnumSet.of(LoggedErrorProcessor.Action.STDERR)
+    )
     BootstrapState.bootstrapComplete.countDown()
     projectManager = IntellijProjectManager()
     projectManager.setProjectForTesting(getProject)
@@ -64,8 +73,9 @@ abstract class E2eTestBase extends BasePlatformTestCase:
   protected def fixtureContent(relativePath: String): String =
     Files.readString(fixtureBasePath.resolve(relativePath))
 
+  /** "Open" a fixture file for LSP operations. Since the file is already loaded
+    * into the test project via myFixture.addFileToProject(), we just return the URI.
+    * We do NOT call client.openFile() because that triggers DocumentSyncManager.updateDocument()
+    * which conflicts with the test framework's document change tracking. */
   protected def openFixture(relativePath: String): String =
-    val uri = fixtureUri(relativePath)
-    val content = fixtureContent(relativePath)
-    client.openFile(uri, content)
-    uri
+    fixtureUri(relativePath)

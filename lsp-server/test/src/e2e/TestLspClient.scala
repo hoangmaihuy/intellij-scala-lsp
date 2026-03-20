@@ -46,7 +46,7 @@ class TestLspClient private (
     val params = new DidOpenTextDocumentParams()
     params.setTextDocument(new TextDocumentItem(uri, "scala", versionCounter, content))
     clientProxy.getTextDocumentService.didOpen(params)
-    Thread.sleep(500)
+    pumpAndWait(500)
 
   def changeFile(uri: String, newContent: String): Unit =
     versionCounter += 1
@@ -59,7 +59,7 @@ class TestLspClient private (
     change.setText(newContent)
     params.setContentChanges(java.util.List.of(change))
     clientProxy.getTextDocumentService.didChange(params)
-    Thread.sleep(300)
+    pumpAndWait(300)
 
   def closeFile(uri: String): Unit =
     val params = new DidCloseTextDocumentParams()
@@ -266,6 +266,17 @@ class TestLspClient private (
     diagnosticsClient.getDiagnostics(uri)
 
   // --- Internal ---
+
+  /** Pump EDT events while waiting, so server-side invokeAndWait can proceed. */
+  private def pumpAndWait(ms: Long): Unit =
+    if !hasEdt then
+      Thread.sleep(ms)
+      return
+    val deadline = System.currentTimeMillis() + ms
+    while System.currentTimeMillis() < deadline do
+      try com.intellij.util.ui.UIUtil.dispatchAllInvocationEvents()
+      catch case _: Exception => ()
+      Thread.sleep(50)
 
   private def requestOffEdt[T](timeout: Int = 15)(body: => T): T =
     if !hasEdt then
