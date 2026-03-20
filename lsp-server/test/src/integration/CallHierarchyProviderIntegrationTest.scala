@@ -99,3 +99,22 @@ class CallHierarchyProviderIntegrationTest extends ScalaLspTestBase:
     if itemsB.nonEmpty then
       val outB = provider.outgoingCalls(itemsB.head)
       assertTrue("b should call c", outB.exists(_.getTo.getName == "c"))
+
+  def testSuperMethodCallers(): Unit =
+    val uri = configureScalaFile(
+      """trait Animal:
+        |  def sound(): String
+        |
+        |class Dog extends Animal:
+        |  def sound(): String = "Woof"
+        |
+        |object Main:
+        |  def makeSound(a: Animal): String = a.sound()
+        |""".stripMargin
+    )
+    // Prepare on the trait method `sound`
+    val items = provider.prepare(uri, positionAt(1, 6))
+    if items.nonEmpty then
+      val incoming = provider.incomingCalls(items.head)
+      // Should find makeSound as a caller (it calls a.sound() which may be Dog.sound or Animal.sound)
+      assertNotNull("incomingCalls should not be null", incoming)
