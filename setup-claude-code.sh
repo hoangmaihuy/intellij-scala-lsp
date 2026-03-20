@@ -36,6 +36,12 @@ if ! command -v claude &>/dev/null; then
   exit 1
 fi
 
+if ! command -v socat &>/dev/null; then
+  echo "WARNING: socat not found. Required for daemon mode."
+  echo "  macOS:  brew install socat"
+  echo "  Linux:  apt install socat"
+fi
+
 # --- Step 2: Build the LSP server ---
 
 echo "[1/5] Building LSP server JAR..."
@@ -127,11 +133,14 @@ echo "=== Setup complete ==="
 echo ""
 echo "Restart Claude Code for the plugin to take effect."
 echo ""
-echo "The LSP server provides: goToDefinition, findReferences, hover,"
-echo "documentSymbol, workspaceSymbol, completion, rename, type hierarchy,"
-echo "call hierarchy, code actions, diagnostics, and more for .scala files."
+echo "The LSP server runs as a daemon (TCP port 5007) and provides:"
+echo "  goToDefinition, findReferences, hover, documentSymbol, workspaceSymbol,"
+echo "  completion, rename, type hierarchy, call hierarchy, code actions,"
+echo "  diagnostics, and more for .scala files."
 echo ""
-echo "First launch takes ~30 seconds to bootstrap the IntelliJ platform."
+echo "The daemon starts automatically on first use. socat proxies stdio<->TCP."
+echo "To pre-warm: ./launcher/launch-lsp.sh --daemon /path/to/project"
+echo "To stop:     ./launcher/launch-lsp.sh --stop"
 echo ""
 echo "To uninstall:"
 echo "  claude plugin uninstall intellij-scala-lsp@intellij-scala-lsp"

@@ -28,21 +28,23 @@ Metals (the existing Scala LSP) uses its own compiler infrastructure, which dive
 ```
 LSP Client (Claude Code, VS Code, etc.)
     |
-    | stdin/stdout JSON-RPC
+    | socat stdio<->TCP proxy
     v
-ScalaLspServer (lsp4j)
+DaemonServer (TCP port 5007)
+    |
+    | per-session LSP (lsp4j JSON-RPC)
+    v
+ScalaLspServer --> ProjectRegistry (shared projects)
     |
     v
-IntelliJ Adapters (DefinitionProvider, ReferencesProvider, HoverProvider, SymbolProvider)
-    |
-    v
-IntelliJ Platform (headless) + intellij-scala plugin (PSI, Indexing, Resolve)
+IntelliJ Platform (headless) + intellij-scala plugin
 ```
 
 ## Prerequisites
 
 - **JDK 21+**
 - **sbt 1.11+**
+- **socat** (`brew install socat` on macOS, `apt install socat` on Linux) -- required for stdio-to-TCP proxying
 
 The build uses [sbt-idea-plugin](https://github.com/JetBrains/sbt-idea-plugin) which automatically downloads the IntelliJ SDK, JBR, and Scala plugin on first build. No manual IntelliJ installation required for building.
 
@@ -52,7 +54,7 @@ The build uses [sbt-idea-plugin](https://github.com/JetBrains/sbt-idea-plugin) w
 # Compile (first run downloads ~1.5GB of IntelliJ SDK + plugins)
 sbt lsp-server/compile
 
-# Run tests (105 tests)
+# Run tests (236 tests)
 sbt lsp-server/test
 
 # Package plugin
@@ -61,25 +63,34 @@ sbt lsp-server/packageArtifact
 
 ## Usage
 
-### Standalone
+### Daemon Mode (recommended)
+
+Pre-warm the daemon for instant responses:
 
 ```bash
-./launcher/launch-lsp.sh /path/to/your/scala/project
+# Start daemon with project pre-warming (add to .zshrc for auto-start)
+./launcher/launch-lsp.sh --daemon /path/to/project1 /path/to/project2
+
+# Stop the daemon
+./launcher/launch-lsp.sh --stop
 ```
 
-The launcher:
-1. Locates IntelliJ (or downloads it to `~/.cache/intellij-scala-lsp/`)
-2. Locates the Scala plugin (or downloads it)
-3. Builds the classpath and starts IntelliJ headless with the LSP server
-4. Communicates via stdin/stdout JSON-RPC
+Claude Code connects automatically -- the launcher starts the daemon if it's not running and proxies stdio-to-TCP via socat.
+
+### Direct Mode (for testing)
+
+```bash
+echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"rootUri":"file:///path/to/project"}}' | \
+  socat - TCP:localhost:5007
+```
 
 ### With Claude Code
 
 ```bash
-./claude-code/setup-intellij-scala-lsp.sh
+./setup-claude-code.sh
 ```
 
-This registers the LSP server as a Claude Code plugin. Restart Claude Code after running. The startup timeout is 300 seconds to allow for initial IntelliJ indexing.
+This registers the LSP server as a Claude Code plugin. The daemon starts automatically on first use. Requires `socat` (`brew install socat` on macOS).
 
 ### Environment Variables
 
@@ -87,6 +98,8 @@ This registers the LSP server as a Claude Code plugin. Restart Claude Code after
 |---|---|
 | `INTELLIJ_HOME` | Path to IntelliJ installation (directory containing `lib/`) |
 | `JAVA_HOME` | Path to JDK (falls back to IntelliJ's bundled JBR) |
+| `LSP_PORT` | TCP port for the daemon (default: 5007) |
+| `LSP_HEAP_SIZE` | JVM heap size (default: `2g`, e.g. `4g` for large projects) |
 
 ## Project Structure
 
@@ -105,6 +118,7 @@ intellij-scala-lsp/
 │   │   ├── ScalaWorkspaceService.scala         # workspace handlers
 │   │   ├── intellij/
 │   │   │   ├── IntellijProjectManager.scala    # Project lifecycle (open/close/index)
+│   │   │   ├── ProjectRegistry.scala           # Shared project registry across sessions
 │   │   │   ├── DocumentSyncManager.scala       # LSP <-> IntelliJ VFS/Document sync
 │   │   │   ├── DefinitionProvider.scala        # Go to definition
 │   │   │   ├── TypeDefinitionProvider.scala    # Go to type definition
@@ -117,35 +131,41 @@ intellij-scala-lsp/
 │   │   │   ├── SelectionRangeProvider.scala    # Structural selection ranges
 │   │   │   ├── SymbolProvider.scala            # Document + workspace symbols
 │   │   │   └── PsiUtils.scala                  # Offset <-> Position conversion
+│   │   ├── org/jetbrains/scalalsP/
+│   │   │   ├── BootstrapState.java             # Platform bootstrap state machine
+│   │   │   └── DaemonServer.java               # TCP daemon accepting LSP sessions
 │   │   └── protocol/
 │   │       └── LspConversions.scala            # IntelliJ <-> LSP type conversions
-│   ├── test/src/                               # 105 tests (JUnit 4)
+│   ├── test/src/                               # 236 tests (JUnit 4)
 │   └── resources/META-INF/plugin.xml           # IntelliJ plugin descriptor
 ├── launcher/
-│   └── launch-lsp.sh                           # Runtime launcher
+│   └── launch-lsp.sh                           # Runtime launcher (daemon + socat proxy)
 └── claude-code/
     └── setup-intellij-scala-lsp.sh             # Claude Code plugin registration
 ```
 
 ## How It Works
 
-1. IntelliJ IDEA starts in headless mode via `ApplicationStarter`
-2. The project is opened with `ProjectManager.loadAndOpenProject()`
-3. Indexing completes via `DumbService.waitForSmartMode()`
-4. The lsp4j `Launcher` connects JSON-RPC on stdin/stdout
-5. LSP requests are dispatched to provider classes that wrap IntelliJ APIs:
+1. The launcher starts IntelliJ IDEA in headless mode as a daemon (`DaemonServer`) listening on a TCP port (default 5007)
+2. Each LSP client connection is accepted as a new session with its own `ScalaLspServer` instance
+3. The `ProjectRegistry` manages shared project instances -- multiple sessions reuse already-opened projects
+4. On `initialize`, the server opens the project via `ProjectManager.loadAndOpenProject()` (or reuses an existing one)
+5. Indexing completes via `DumbService.waitForSmartMode()`
+6. LSP requests are dispatched to provider classes that wrap IntelliJ APIs:
    - All PSI reads run inside `ReadAction.compute()`
    - Document mutations run on the EDT via `WriteCommandAction`
    - Scala-specific types are accessed via reflection to decouple from plugin compile-time dependencies
+7. The launcher uses `socat` to proxy stdio-to-TCP, so LSP clients that expect stdio transport work transparently
 
 ## Technical Notes
 
+- **Daemon mode**: The `DaemonServer` listens on a TCP port and accepts multiple concurrent LSP sessions. The `ProjectRegistry` ensures each project is opened only once and shared across sessions, reducing memory usage.
 - **Threading**: IntelliJ requires PSI reads under read lock and document writes on the EDT. All providers use `ReadAction.compute()` and `WriteCommandAction` respectively.
 - **Symbol detection**: Uses class-name-based checks (e.g. `className.contains("ScClass")`) rather than direct type references to avoid compile-time coupling to Scala plugin internals.
 - **Hover**: Type info is retrieved via reflection on `getType()` methods; documentation via `LanguageDocumentation.INSTANCE.forLanguage()`.
-- **Diagnostics**: Push-based via `DaemonCodeAnalyzer.DAEMON_EVENT_TOPIC` — diagnostics publish when IntelliJ's analysis actually completes, not on a timer.
-- **Memory**: Expect ~1-2GB for IntelliJ + project indices. The launcher sets `-Xmx2g`.
-- **First launch**: Initial indexing can take several minutes depending on project size. Subsequent launches use cached indices.
+- **Diagnostics**: Push-based via `DaemonCodeAnalyzer.DAEMON_EVENT_TOPIC` -- diagnostics publish when IntelliJ's analysis actually completes, not on a timer.
+- **Memory**: The daemon shares a single JVM across all sessions. Expect ~1-2GB base for IntelliJ + additional memory per project's indices. Configure via `LSP_HEAP_SIZE` (default `2g`).
+- **First launch**: Initial indexing can take several minutes depending on project size. Use `--daemon` with project paths to pre-warm indices before clients connect.
 
 ## Version Compatibility
 

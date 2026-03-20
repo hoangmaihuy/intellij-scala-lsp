@@ -1,0 +1,15 @@
+{
+  "_comment": "The stdio transport is proxied to the daemon via socat (stdio<->TCP on port 5007). The launcher auto-starts the daemon if not running.",
+  "intellij-scala": {
+    "command": "__LAUNCHER_PATH__",
+    "extensionToLanguage": {
+      ".scala": "scala",
+      ".sc": "scala"
+    },
+    "transport": "stdio",
+    "startupTimeout": 300000,
+    "shutdownTimeout": 10000,
+    "restartOnCrash": true,
+    "maxRestarts": 3
+  }
+}
