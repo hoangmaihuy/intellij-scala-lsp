@@ -285,6 +285,16 @@ class TestLspClient private (
       clientProxy.getWorkspaceService.executeCommand(params).get(10, TimeUnit.SECONDS)
     }
 
+  // --- Document Links ---
+
+  def documentLinks(uri: String): List[DocumentLink] =
+    requestOffEdt() {
+      val params = new DocumentLinkParams()
+      params.setTextDocument(new TextDocumentIdentifier(uri))
+      val result = clientProxy.getTextDocumentService.documentLink(params).get(10, TimeUnit.SECONDS)
+      if result == null then Nil else result.asScala.toList
+    }
+
   // --- Diagnostics ---
 
   def awaitDiagnostics(uri: String, timeoutMs: Long = 5000): List[Diagnostic] =

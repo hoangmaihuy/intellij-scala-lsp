@@ -156,6 +156,7 @@ public final class LspLauncher {
         @Override public CompletableFuture<SignatureHelp> signatureHelp(SignatureHelpParams params) { return delegate.signatureHelp(params); }
         @Override public CompletableFuture<java.util.List<? extends TextEdit>> formatting(DocumentFormattingParams params) { return delegate.formatting(params); }
         @Override public CompletableFuture<java.util.List<? extends TextEdit>> rangeFormatting(DocumentRangeFormattingParams params) { return delegate.rangeFormatting(params); }
+        @Override public CompletableFuture<java.util.List<DocumentLink>> documentLink(DocumentLinkParams params) { return delegate.documentLink(params); }
         @Override public void didOpen(DidOpenTextDocumentParams params) { delegate.didOpen(params); }
         @Override public void didChange(DidChangeTextDocumentParams params) { delegate.didChange(params); }
         @Override public void didClose(DidCloseTextDocumentParams params) { delegate.didClose(params); }

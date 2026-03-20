@@ -32,6 +32,7 @@ class ScalaTextDocumentService(projectManager: IntellijProjectManager) extends T
   private val typeHierarchyProvider = TypeHierarchyProvider(projectManager)
   private val signatureHelpProvider = SignatureHelpProvider(projectManager)
   private val formattingProvider = FormattingProvider(projectManager)
+  private val documentLinkProvider = DocumentLinkProvider(projectManager)
 
   def connect(client: LanguageClient): Unit =
     this.client = client
@@ -224,3 +225,9 @@ class ScalaTextDocumentService(projectManager: IntellijProjectManager) extends T
         params.getTextDocument.getUri,
         params.getRange
       ).asJava
+
+  // --- Document Links ---
+
+  override def documentLink(params: DocumentLinkParams): CompletableFuture[util.List[DocumentLink]] =
+    CompletableFuture.supplyAsync: () =>
+      documentLinkProvider.getDocumentLinks(params.getTextDocument.getUri).asJava

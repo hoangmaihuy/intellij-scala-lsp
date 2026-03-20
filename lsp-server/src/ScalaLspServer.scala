@@ -103,6 +103,9 @@ class ScalaLspServer(
       )
       capabilities.setCodeActionProvider(codeActionOptions)
 
+      // Document links
+      capabilities.setDocumentLinkProvider(DocumentLinkOptions())
+
       // Formatting
       capabilities.setDocumentFormattingProvider(true)
       capabilities.setDocumentRangeFormattingProvider(true)
