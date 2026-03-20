@@ -1,22 +1,18 @@
 package org.jetbrains.scalalsP.intellij
 
-import com.intellij.openapi.application.{ApplicationManager, ReadAction, WriteAction}
-import com.intellij.openapi.externalSystem.importing.ImportSpecBuilder
-import com.intellij.openapi.externalSystem.model.ProjectSystemId
-import com.intellij.openapi.externalSystem.util.ExternalSystemUtil
+import com.intellij.openapi.application.{ApplicationManager, ReadAction}
 import com.intellij.openapi.project.{DumbService, Project, ProjectManager}
-import com.intellij.openapi.projectRoots.ProjectJdkTable
 import com.intellij.openapi.vfs.{LocalFileSystem, VirtualFile}
 import com.intellij.psi.{PsiDocumentManager, PsiFile, PsiManager}
+import org.jetbrains.scalalsP.ProjectRegistry
 
-import java.nio.file.{Files, Path}
-import scala.jdk.CollectionConverters.*
+import java.nio.file.Path
 
 /**
  * Manages the IntelliJ project lifecycle: open, index, close.
  * All IntelliJ platform access goes through this class.
  */
-class IntellijProjectManager:
+class IntellijProjectManager(registry: Option[ProjectRegistry] = None, daemonMode: Boolean = false):
 
   import scala.compiletime.uninitialized
   @volatile private var project: Project = uninitialized
@@ -26,6 +22,10 @@ class IntellijProjectManager:
 
   /** For testing only — allows injecting a project from test fixtures */
   private[scalalsP] def setProjectForTesting(p: Project): Unit =
+    project = p
+
+  /** For daemon mode — set a project from ProjectRegistry without opening it */
+  private[scalalsP] def setProjectForSession(p: Project): Unit =
     project = p
 
   /** For testing only — registers an in-memory virtual file by URI */
@@ -42,6 +42,13 @@ class IntellijProjectManager:
       System.err.println(s"[ProjectManager] Project already open: ${project.getName}")
       return
 
+    registry match
+      case Some(reg) =>
+        System.err.println(s"[ProjectManager] Delegating to ProjectRegistry for: $projectPath")
+        project = reg.openProject(projectPath)
+        return
+      case None => ()
+
     System.err.println(s"[ProjectManager] Opening project at: $projectPath")
     val path = Path.of(projectPath)
 
@@ -52,64 +59,6 @@ class IntellijProjectManager:
       throw RuntimeException(s"Failed to open project at $projectPath")
 
     System.err.println(s"[ProjectManager] Project opened: ${project.getName}")
-
-    // Register missing JDKs referenced by project modules.
-    // When using TestApplicationManager with an isolated config, the JDK table is empty.
-    // Projects imported via BSP reference JDKs like "BSP_Home" that need to be registered.
-    registerMissingJdks()
-
-  private def registerMissingJdks(): Unit =
-    try
-      val jdkTable = ProjectJdkTable.getInstance()
-
-      // Find JavaSdk type via SdkType.findInstance (works across plugin classloaders)
-      val javaSdkType = com.intellij.openapi.projectRoots.SdkType.EP_NAME.getExtensionList.asScala
-        .find(_.getName == "JavaSDK").orNull
-      if javaSdkType == null then
-        System.err.println("[ProjectManager] JavaSdk type not found in extensions")
-        return
-
-      // Find all unresolved JDK names from project modules
-      import com.intellij.openapi.module.ModuleManager
-      val modules = ModuleManager.getInstance(project).getModules
-      val referencedJdkNames = scala.collection.mutable.Set[String]()
-      for m <- modules do
-        val rootManager = com.intellij.openapi.roots.ModuleRootManager.getInstance(m)
-        if rootManager.getSdk == null then
-          val model = rootManager.getModifiableModel
-          try Option(model.getSdkName).foreach(n => referencedJdkNames += n)
-          finally model.dispose()
-
-      for jdkName <- referencedJdkNames do
-        if jdkTable.findJdk(jdkName) == null then
-          val jdkHome = findJdkHome()
-          jdkHome match
-            case Some(home) =>
-              System.err.println(s"[ProjectManager] Registering JDK '$jdkName' -> $home")
-              ApplicationManager.getApplication.invokeAndWait: () =>
-                WriteAction.run[RuntimeException]: () =>
-                  val createJdk = javaSdkType.getClass.getMethod("createJdk", classOf[String], classOf[String], classOf[Boolean])
-                  val sdk = createJdk.invoke(javaSdkType, jdkName, home, java.lang.Boolean.FALSE)
-                    .asInstanceOf[com.intellij.openapi.projectRoots.Sdk]
-                  jdkTable.addJdk(sdk)
-            case None =>
-              System.err.println(s"[ProjectManager] WARNING: Cannot find JDK for '$jdkName'")
-    catch
-      case e: Exception =>
-        System.err.println(s"[ProjectManager] JDK registration failed: ${e.getMessage}")
-
-  private def findJdkHome(): Option[String] =
-    // Check common JDK locations
-    val candidates = Seq(
-      Option(System.getenv("JAVA_HOME")),
-      // IntelliJ's bundled JBR
-      Some(com.intellij.openapi.application.PathManager.getHomePath + "/jbr/Contents/Home"),
-      Some(com.intellij.openapi.application.PathManager.getHomePath + "/jbr"),
-      // macOS system JDKs
-      Some("/Library/Java/JavaVirtualMachines/openjdk-21.jdk/Contents/Home"),
-      Some("/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home"),
-    ).flatten
-    candidates.find(p => java.io.File(p + "/bin/java").exists())
 
   private def linkBspProject(projectPath: Path): Unit =
     System.err.println("[ProjectManager] BSP configuration detected, linking BSP project...")
@@ -147,10 +96,16 @@ class IntellijProjectManager:
   def closeProject(): Unit =
     val p = project
     if p != null then
-      ApplicationManager.getApplication.invokeAndWait: () =>
-        ProjectManager.getInstance().closeAndDispose(p)
-      project = null
-      System.err.println("[ProjectManager] Project closed")
+      if daemonMode then
+        // In daemon mode, only clear local state — the project lives in ProjectRegistry
+        project = null
+        virtualFileCache.clear()
+        System.err.println("[ProjectManager] Session cleared (daemon mode)")
+      else
+        ApplicationManager.getApplication.invokeAndWait: () =>
+          ProjectManager.getInstance().closeAndDispose(p)
+        project = null
+        System.err.println("[ProjectManager] Project closed")
 
   def findVirtualFile(uri: String): Option[VirtualFile] =
     virtualFileCache.get(uri).orElse:
