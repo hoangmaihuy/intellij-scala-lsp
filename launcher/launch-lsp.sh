@@ -60,14 +60,51 @@ find_scala_plugin() {
   if [ -d "$IDEA_HOME/custom-plugins/Scala/lib" ]; then
     echo "$IDEA_HOME/custom-plugins/Scala"; return 0
   fi
-  # macOS JetBrains config (use while-read to handle spaces in paths)
+
+  # Determine IntelliJ major version prefix (e.g. "253" -> "2025.3", "261" -> "2026.1")
+  # to pick a compatible Scala plugin from user config dirs
+  local ide_build=""
+  local pi="$IDEA_HOME/Resources/product-info.json"
+  [ ! -f "$pi" ] && pi="$IDEA_HOME/product-info.json"
+  if [ -f "$pi" ]; then
+    ide_build=$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(d.get('buildNumber',''))" "$pi" 2>/dev/null)
+  fi
+  local ide_prefix="${ide_build%%.*}"  # e.g. "253"
+
+  # Map build prefix to JetBrains config dir name pattern
+  # 253 -> 2025.3, 252 -> 2025.2, 251 -> 2025.1, 261 -> 2026.1, etc.
+  local config_pattern=""
+  if [ -n "$ide_prefix" ]; then
+    local major="${ide_prefix:0:2}"  # "25" or "26"
+    local minor="${ide_prefix:2:1}"  # "3" or "1"
+    config_pattern="20${major}.${minor}"
+    echo "[launch-lsp] Looking for Scala plugin matching IDE build $ide_build (version $config_pattern)" >&2
+  fi
+
+  # macOS JetBrains config — prefer matching version, fall back to any
+  local found_any=""
   while IFS= read -r d; do
-    if [ -d "$d/lib" ]; then echo "$d"; return 0; fi
+    if [ -d "$d/lib" ]; then
+      if [ -n "$config_pattern" ] && [[ "$d" == *"$config_pattern"* ]]; then
+        echo "$d"; return 0
+      fi
+      [ -z "$found_any" ] && found_any="$d"
+    fi
   done < <(ls -dt "$HOME/Library/Application Support/JetBrains"/*/plugins/Scala 2>/dev/null)
   # Linux config
   while IFS= read -r d; do
-    if [ -d "$d/lib" ]; then echo "$d"; return 0; fi
+    if [ -d "$d/lib" ]; then
+      if [ -n "$config_pattern" ] && [[ "$d" == *"$config_pattern"* ]]; then
+        echo "$d"; return 0
+      fi
+      [ -z "$found_any" ] && found_any="$d"
+    fi
   done < <(ls -dt "$HOME/.config/JetBrains"/*/plugins/Scala 2>/dev/null)
+  # Fall back to any found plugin if no version match
+  if [ -n "$found_any" ]; then
+    echo "[launch-lsp] WARNING: No version-matched Scala plugin found, using: $found_any" >&2
+    echo "$found_any"; return 0
+  fi
   # Cached download
   for d in "$CACHE_DIR"/scala-plugin-*; do
     if [ -d "$d/lib" ]; then echo "$d"; return 0; fi
@@ -229,7 +266,18 @@ done
 
 CONFIG_DIR="$CACHE_DIR/config"
 SYSTEM_DIR="$CACHE_DIR/system"
-mkdir -p "$CONFIG_DIR" "$SYSTEM_DIR"
+mkdir -p "$CONFIG_DIR/options" "$SYSTEM_DIR"
+
+# Copy JDK table from real IntelliJ config so projects can resolve their configured JDKs
+if [ ! -f "$CONFIG_DIR/options/jdk.table.xml" ]; then
+  while IFS= read -r cfg; do
+    if [ -f "$cfg/options/jdk.table.xml" ]; then
+      cp "$cfg/options/jdk.table.xml" "$CONFIG_DIR/options/jdk.table.xml"
+      echo "[launch-lsp] Copied JDK table from $cfg" >&2
+      break
+    fi
+  done < <(ls -dt "$HOME/Library/Application Support/JetBrains"/*/  "$HOME/.config/JetBrains"/*/ 2>/dev/null)
+fi
 
 # --- Build JVM arguments array ---
 

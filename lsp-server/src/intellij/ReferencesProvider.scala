@@ -59,5 +59,9 @@ class ReferencesProvider(projectManager: IntellijProjectManager):
       if ref != null then
         Option(ref.resolve())
       else
-        // The element itself might be a declaration
-        Some(element)
+        // Walk up to find the containing named element (class, trait, method, val, etc.)
+        // This handles the case where the cursor is on the definition itself
+        var parent = element.getParent
+        while parent != null && !parent.isInstanceOf[com.intellij.psi.PsiNamedElement] do
+          parent = parent.getParent
+        if parent != null then Some(parent) else Some(element)

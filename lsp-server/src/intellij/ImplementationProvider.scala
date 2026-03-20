@@ -55,4 +55,9 @@ class ImplementationProvider(projectManager: IntellijProjectManager):
       if ref != null then
         Option(ref.resolve())
       else
-        Some(element)
+        // Walk up to find the containing named element (class, trait, method, etc.)
+        // This handles the case where the cursor is on the definition itself
+        var parent = element.getParent
+        while parent != null && !parent.isInstanceOf[com.intellij.psi.PsiNamedElement] do
+          parent = parent.getParent
+        if parent != null then Some(parent) else Some(element)

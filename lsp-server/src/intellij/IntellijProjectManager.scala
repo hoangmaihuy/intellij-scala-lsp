@@ -1,14 +1,16 @@
 package org.jetbrains.scalalsP.intellij
 
-import com.intellij.openapi.application.{ApplicationManager, ReadAction}
+import com.intellij.openapi.application.{ApplicationManager, ReadAction, WriteAction}
 import com.intellij.openapi.externalSystem.importing.ImportSpecBuilder
 import com.intellij.openapi.externalSystem.model.ProjectSystemId
 import com.intellij.openapi.externalSystem.util.ExternalSystemUtil
 import com.intellij.openapi.project.{DumbService, Project, ProjectManager}
+import com.intellij.openapi.projectRoots.ProjectJdkTable
 import com.intellij.openapi.vfs.{LocalFileSystem, VirtualFile}
 import com.intellij.psi.{PsiDocumentManager, PsiFile, PsiManager}
 
 import java.nio.file.{Files, Path}
+import scala.jdk.CollectionConverters.*
 
 /**
  * Manages the IntelliJ project lifecycle: open, index, close.
@@ -50,6 +52,64 @@ class IntellijProjectManager:
       throw RuntimeException(s"Failed to open project at $projectPath")
 
     System.err.println(s"[ProjectManager] Project opened: ${project.getName}")
+
+    // Register missing JDKs referenced by project modules.
+    // When using TestApplicationManager with an isolated config, the JDK table is empty.
+    // Projects imported via BSP reference JDKs like "BSP_Home" that need to be registered.
+    registerMissingJdks()
+
+  private def registerMissingJdks(): Unit =
+    try
+      val jdkTable = ProjectJdkTable.getInstance()
+
+      // Find JavaSdk type via SdkType.findInstance (works across plugin classloaders)
+      val javaSdkType = com.intellij.openapi.projectRoots.SdkType.EP_NAME.getExtensionList.asScala
+        .find(_.getName == "JavaSDK").orNull
+      if javaSdkType == null then
+        System.err.println("[ProjectManager] JavaSdk type not found in extensions")
+        return
+
+      // Find all unresolved JDK names from project modules
+      import com.intellij.openapi.module.ModuleManager
+      val modules = ModuleManager.getInstance(project).getModules
+      val referencedJdkNames = scala.collection.mutable.Set[String]()
+      for m <- modules do
+        val rootManager = com.intellij.openapi.roots.ModuleRootManager.getInstance(m)
+        if rootManager.getSdk == null then
+          val model = rootManager.getModifiableModel
+          try Option(model.getSdkName).foreach(n => referencedJdkNames += n)
+          finally model.dispose()
+
+      for jdkName <- referencedJdkNames do
+        if jdkTable.findJdk(jdkName) == null then
+          val jdkHome = findJdkHome()
+          jdkHome match
+            case Some(home) =>
+              System.err.println(s"[ProjectManager] Registering JDK '$jdkName' -> $home")
+              ApplicationManager.getApplication.invokeAndWait: () =>
+                WriteAction.run[RuntimeException]: () =>
+                  val createJdk = javaSdkType.getClass.getMethod("createJdk", classOf[String], classOf[String], classOf[Boolean])
+                  val sdk = createJdk.invoke(javaSdkType, jdkName, home, java.lang.Boolean.FALSE)
+                    .asInstanceOf[com.intellij.openapi.projectRoots.Sdk]
+                  jdkTable.addJdk(sdk)
+            case None =>
+              System.err.println(s"[ProjectManager] WARNING: Cannot find JDK for '$jdkName'")
+    catch
+      case e: Exception =>
+        System.err.println(s"[ProjectManager] JDK registration failed: ${e.getMessage}")
+
+  private def findJdkHome(): Option[String] =
+    // Check common JDK locations
+    val candidates = Seq(
+      Option(System.getenv("JAVA_HOME")),
+      // IntelliJ's bundled JBR
+      Some(com.intellij.openapi.application.PathManager.getHomePath + "/jbr/Contents/Home"),
+      Some(com.intellij.openapi.application.PathManager.getHomePath + "/jbr"),
+      // macOS system JDKs
+      Some("/Library/Java/JavaVirtualMachines/openjdk-21.jdk/Contents/Home"),
+      Some("/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home"),
+    ).flatten
+    candidates.find(p => java.io.File(p + "/bin/java").exists())
 
   private def linkBspProject(projectPath: Path): Unit =
     System.err.println("[ProjectManager] BSP configuration detected, linking BSP project...")
