@@ -24,8 +24,7 @@ export class DiagnosticsCache {
   }
 
   async waitFor(uri: string, timeoutMs = 5000): Promise<Diagnostic[]> {
-    const existing = this.cache.get(uri);
-    if (existing && existing.length > 0) return existing;
+    if (this.cache.has(uri)) return this.cache.get(uri)!;
 
     return new Promise<Diagnostic[]>((resolve) => {
       const timer = setTimeout(() => {

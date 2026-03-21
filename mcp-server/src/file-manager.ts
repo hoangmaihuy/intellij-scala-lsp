@@ -23,7 +23,12 @@ export class FileManager {
 
   async ensureOpen(filePath: string): Promise<string> {
     const uri = pathToUri(filePath);
-    const stat = fs.statSync(filePath);
+    let stat: fs.Stats;
+    try {
+      stat = fs.statSync(filePath);
+    } catch {
+      throw new Error(`File not found: ${filePath}`);
+    }
     const currentMtime = stat.mtimeMs;
 
     const existing = this.openFiles.get(uri);
