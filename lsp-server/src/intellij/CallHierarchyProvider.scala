@@ -6,9 +6,6 @@ import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.search.searches.{DefinitionsScopedSearch, ReferencesSearch}
 import com.intellij.psi.util.PsiTreeUtil
 import org.eclipse.lsp4j.*
-import org.jetbrains.plugins.scala.lang.psi.ScalaPsiUtil
-import org.jetbrains.plugins.scala.lang.psi.api.statements.{ScFunction, ScPatternDefinition, ScVariableDefinition}
-import org.jetbrains.plugins.scala.lang.psi.api.toplevel.typedef.{ScClass, ScObject, ScTrait}
 
 import scala.jdk.CollectionConverters.*
 
@@ -55,14 +52,20 @@ class CallHierarchyProvider(projectManager: IntellijProjectManager):
           // Also include synthetic methods for case classes (apply, copy, unapply)
           element match
             case method: PsiMethod =>
-              Option(method.getContainingClass).foreach:
-                case sc: ScClass if sc.isCase =>
-                  ScalaPsiUtil.getCompanionModule(sc).foreach: companion =>
-                    companion.allMethods.foreach: methodSig =>
-                      val m = methodSig.method
-                      if Set("apply", "copy", "unapply").contains(m.getName) then
-                        relatedMethods += m
-                case _ => ()
+              Option(method.getContainingClass).foreach: containingClass =>
+                if ScalaTypes.isClass(containingClass) && ScalaTypes.isCase(containingClass) then
+                  ScalaTypes.getCompanionModule(containingClass).foreach: companion =>
+                    try
+                      ScalaTypes.invokeMethod(companion.asInstanceOf[PsiElement], "allMethods") match
+                        case Some(result) =>
+                          result.asInstanceOf[scala.collection.Seq[?]].foreach: methodSig =>
+                            try
+                              val m = methodSig.getClass.getMethod("method").invoke(methodSig).asInstanceOf[PsiMethod]
+                              if Set("apply", "copy", "unapply").contains(m.getName) then
+                                relatedMethods += m
+                            catch case _: Exception => ()
+                        case None => ()
+                    catch case _: Exception => ()
             case _ => ()
 
           // Group references by their enclosing function/method, cycle prevention via visited set
@@ -181,10 +184,10 @@ class CallHierarchyProvider(projectManager: IntellijProjectManager):
       current = current.getParent
     None
 
-  private def isCallable(element: PsiElement): Boolean = element match
-    case _: ScFunction | _: ScPatternDefinition | _: ScVariableDefinition |
-         _: PsiMethod | _: ScClass | _: ScObject | _: ScTrait => true
-    case _ => false
+  private def isCallable(element: PsiElement): Boolean =
+    ScalaTypes.isFunction(element) || ScalaTypes.isPatternDefinition(element) ||
+      ScalaTypes.isVariableDefinition(element) || element.isInstanceOf[PsiMethod] ||
+      ScalaTypes.isClass(element) || ScalaTypes.isObject(element) || ScalaTypes.isTrait(element)
 
   private def collectOutgoingRefs(
     element: PsiElement,

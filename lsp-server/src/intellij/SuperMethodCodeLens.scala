@@ -1,9 +1,8 @@
 package org.jetbrains.scalalsP.intellij
 
 import com.intellij.openapi.editor.Document
-import com.intellij.psi.{PsiElement, PsiFile, PsiNameIdentifierOwner}
+import com.intellij.psi.{PsiElement, PsiFile, PsiNameIdentifierOwner, PsiNamedElement}
 import org.eclipse.lsp4j.{CodeLens, Command, Range}
-import org.jetbrains.plugins.scala.lang.psi.api.statements.ScFunction
 
 // Code lens contributor that shows "overrides ClassName.methodName" lenses
 // for methods that override a method from a supertype.
@@ -43,12 +42,12 @@ class SuperMethodCodeLens extends CodeLensContributor:
       val methodName = getMethodName(superMethod)
       (Some(superMethod), s"overrides $superClass.$methodName")
     else
-      element match
-        case fn: ScFunction if fn.hasModifierPropertyScala("override") =>
-          // override is syntactically present but super method can't be resolved
-          // (e.g., in light test environments where containingClass is unavailable)
-          (None, s"overrides ${fn.name}")
-        case _ => return None
+      if ScalaTypes.isFunction(element) && ScalaTypes.hasModifierPropertyScala(element, "override") then
+        // override is syntactically present but super method can't be resolved
+        // (e.g., in light test environments where containingClass is unavailable)
+        val fnName = element.asInstanceOf[PsiNamedElement].getName
+        (None, s"overrides $fnName")
+      else return None
 
     // Get the range at the method name (just the identifier)
     val range = element match
@@ -82,30 +81,45 @@ class SuperMethodCodeLens extends CodeLensContributor:
     Some(lens)
 
   private def findSuperMethods(element: PsiElement): Seq[PsiElement] =
-    element match
-      case fn: ScFunction =>
+    if ScalaTypes.isFunction(element) then
+      try
+        if !ScalaTypes.hasModifierPropertyScala(element, "override") then return Seq.empty
+        // Try superMethods (requires containingClass to be non-null)
+        val smList = try
+          ScalaTypes.invokeMethod(element, "superMethods") match
+            case Some(result) => result.asInstanceOf[scala.collection.Seq[?]].collect { case e: PsiElement => e }.toSeq
+            case None => Seq.empty
+        catch case _: Exception => Seq.empty
+        if smList.nonEmpty then return smList
+        // Try superSignaturesIncludingSelfType (what IntelliJ's line marker provider uses)
+        val cc = try
+          ScalaTypes.invokeMethod(element, "containingClass").orNull
+        catch case _: Exception => null
+        if cc != null then
+          val supers = try
+            ScalaTypes.invokeMethod(element, "superSignaturesIncludingSelfType") match
+              case Some(result) => result.asInstanceOf[scala.collection.Seq[?]].toSeq
+              case None => Seq.empty
+          catch case _: Exception => Seq.empty
+          if supers.nonEmpty then
+            return supers.flatMap: sig =>
+              try
+                val namedEl = sig.getClass.getMethod("namedElement").invoke(sig)
+                Option(namedEl).collect { case e: PsiElement if e != element => e }.toSeq
+              catch case _: Exception => Seq.empty
+        // Last fallback: superMethod
         try
-          if !fn.hasModifierPropertyScala("override") then return Seq.empty
-          // Try superMethods (requires containingClass to be non-null)
-          val smList = try fn.superMethods catch case _: Exception => Seq.empty
-          if smList.nonEmpty then return smList.toSeq
-          // Try superSignaturesIncludingSelfType (what IntelliJ's line marker provider uses)
-          val cc = fn.containingClass
-          if cc != null then
-            val supers = try fn.superSignaturesIncludingSelfType catch case _: Exception => Seq.empty
-            if supers.nonEmpty then
-              return supers.flatMap: sig =>
-                try Option(sig.namedElement).filter(_ != fn).toSeq
-                catch case _: Exception => Seq.empty
-          // Last fallback: superMethod
-          try fn.superMethod.toSeq catch case _: Exception => Seq.empty
-        catch
-          case e: Exception =>
-            System.err.println(s"[SuperMethodCodeLens] Error: ${e.getClass.getName}: ${e.getMessage}")
-            Seq.empty
-      case _ =>
-        // Try reflection for Java PsiMethod
-        findSuperMethodsReflective(element)
+          ScalaTypes.invokeOptionMethod(element, "superMethod") match
+            case Some(m: PsiElement) => Seq(m)
+            case _ => Seq.empty
+        catch case _: Exception => Seq.empty
+      catch
+        case e: Exception =>
+          System.err.println(s"[SuperMethodCodeLens] Error: ${e.getClass.getName}: ${e.getMessage}")
+          Seq.empty
+    else
+      // Try reflection for Java PsiMethod
+      findSuperMethodsReflective(element)
 
   private def findSuperMethodsReflective(element: PsiElement): Seq[PsiElement] =
     try
@@ -122,14 +136,15 @@ class SuperMethodCodeLens extends CodeLensContributor:
 
   private def getContainingClassName(element: PsiElement): String =
     try
-      element match
-        case fn: ScFunction =>
-          // Try containingClass, fall back to walking up the PSI tree
-          Option(fn.containingClass).map(_.getName).orElse:
-            findEnclosingClass(fn).map(_.getName)
-          .getOrElse("?")
-        case _ =>
+      if ScalaTypes.isFunction(element) then
+        // Try containingClass, fall back to walking up the PSI tree
+        val cc = try ScalaTypes.invokeMethod(element, "containingClass").orNull catch case _: Exception => null
+        if cc != null then
+          cc.asInstanceOf[PsiNamedElement].getName
+        else
           findEnclosingClass(element).map(_.getName).getOrElse("?")
+      else
+        findEnclosingClass(element).map(_.getName).getOrElse("?")
     catch
       case _: Exception => "?"
 

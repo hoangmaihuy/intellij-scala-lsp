@@ -5,7 +5,6 @@ import com.intellij.psi.{PsiClass, PsiElement, PsiNamedElement}
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.search.searches.DefinitionsScopedSearch
 import org.eclipse.lsp4j.{Position, SymbolKind, TypeHierarchyItem}
-import org.jetbrains.plugins.scala.lang.psi.api.toplevel.typedef.{ScClass, ScObject, ScTrait, ScTemplateDefinition}
 
 import scala.jdk.CollectionConverters.*
 
@@ -63,17 +62,15 @@ class TypeHierarchyProvider(projectManager: IntellijProjectManager):
           current = current.getParent
         Option(current)
 
-  private def isTypeElement(element: PsiElement): Boolean = element match
-    case _: ScClass | _: ScTrait | _: ScObject | _: PsiClass => true
-    case _ => false
+  private def isTypeElement(element: PsiElement): Boolean =
+    ScalaTypes.isClass(element) || ScalaTypes.isTrait(element) ||
+      ScalaTypes.isObject(element) || element.isInstanceOf[PsiClass]
 
   private def getSupertypes(element: PsiElement): Seq[PsiElement] =
     val syntheticTypes = Set("java.lang.Object", "scala.Any", "scala.AnyRef")
     val caseClassSynthetics = Set("scala.Product", "scala.Serializable", "java.io.Serializable")
 
-    val isCaseClass = element match
-      case sc: ScClass => sc.isCase
-      case _ => false
+    val isCaseClass = ScalaTypes.isClass(element) && ScalaTypes.isCase(element)
 
     def fallbackToGetSupers(el: PsiElement): Seq[PsiElement] = el match
       case psiClass: PsiClass =>
@@ -85,26 +82,33 @@ class TypeHierarchyProvider(projectManager: IntellijProjectManager):
           .toSeq
       case _ => Seq.empty
 
-    element match
-      case td: ScTemplateDefinition =>
-        // Try signature-based parent resolution first for more accurate results
-        val signatureParents: Option[Seq[PsiElement]] = for
-          eb <- Option(td.extendsBlock)
-          tp <- eb.templateParents
-        yield
-          tp.typeElements.flatMap: te =>
-            Option(te.getReference).flatMap(r => Option(r.resolve()))
-          .toSeq
-        signatureParents match
-          case Some(parents) if parents.nonEmpty =>
-            parents.filter: parent =>
-              val qn = parent match
-                case pc: PsiClass => Option(pc.getQualifiedName)
-                case _ => None
-              !qn.exists(syntheticTypes.contains) &&
-                !(isCaseClass && qn.exists(caseClassSynthetics.contains))
-          case _ => fallbackToGetSupers(element)
-      case _ => fallbackToGetSupers(element)
+    if ScalaTypes.isTemplateDefinition(element) then
+      // Try signature-based parent resolution first for more accurate results
+      val signatureParents: Option[Seq[PsiElement]] =
+        try
+          for
+            eb <- ScalaTypes.invokeMethod(element, "extendsBlock").map(_.asInstanceOf[PsiElement])
+            tpRaw <- { try { val r = eb.getClass.getMethod("templateParents").invoke(eb); r match { case opt: Option[?] => opt; case other => Option(other) } } catch { case _: Exception => None } }
+          yield
+            try
+              val teRaw = tpRaw.getClass.getMethod("typeElements").invoke(tpRaw)
+              teRaw.asInstanceOf[scala.collection.Seq[?]].flatMap: te =>
+                val tePsi = te.asInstanceOf[PsiElement]
+                Option(tePsi.getReference).flatMap(r => Option(r.resolve()))
+              .toSeq
+            catch case _: Exception => Seq.empty
+        catch case _: Exception => None
+
+      signatureParents match
+        case Some(parents) if parents.nonEmpty =>
+          parents.filter: parent =>
+            val qn = parent match
+              case pc: PsiClass => Option(pc.getQualifiedName)
+              case _ => None
+            !qn.exists(syntheticTypes.contains) &&
+              !(isCaseClass && qn.exists(caseClassSynthetics.contains))
+        case _ => fallbackToGetSupers(element)
+    else fallbackToGetSupers(element)
 
   private def toTypeHierarchyItem(element: PsiElement): Option[TypeHierarchyItem] =
     element match
@@ -150,7 +154,7 @@ class TypeHierarchyProvider(projectManager: IntellijProjectManager):
 
     result.flatMap(Option(_))
 
-  private def getSymbolKind(element: PsiElement): SymbolKind = element match
-    case _: ScTrait  => SymbolKind.Interface
-    case _: ScObject => SymbolKind.Module
-    case _           => SymbolKind.Class
+  private def getSymbolKind(element: PsiElement): SymbolKind =
+    if ScalaTypes.isTrait(element) then SymbolKind.Interface
+    else if ScalaTypes.isObject(element) then SymbolKind.Module
+    else SymbolKind.Class

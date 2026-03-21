@@ -9,7 +9,6 @@ import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.google.gson.JsonObject
 import com.intellij.psi.{PsiMethod, PsiNamedElement}
 import org.eclipse.lsp4j.*
-import org.jetbrains.plugins.scala.lang.psi.api.statements.ScFunction
 
 import java.util.concurrent.atomic.AtomicLong
 import scala.jdk.CollectionConverters.*
@@ -220,23 +219,32 @@ class CompletionProvider(projectManager: IntellijProjectManager):
 
   private def generateSnippet(psi: com.intellij.psi.PsiElement, item: CompletionItem): Unit =
     val methodName = item.getLabel
-    psi match
-      case fn: ScFunction =>
-        val params = fn.parameters
-        if params.isEmpty then
-          // Zero-param: insert as plain text (no change needed, already set)
-          ()
-        else if hasOverloads(fn) then
-          // Overloaded: just insert the name, let signature help guide
-          item.setInsertText(methodName)
-          item.setInsertTextFormat(InsertTextFormat.PlainText)
-        else
-          // Generate snippet with placeholders
-          val placeholders = params.zipWithIndex.map { (p, i) =>
-            s"$${${i + 1}:${p.getName}}"
-          }.mkString(", ")
-          item.setInsertText(s"$methodName($placeholders)")
-          item.setInsertTextFormat(InsertTextFormat.Snippet)
+    if ScalaTypes.isFunction(psi) then
+      try
+        val named = psi.asInstanceOf[PsiNamedElement]
+        // Get parameters via reflection
+        val paramsRaw = ScalaTypes.invokeMethod(psi, "parameters")
+        paramsRaw match
+          case Some(params) =>
+            val paramSeq = params.asInstanceOf[scala.collection.Seq[?]]
+            if paramSeq.isEmpty then
+              // Zero-param: insert as plain text (no change needed)
+              ()
+            else if hasOverloads(named) then
+              // Overloaded: just insert the name, let signature help guide
+              item.setInsertText(methodName)
+              item.setInsertTextFormat(InsertTextFormat.PlainText)
+            else
+              // Generate snippet with placeholders
+              val placeholders = paramSeq.toSeq.zipWithIndex.map { (p, i) =>
+                val pName = try p.asInstanceOf[PsiNamedElement].getName catch case _: Exception => s"arg$i"
+                s"$${${i + 1}:$pName}"
+              }.mkString(", ")
+              item.setInsertText(s"$methodName($placeholders)")
+              item.setInsertTextFormat(InsertTextFormat.Snippet)
+          case None => ()
+      catch case _: Exception => ()
+    else psi match
       case method: PsiMethod =>
         val params = method.getParameterList.getParameters
         if params.isEmpty then
