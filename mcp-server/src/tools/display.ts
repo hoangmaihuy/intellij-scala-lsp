@@ -6,6 +6,7 @@ import { DiagnosticsCache } from '../diagnostics-cache.js';
 import { toPosition } from '../utils.js';
 import {
   HoverParams, Hover, DocumentSymbolParams, DocumentSymbol, SymbolInformation, SymbolKind,
+  InlayHint, CodeLens,
 } from 'vscode-languageserver-protocol';
 import * as fs from 'fs';
 
@@ -103,6 +104,40 @@ export function registerDisplayTools(
 
       const output: string[] = [`Symbols in ${filePath}:\n`];
       formatSymbols(result, output, 0);
+      return { content: [{ type: 'text' as const, text: output.join('\n') }] };
+    },
+  );
+
+  mcp.tool('inlay_hints', 'Get inferred type hints (type annotations, parameter names) for a range of lines.',
+    { filePath: z.string().describe('Absolute path to the file'), startLine: z.number().describe('Start line (1-indexed)'), endLine: z.number().describe('End line (1-indexed)') },
+    async ({ filePath, startLine, endLine }) => {
+      const uri = await fileManager.ensureOpen(filePath);
+      const hints = await lsp.request<InlayHint[]>('textDocument/inlayHint', {
+        textDocument: { uri }, range: { start: toPosition(startLine, 1), end: toPosition(endLine, 999) },
+      });
+      if (!hints || hints.length === 0) return { content: [{ type: 'text' as const, text: `No inlay hints in ${filePath}:${startLine}-${endLine}` }] };
+      const output: string[] = [`Inlay hints in ${filePath}:${startLine}-${endLine}:\n`];
+      for (const hint of hints) {
+        const pos = `L${hint.position.line + 1}:C${hint.position.character + 1}`;
+        const label = typeof hint.label === 'string' ? hint.label : Array.isArray(hint.label) ? hint.label.map(p => p.value).join('') : '';
+        const kind = hint.kind === 1 ? 'type' : hint.kind === 2 ? 'parameter' : '';
+        output.push(`  ${pos} ${kind}: ${label}`);
+      }
+      return { content: [{ type: 'text' as const, text: output.join('\n') }] };
+    },
+  );
+
+  mcp.tool('code_lens', 'Get code lens annotations (e.g. "Overrides" markers) for a file.',
+    { filePath: z.string().describe('Absolute path to the file') },
+    async ({ filePath }) => {
+      const uri = await fileManager.ensureOpen(filePath);
+      const lenses = await lsp.request<CodeLens[]>('textDocument/codeLens', { textDocument: { uri } });
+      if (!lenses || lenses.length === 0) return { content: [{ type: 'text' as const, text: `No code lenses in ${filePath}` }] };
+      const output: string[] = [`Code lenses in ${filePath}:\n`];
+      for (let i = 0; i < lenses.length; i++) {
+        const lens = lenses[i];
+        output.push(`  [${i + 1}] L${lens.range.start.line + 1}: ${lens.command?.title || '(unresolved)'}`);
+      }
       return { content: [{ type: 'text' as const, text: output.join('\n') }] };
     },
   );
