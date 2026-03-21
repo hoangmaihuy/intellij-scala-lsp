@@ -527,6 +527,9 @@ do_update() {
     fi
   fi
   log "Updated to v${latest}!"
+  # Exit immediately — the script file was replaced by mv, and bash on macOS
+  # may re-read from the new file at the old byte offset, causing parse errors.
+  exit 0
 }
 
 # --- Daemon Management ---
