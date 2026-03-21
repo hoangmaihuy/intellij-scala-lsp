@@ -823,6 +823,7 @@ case "${1:-}" in
     echo "  --setup-claude-code-dev   Set up Claude Code plugin (local dev)"
     echo "  --setup-vscode            Set up VS Code extension (installed users)"
     echo "  --setup-vscode-dev        Set up VS Code extension (local dev)"
+    echo "  --import <path>           Import project (auto-detects Mill/sbt)"
     echo "  --version                 Print version info"
     echo "  --help                    Show this help"
     echo ""
@@ -855,6 +856,40 @@ case "${1:-}" in
     setup_vscode "$SCRIPT_DIR/intellij-scala-lsp"
     exit 0
     ;;
+  --import)
+    PROJECT_PATH="${2:-}"
+    if [ -z "$PROJECT_PATH" ]; then
+      echo "ERROR: --import requires a project path argument."
+      echo "Usage: intellij-scala-lsp --import <project-path>"
+      exit 1
+    fi
+    # Resolve to absolute path
+    PROJECT_PATH="$(cd "$PROJECT_PATH" 2>/dev/null && pwd)" || {
+      echo "ERROR: Directory does not exist: ${2}"
+      exit 1
+    }
+    # Detect build tool
+    if [ -f "$PROJECT_PATH/build.mill" ] || [ -f "$PROJECT_PATH/build.sc" ]; then
+      echo "Detected Mill project at: $PROJECT_PATH"
+      echo "Running: mill mill.idea/ ..."
+      cd "$PROJECT_PATH" && mill mill.idea/
+      MILL_EXIT=$?
+      if [ $MILL_EXIT -eq 0 ]; then
+        echo "Import complete."
+      else
+        echo "ERROR: mill mill.idea/ failed with exit code $MILL_EXIT"
+      fi
+      exit $MILL_EXIT
+    elif [ -f "$PROJECT_PATH/build.sbt" ]; then
+      echo "Detected sbt project at: $PROJECT_PATH"
+      echo "Importing sbt project..."
+      # Falls through to second case block which has SDK/classpath setup
+    else
+      echo "ERROR: Could not detect build tool at: $PROJECT_PATH"
+      echo "Expected build.sbt (sbt) or build.mill/build.sc (Mill)"
+      exit 1
+    fi
+    ;;
 esac
 
 # Log stderr to file
@@ -882,6 +917,13 @@ case "${1:-}" in
     check_for_updates
     exec "$JAVA" "${JVM_ARGS[@]}" -cp "$CLASSPATH" \
       org.jetbrains.scalalsP.ScalaLspMain --daemon "$@"
+    ;;
+  --import)
+    # sbt import — we only reach here for sbt projects (Mill handled above)
+    resolve_sdk
+    assemble_classpath_and_flags
+    exec "$JAVA" "${JVM_ARGS[@]}" -cp "$CLASSPATH" \
+      org.jetbrains.scalalsP.ProjectImporter "$PROJECT_PATH"
     ;;
   *)
     # Connect mode: proxy to daemon, auto-start if needed
