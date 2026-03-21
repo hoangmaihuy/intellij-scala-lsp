@@ -25,12 +25,7 @@
         "intellijScalaLsp.launcher": {
           "type": "string",
           "default": "",
-          "description": "Path to launch-lsp.sh (auto-detected if empty)"
-        },
-        "intellijScalaLsp.intellijHome": {
-          "type": "string",
-          "default": "",
-          "description": "Path to IntelliJ SDK (auto-detected if empty)"
+          "description": "Path to intellij-scala-lsp launcher (auto-detected from PATH if empty)"
         }
       }
     }
