@@ -7,7 +7,6 @@ import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.psi.codeStyle.CodeStyleManager
 import org.eclipse.lsp4j.*
 import org.eclipse.lsp4j.services.{LanguageClient, WorkspaceService}
-import org.jetbrains.plugins.scala.lang.psi.api.toplevel.typedef.ScTypeDefinition
 import org.jetbrains.scalalsP.intellij.{IntellijProjectManager, PsiUtils, SymbolProvider}
 
 import java.util
@@ -147,18 +146,23 @@ class ScalaWorkspaceService(projectManager: IntellijProjectManager) extends Work
                 vf <- projectManager.findVirtualFile(oldUri)
                 document <- Option(FileDocumentManager.getInstance().getDocument(vf))
               yield
-                import com.intellij.psi.util.PsiTreeUtil
-                val typeDefs = PsiTreeUtil.findChildrenOfType(psiFile, classOf[ScTypeDefinition]).asScala
-                typeDefs
-                  .filter(td => td.getName == oldFileName && Option(td.getParent).exists(p =>
-                    p.isInstanceOf[com.intellij.psi.PsiFile] ||
-                    p.isInstanceOf[org.jetbrains.plugins.scala.lang.psi.api.toplevel.ScPackaging]))
-                  .flatMap: td =>
-                    Option(td.getNameIdentifier).map: nameId =>
-                      val start = PsiUtils.offsetToPosition(document, nameId.getTextRange.getStartOffset)
-                      val end = PsiUtils.offsetToPosition(document, nameId.getTextRange.getEndOffset)
-                      TextEdit(Range(start, end), newFileName)
-                  .toSeq
+                // Find top-level named elements matching old filename
+                // Use PsiNameIdentifierOwner to avoid loading Scala plugin classes at class-init time
+                import com.intellij.psi.{PsiNameIdentifierOwner, PsiNamedElement}
+                val topLevel = psiFile.getChildren.collect:
+                  case named: PsiNameIdentifierOwner if named.getName == oldFileName => named
+                val nested = psiFile.getChildren.flatMap: child =>
+                  // Also check inside ScPackaging (Scala package blocks)
+                  if child.getClass.getName.contains("ScPackaging") then
+                    child.getChildren.collect:
+                      case named: PsiNameIdentifierOwner if named.getName == oldFileName => named
+                  else Array.empty[PsiNameIdentifierOwner]
+                (topLevel ++ nested).flatMap: td =>
+                  Option(td.getNameIdentifier).map: nameId =>
+                    val start = PsiUtils.offsetToPosition(document, nameId.getTextRange.getStartOffset)
+                    val end = PsiUtils.offsetToPosition(document, nameId.getTextRange.getEndOffset)
+                    TextEdit(Range(start, end), newFileName)
+                .toSeq
               ).getOrElse(Seq.empty)
 
             if edits.nonEmpty then
