@@ -445,6 +445,7 @@ do_install() {
   log "Set up your editor:"
   log "  Claude Code:  intellij-scala-lsp --setup-claude-code"
   log "  VS Code:      intellij-scala-lsp --setup-vscode"
+  log "  Zed:          intellij-scala-lsp --setup-zed"
   log "  Neovim:       cmd = { \"intellij-scala-lsp\" }"
 }
 
@@ -866,6 +867,153 @@ EXTJS
   echo "  To uninstall: rm -rf $ext_dir"
 }
 
+setup_zed() {
+  local launcher_cmd="$1"
+  local ext_src="$2"
+  local ext_dir="$HOME/.local/share/zed/extensions/intellij-scala-lsp"
+
+  # Check for rustup/cargo
+  if ! command -v rustup >/dev/null 2>&1; then
+    if [ -f "$HOME/.cargo/env" ]; then
+      . "$HOME/.cargo/env"
+    fi
+  fi
+  if ! command -v cargo >/dev/null 2>&1; then
+    echo "ERROR: Rust is required to build the Zed extension."
+    echo "Install Rust: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
+    exit 1
+  fi
+
+  # Ensure wasm target is available
+  if ! rustup target list --installed 2>/dev/null | grep -q wasm32-wasip2; then
+    echo "Installing wasm32-wasip2 target..."
+    rustup target add wasm32-wasip2
+  fi
+
+  # Resolve absolute path for the launcher command
+  local abs_launcher
+  abs_launcher="$(command -v "$launcher_cmd" 2>/dev/null)" || abs_launcher="$launcher_cmd"
+
+  # Create extension directory
+  rm -rf "$ext_dir"
+  mkdir -p "$ext_dir/src" "$ext_dir/languages/scala"
+
+  # Write extension.toml
+  cat > "$ext_dir/extension.toml" << 'EXTTOML'
+id = "intellij-scala-lsp"
+name = "IntelliJ Scala LSP"
+description = "Scala language support powered by IntelliJ IDEA's analysis engine"
+version = "0.0.1"
+schema_version = 1
+authors = ["hoangmaihuy <hoangmaihuy@gmail.com>"]
+repository = "https://github.com/hoangmaihuy/intellij-scala-lsp"
+
+[language_servers.intellij-scala-lsp]
+name = "IntelliJ Scala LSP"
+languages = ["Scala", "Java"]
+
+[grammars.scala]
+repository = "https://github.com/tree-sitter/tree-sitter-scala"
+rev = "97aead18d97708190a51d4f551ea9b05b60641c9"
+EXTTOML
+
+  # Write Cargo.toml
+  cat > "$ext_dir/Cargo.toml" << 'CARGOTOML'
+[package]
+name = "intellij-scala-lsp"
+version = "0.0.1"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+zed_extension_api = "0.7.0"
+CARGOTOML
+
+  # Write src/lib.rs with the launcher path baked in
+  cat > "$ext_dir/src/lib.rs" << LIBRS
+use zed_extension_api as zed;
+
+struct IntelliJScalaLsp;
+
+impl zed::Extension for IntelliJScalaLsp {
+    fn new() -> Self {
+        IntelliJScalaLsp
+    }
+
+    fn language_server_command(
+        &mut self,
+        _language_server_id: &zed::LanguageServerId,
+        _worktree: &zed::Worktree,
+    ) -> zed::Result<zed::Command> {
+        let path = std::env::var("INTELLIJ_SCALA_LSP_PATH")
+            .unwrap_or_else(|_| "$abs_launcher".to_string());
+
+        Ok(zed::Command {
+            command: path,
+            args: vec![],
+            env: vec![],
+        })
+    }
+}
+
+zed::register_extension!(IntelliJScalaLsp);
+LIBRS
+
+  # Write languages/scala/config.toml
+  cat > "$ext_dir/languages/scala/config.toml" << 'LANGTOML'
+name = "Scala"
+grammar = "scala"
+path_suffixes = ["scala", "sc", "mill"]
+line_comments = ["//"]
+block_comment = ["/*", "*/"]
+tab_size = 2
+hard_tabs = false
+LANGTOML
+
+  # Configure Zed settings to pass PATH env
+  local zed_settings="$HOME/.config/zed/settings.json"
+  if [ -f "$zed_settings" ] && command -v node >/dev/null 2>&1; then
+    node -e "
+      const fs = require('fs');
+      // Parse JSONC (strip comments)
+      let raw = fs.readFileSync('$zed_settings', 'utf-8');
+      let clean = raw.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+      // Remove trailing commas before } or ]
+      clean = clean.replace(/,(\s*[}\]])/g, '\$1');
+      const settings = JSON.parse(clean);
+      if (!settings.lsp) settings.lsp = {};
+      settings.lsp['intellij-scala-lsp'] = {
+        binary: {
+          env: {
+            PATH: '$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin'
+          }
+        }
+      };
+      if (!settings.languages) settings.languages = {};
+      settings.languages['Scala'] = {
+        language_servers: ['intellij-scala-lsp', '!metals']
+      };
+      settings.languages['Java'] = {
+        language_servers: ['intellij-scala-lsp', '...']
+      };
+      fs.writeFileSync('$zed_settings', JSON.stringify(settings, null, 2) + '\n');
+    " 2>/dev/null || log "WARNING: Could not update Zed settings.json automatically"
+  fi
+
+  echo ""
+  echo "=== Zed setup complete ==="
+  echo "Extension written to: $ext_dir"
+  echo ""
+  echo "Next steps:"
+  echo "  1. Open Zed"
+  echo "  2. Cmd+Shift+P -> 'zed: install dev extension'"
+  echo "  3. Select: $ext_dir"
+  echo ""
+  echo "  To uninstall: rm -rf $ext_dir"
+}
+
 # --- Main ---
 
 # Handle --version and --help before setting up logging (they should be quiet)
@@ -888,6 +1036,8 @@ case "${1:-}" in
     echo "  --setup-mcp-dev          Set up MCP server for Claude Code (local dev)"
     echo "  --setup-vscode            Set up VS Code extension (installed users)"
     echo "  --setup-vscode-dev        Set up VS Code extension (local dev)"
+    echo "  --setup-zed               Set up Zed extension (installed users)"
+    echo "  --setup-zed-dev           Set up Zed extension (local dev)"
     echo "  --import <path>           Import project (auto-detects Mill/sbt)"
     echo "  --version                 Print version info"
     echo "  --help                    Show this help"
@@ -932,6 +1082,19 @@ case "${1:-}" in
       exit 1
     fi
     setup_vscode "$SCRIPT_DIR/intellij-scala-lsp"
+    exit 0
+    ;;
+  --setup-zed)
+    setup_zed "intellij-scala-lsp" ""
+    exit 0
+    ;;
+  --setup-zed-dev)
+    if [ "$DEV_MODE" != true ]; then
+      echo "ERROR: --setup-zed-dev must be run from the repo directory."
+      echo "Use --setup-zed for installed users."
+      exit 1
+    fi
+    setup_zed "$SCRIPT_DIR/intellij-scala-lsp" "$PROJECT_ROOT/zed-extension"
     exit 0
     ;;
   --import)

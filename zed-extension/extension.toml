@@ -1,0 +1,15 @@
+id = "intellij-scala-lsp"
+name = "IntelliJ Scala LSP"
+description = "Scala language support powered by IntelliJ IDEA's analysis engine"
+version = "0.0.1"
+schema_version = 1
+authors = ["hoangmaihuy <hoangmaihuy@gmail.com>"]
+repository = "https://github.com/hoangmaihuy/intellij-scala-lsp"
+
+[language_servers.intellij-scala-lsp]
+name = "IntelliJ Scala LSP"
+languages = ["Scala", "Java"]
+
+[grammars.scala]
+repository = "https://github.com/tree-sitter/tree-sitter-scala"
+rev = "97aead18d97708190a51d4f551ea9b05b60641c9"
