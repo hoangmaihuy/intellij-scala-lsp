@@ -4,11 +4,6 @@ import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.psi.{PsiElement, PsiNameIdentifierOwner, PsiNamedElement}
 import org.eclipse.lsp4j.{InlayHint, InlayHintKind, Position, Range}
 import org.eclipse.lsp4j.jsonrpc.messages.{Either => LspEither}
-import org.jetbrains.plugins.scala.lang.psi.api.base.ScPrimaryConstructor
-import org.jetbrains.plugins.scala.lang.psi.api.base.types.*
-import org.jetbrains.plugins.scala.lang.psi.api.expr.{ScArgumentExprList, ScMethodCall, ScReferenceExpression}
-import org.jetbrains.plugins.scala.lang.psi.api.statements.{ScFunction, ScFunctionDefinition, ScPatternDefinition, ScVariableDefinition}
-import org.jetbrains.plugins.scala.lang.psi.api.statements.params.{ScParameter, ScParameters}
 
 import scala.jdk.CollectionConverters.*
 
@@ -47,7 +42,7 @@ class InlayHintProvider(projectManager: IntellijProjectManager):
     document: com.intellij.openapi.editor.Document
   ): Option[InlayHint] =
     if !isInferredTypeDefinition(element) then return None
-    getTypeText(element).map: typeText =>
+    ScalaTypes.getTypeText(element).map: typeText =>
       val nameElem = element match
         case owner: PsiNameIdentifierOwner => Option(owner.getNameIdentifier)
         case _ => None
@@ -61,39 +56,16 @@ class InlayHintProvider(projectManager: IntellijProjectManager):
       hint.setPaddingLeft(false)
       hint
 
-  private def isInferredTypeDefinition(element: PsiElement): Boolean = element match
-    case _: ScPatternDefinition | _: ScVariableDefinition | _: ScFunctionDefinition =>
+  private def isInferredTypeDefinition(element: PsiElement): Boolean =
+    if ScalaTypes.isPatternDefinition(element) || ScalaTypes.isVariableDefinition(element) || ScalaTypes.isFunctionDefinition(element) then
       !hasExplicitTypeAnnotation(element)
-    case _ => false
+    else false
 
   private def hasExplicitTypeAnnotation(element: PsiElement): Boolean =
-    element.getChildren.exists:
-      case _: ScSimpleTypeElement | _: ScParameterizedTypeElement | _: ScFunctionalTypeElement |
-           _: ScTupleTypeElement | _: ScInfixTypeElement | _: ScCompoundTypeElement => true
-      case _ => false
-
-  private def getTypeText(element: PsiElement): Option[String] =
-    try
-      import org.jetbrains.plugins.scala.lang.psi.types.{TypePresentationContext, Context}
-      element match
-        case pd: ScPatternDefinition =>
-          pd.`type`().toOption.map: t =>
-            implicit val tpc: TypePresentationContext = TypePresentationContext(pd)
-            implicit val ctx: Context = Context(pd)
-            t.presentableText
-        case vd: ScVariableDefinition =>
-          vd.`type`().toOption.map: t =>
-            implicit val tpc: TypePresentationContext = TypePresentationContext(vd)
-            implicit val ctx: Context = Context(vd)
-            t.presentableText
-        case fd: ScFunctionDefinition =>
-          fd.returnType.toOption.map: t =>
-            implicit val tpc: TypePresentationContext = TypePresentationContext(fd)
-            implicit val ctx: Context = Context(fd)
-            t.presentableText
-        case _ => None
-    catch
-      case _: Exception => None
+    element.getChildren.exists: child =>
+      ScalaTypes.isSimpleTypeElement(child) || ScalaTypes.isParameterizedTypeElement(child) ||
+        ScalaTypes.isFunctionalTypeElement(child) || ScalaTypes.isTupleTypeElement(child) ||
+        ScalaTypes.isInfixTypeElement(child) || ScalaTypes.isCompoundTypeElement(child)
 
   // --- Parameter Name Hints ---
 
@@ -101,7 +73,7 @@ class InlayHintProvider(projectManager: IntellijProjectManager):
     element: PsiElement,
     document: com.intellij.openapi.editor.Document
   ): Seq[InlayHint] =
-    if !element.isInstanceOf[ScArgumentExprList] then return Seq.empty
+    if !ScalaTypes.isArgumentExprList(element) then return Seq.empty
     try
       val call = element.getParent
       if call == null then return Seq.empty
@@ -126,27 +98,26 @@ class InlayHintProvider(projectManager: IntellijProjectManager):
             else None
         case None => Seq.empty
     catch
-      case _: Exception => Seq.empty
+      case ex: Exception =>
+        System.err.println(s"InlayHintProvider.collectParameterNameHints: $ex")
+        Seq.empty
 
   private def resolveParameterNames(callElement: PsiElement): Option[Seq[String]] =
     // Find the invoked expression (first child that is a reference-like element)
-    val invokedExpr = callElement.getChildren.find:
-      case _: ScReferenceExpression | _: ScMethodCall => true
-      case _ => false
+    val invokedExpr = callElement.getChildren.find: child =>
+      ScalaTypes.isReferenceExpression(child) || ScalaTypes.isMethodCall(child)
     invokedExpr.flatMap: ref =>
       val resolved = Option(ref.getReference).flatMap(r => Option(r.resolve()))
       resolved.flatMap(getParameterNames)
 
-  private def getParameterNames(element: PsiElement): Option[Seq[String]] = element match
-    case fn: ScFunction =>
-      val params = fn.parameters
-      if params.nonEmpty then Some(params.map(_.name).toSeq)
-      else None
-    case ctor: ScPrimaryConstructor =>
-      val params = ctor.parameters
-      if params.nonEmpty then Some(params.map(_.name).toSeq)
-      else None
-    case _ => None
+  private def getParameterNames(element: PsiElement): Option[Seq[String]] =
+    if ScalaTypes.isFunction(element) || ScalaTypes.isPrimaryConstructor(element) then
+      ScalaTypes.invokeMethod(element, "parameters") match
+        case Some(params: scala.collection.Seq[?]) =>
+          val names = params.collect { case p: PsiNamedElement => p.getName }.toSeq
+          if names.nonEmpty then Some(names) else None
+        case _ => None
+    else None
 
   // --- Implicit Argument Hints ---
 
@@ -154,18 +125,30 @@ class InlayHintProvider(projectManager: IntellijProjectManager):
     element: PsiElement,
     document: com.intellij.openapi.editor.Document
   ): Seq[InlayHint] =
+    // Implicit argument hints: uses reflection to call findImplicitArguments on ImplicitArgumentsOwner.
+    // The reflection chain is deep (findImplicitArguments -> Seq[ImplicitArgumentsOwner.Clause] -> args -> element),
+    // so we wrap in try/catch for graceful degradation.
     try
-      import org.jetbrains.plugins.scala.lang.psi.api.ImplicitArgumentsOwner
-      element match
-        case owner: ImplicitArgumentsOwner =>
-          // Skip argument lists themselves — we only want the call expression
-          if element.isInstanceOf[ScArgumentExprList] then return Seq.empty
-          val clauses = owner.findImplicitArguments
-          if clauses.isEmpty then return Seq.empty
+      if !ScalaTypes.isImplicitArgumentsOwner(element) then return Seq.empty
+      // Skip argument lists themselves — we only want the call expression
+      if ScalaTypes.isArgumentExprList(element) then return Seq.empty
 
+      ScalaTypes.invokeMethod(element, "findImplicitArguments") match
+        case Some(clauses: scala.collection.Seq[?]) if clauses.nonEmpty =>
           val argNames = clauses.flatMap: clause =>
-            clause.args.flatMap: arg =>
-              Option(arg.element).map(_.getName)
+            // clause.args returns Seq[ImplicitArgument]
+            try
+              val argsMethod = clause.getClass.getMethod("args")
+              val args = argsMethod.invoke(clause).asInstanceOf[scala.collection.Seq[?]]
+              args.flatMap: arg =>
+                try
+                  val elemMethod = arg.getClass.getMethod("element")
+                  val resolved = elemMethod.invoke(arg)
+                  resolved match
+                    case named: PsiNamedElement => Option(named.getName)
+                    case _ => None
+                catch case _: Exception => None
+            catch case _: Exception => Seq.empty
           if argNames.isEmpty then return Seq.empty
 
           // Show implicit args after the expression
@@ -180,7 +163,9 @@ class InlayHintProvider(projectManager: IntellijProjectManager):
           Seq(hint)
         case _ => Seq.empty
     catch
-      case _: Exception => Seq.empty
+      case ex: Exception =>
+        System.err.println(s"InlayHintProvider.collectImplicitArgumentHints: $ex")
+        Seq.empty
 
   // --- Implicit Conversion Hints ---
 
@@ -188,17 +173,27 @@ class InlayHintProvider(projectManager: IntellijProjectManager):
     element: PsiElement,
     document: com.intellij.openapi.editor.Document
   ): Seq[InlayHint] =
+    // Implicit conversion hints: calls ScExpression.implicitConversion() via reflection.
+    // Returns Option[ScalaResolveResult], from which we extract element.getName.
     try
-      import org.jetbrains.plugins.scala.lang.psi.api.expr.ScExpression
-      element match
-        case expr: ScExpression =>
-          expr.implicitConversion() match
-            case Some(result) =>
-              val name = result.element.getName
+      if !ScalaTypes.isExpression(element) then return Seq.empty
+
+      ScalaTypes.invokeOptionMethod(element, "implicitConversion") match
+        case Some(result) =>
+          // result is a ScalaResolveResult — get its .element (PsiNamedElement)
+          val resolvedOpt =
+            try
+              val elemMethod = result.getClass.getMethod("element")
+              Option(elemMethod.invoke(result))
+            catch case _: Exception => None
+
+          resolvedOpt match
+            case Some(named: PsiNamedElement) =>
+              val name = named.getName
               if name == null || name.isEmpty then return Seq.empty
 
               // "conversionName(" before the expression
-              val startOffset = expr.getTextRange.getStartOffset
+              val startOffset = element.getTextRange.getStartOffset
               val startPos = PsiUtils.offsetToPosition(document, startOffset)
               val beforeHint = InlayHint()
               beforeHint.setPosition(startPos)
@@ -207,7 +202,7 @@ class InlayHintProvider(projectManager: IntellijProjectManager):
               beforeHint.setPaddingRight(false)
 
               // ")" after the expression
-              val endOffset = expr.getTextRange.getEndOffset
+              val endOffset = element.getTextRange.getEndOffset
               val endPos = PsiUtils.offsetToPosition(document, endOffset)
               val afterHint = InlayHint()
               afterHint.setPosition(endPos)
@@ -216,10 +211,12 @@ class InlayHintProvider(projectManager: IntellijProjectManager):
               afterHint.setPaddingLeft(false)
 
               Seq(beforeHint, afterHint)
-            case None => Seq.empty
-        case _ => Seq.empty
+            case _ => Seq.empty
+        case None => Seq.empty
     catch
-      case _: Exception => Seq.empty
+      case ex: Exception =>
+        System.err.println(s"InlayHintProvider.collectImplicitConversionHints: $ex")
+        Seq.empty
 
   // --- Type Parameter Hints ---
 
@@ -227,58 +224,87 @@ class InlayHintProvider(projectManager: IntellijProjectManager):
     element: PsiElement,
     document: com.intellij.openapi.editor.Document
   ): Seq[InlayHint] =
+    // Type parameter hints: calls ScReference.bind() -> ScalaResolveResult, then extracts
+    // type parameters and uses TypeParameterType + substitutor to get inferred type args.
+    // The reflection chain is very deep (bind -> resolveResult -> element -> typeParameters,
+    // TypeParameterType companion -> apply, substitutor -> apply, presentableText), so we
+    // wrap the entire block in try/catch for graceful degradation.
     try
-      element match
-        case ref: ScReferenceExpression =>
-          // Only show type param hints if there are no explicit type arguments
-          if hasExplicitTypeArguments(ref) then return Seq.empty
+      if !ScalaTypes.isReferenceExpression(element) then return Seq.empty
 
-          import org.jetbrains.plugins.scala.lang.psi.api.base.ScReference
-          val refAsScRef = ref.asInstanceOf[ScReference]
-          refAsScRef.bind() match
-            case Some(resolveResult) =>
-              val resolved = resolveResult.element
-              val typeParams = resolved match
-                case fn: ScFunction => fn.typeParameters
+      // Only show type param hints if there are no explicit type arguments
+      if hasExplicitTypeArguments(element) then return Seq.empty
+
+      // ScReference.bind() returns Option[ScalaResolveResult]
+      ScalaTypes.invokeOptionMethod(element, "bind") match
+        case Some(resolveResult) =>
+          // resolveResult.element
+          val resolved =
+            try resolveResult.getClass.getMethod("element").invoke(resolveResult)
+            catch case _: Exception => return Seq.empty
+
+          // Get type parameters from the resolved element
+          val typeParams = resolved match
+            case r: PsiElement if ScalaTypes.isFunction(r) =>
+              ScalaTypes.invokeMethod(r, "typeParameters") match
+                case Some(params: scala.collection.Seq[?]) => params
                 case _ => Seq.empty
+            case _ => Seq.empty
 
-              if typeParams.isEmpty then return Seq.empty
+          if typeParams.isEmpty then return Seq.empty
 
-              val substitutor = resolveResult.substitutor
-              val typeTexts = typeParams.flatMap: tp =>
-                try
-                  import org.jetbrains.plugins.scala.lang.psi.types.api.TypeParameterType
-                  val tpType = TypeParameterType(tp)
-                  val substituted = substitutor(tpType)
-                  // Don't show if the type parameter was not substituted (still abstract/undefined)
-                  import org.jetbrains.plugins.scala.lang.psi.types.{TypePresentationContext, Context}
-                  implicit val tpc: TypePresentationContext = TypePresentationContext(element)
-                  implicit val ctx: Context = Context(element)
-                  val text = substituted.presentableText
-                  if text.contains("Nothing") || text.contains("Any") ||
-                     text.contains("?") || text == tp.name then None
-                  else Some(text)
-                catch
-                  case _: Exception => None
+          // Get the substitutor from the resolve result
+          val substitutor =
+            try resolveResult.getClass.getMethod("substitutor").invoke(resolveResult)
+            catch case _: Exception => return Seq.empty
 
-              if typeTexts.isEmpty then return Seq.empty
+          val cl = element.getClass.getClassLoader
 
-              val offset = ref.getTextRange.getEndOffset
-              val pos = PsiUtils.offsetToPosition(document, offset)
-              val label = typeTexts.mkString("[", ", ", "]")
-              val hint = InlayHint()
-              hint.setPosition(pos)
-              hint.setLabel(LspEither.forLeft(label))
-              hint.setKind(InlayHintKind.Type)
-              hint.setPaddingLeft(false)
-              Seq(hint)
-            case None => Seq.empty
-        case _ => Seq.empty
+          // Load TypeParameterType companion for creating type parameter types
+          val tptCompanion = cl.loadClass("org.jetbrains.plugins.scala.lang.psi.types.api.TypeParameterType$")
+          val tptModule = tptCompanion.getField("MODULE$").get(null)
+
+          // Find the apply method on TypeParameterType companion
+          val scTypeParamClass = cl.loadClass("org.jetbrains.plugins.scala.lang.psi.api.statements.params.ScTypeParam")
+          val tptApply = tptCompanion.getMethod("apply", scTypeParamClass)
+
+          // Get the substitutor's apply method — takes a ScType
+          val scTypeClass = cl.loadClass("org.jetbrains.plugins.scala.lang.psi.types.ScType")
+          val substApply = substitutor.getClass.getMethod("apply", scTypeClass)
+
+          val typeTexts = typeParams.flatMap: tp =>
+            try
+              val tpType = tptApply.invoke(tptModule, tp)
+              val substituted = substApply.invoke(substitutor, tpType)
+              ScalaTypes.getScTypePresentableText(substituted, element) match
+                case Some(text) if !text.contains("Nothing") && !text.contains("Any") &&
+                  !text.contains("?") && text != tp.asInstanceOf[PsiNamedElement].getName =>
+                  Some(text)
+                case _ => None
+            catch
+              case ex: Exception =>
+                System.err.println(s"InlayHintProvider.collectTypeParameterHints: type param reflection failed: $ex")
+                None
+
+          if typeTexts.isEmpty then return Seq.empty
+
+          val offset = element.getTextRange.getEndOffset
+          val pos = PsiUtils.offsetToPosition(document, offset)
+          val label = typeTexts.mkString("[", ", ", "]")
+          val hint = InlayHint()
+          hint.setPosition(pos)
+          hint.setLabel(LspEither.forLeft(label))
+          hint.setKind(InlayHintKind.Type)
+          hint.setPaddingLeft(false)
+          Seq(hint)
+        case None => Seq.empty
     catch
-      case _: Exception => Seq.empty
+      case ex: Exception =>
+        System.err.println(s"InlayHintProvider.collectTypeParameterHints: $ex")
+        Seq.empty
 
   /** Check if a reference expression already has explicit type arguments (e.g. foo[Int](...)) */
-  private def hasExplicitTypeArguments(ref: ScReferenceExpression): Boolean =
+  private def hasExplicitTypeArguments(ref: PsiElement): Boolean =
     try
       // If the parent is a generic call with type args, skip
       val parent = ref.getParent

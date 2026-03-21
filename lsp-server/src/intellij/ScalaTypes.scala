@@ -257,3 +257,89 @@ object ScalaTypes:
         case opt: Option[?] => opt
         case _ => None
     catch case _: Exception => None
+
+  /**
+   * Get the presentable type text for a Scala typed definition (ScPatternDefinition,
+   * ScVariableDefinition, ScFunctionDefinition) via reflection.
+   *
+   * Uses the element's classloader to access TypePresentationContext, Context, and
+   * presentableText on the ScType. Returns None if anything goes wrong — the hint
+   * simply won't be shown.
+   */
+  def getTypeText(e: PsiElement): Option[String] =
+    try
+      val cl = e.getClass.getClassLoader
+
+      // Load TypePresentationContext and Context classes
+      val tpcCompanion = cl.loadClass("org.jetbrains.plugins.scala.lang.psi.types.TypePresentationContext$")
+      val tpcModule = tpcCompanion.getField("MODULE$").get(null)
+      val tpcClass = cl.loadClass("org.jetbrains.plugins.scala.lang.psi.types.TypePresentationContext")
+      val applyTpc = tpcCompanion.getMethod("apply", classOf[PsiElement])
+      val tpc = applyTpc.invoke(tpcModule, e)
+
+      val ctxCompanion = cl.loadClass("org.jetbrains.plugins.scala.lang.psi.types.Context$")
+      val ctxModule = ctxCompanion.getField("MODULE$").get(null)
+      val ctxClass = cl.loadClass("org.jetbrains.plugins.scala.lang.psi.types.Context")
+      val applyCtx = ctxCompanion.getMethod("apply", classOf[PsiElement])
+      val ctx = applyCtx.invoke(ctxModule, e)
+
+      def presentable(scType: Any): Option[String] =
+        try
+          val method = scType.getClass.getMethod("presentableText", tpcClass, ctxClass)
+          Some(method.invoke(scType, tpc, ctx).asInstanceOf[String])
+        catch case ex: Exception =>
+          System.err.println(s"ScalaTypes.getTypeText: presentableText failed: $ex")
+          None
+
+      // Try ScPatternDefinition.type() or ScVariableDefinition.type()
+      val typeResult =
+        try e.getClass.getMethod("type").invoke(e)
+        catch case _: Exception => null
+      if typeResult != null then
+        // TypeResult has .toOption
+        val optResult = typeResult.getClass.getMethod("toOption").invoke(typeResult)
+        optResult match
+          case opt: Option[?] => return opt.flatMap(t => presentable(t))
+          case _ => ()
+
+      // Try ScFunctionDefinition.returnType
+      val retType =
+        try e.getClass.getMethod("returnType").invoke(e)
+        catch case _: Exception => null
+      if retType != null then
+        // TypeResult has .toOption
+        val optResult = retType.getClass.getMethod("toOption").invoke(retType)
+        optResult match
+          case opt: Option[?] => return opt.flatMap(t => presentable(t))
+          case _ => ()
+
+      None
+    catch case ex: Exception =>
+      System.err.println(s"ScalaTypes.getTypeText: failed for ${e.getClass.getName}: $ex")
+      None
+
+  /**
+   * Get presentable type text for a ScType object, using the given element for context.
+   * Used for type parameter hints where we already have the substituted type.
+   */
+  def getScTypePresentableText(scType: Any, contextElement: PsiElement): Option[String] =
+    try
+      val cl = contextElement.getClass.getClassLoader
+
+      val tpcCompanion = cl.loadClass("org.jetbrains.plugins.scala.lang.psi.types.TypePresentationContext$")
+      val tpcModule = tpcCompanion.getField("MODULE$").get(null)
+      val tpcClass = cl.loadClass("org.jetbrains.plugins.scala.lang.psi.types.TypePresentationContext")
+      val applyTpc = tpcCompanion.getMethod("apply", classOf[PsiElement])
+      val tpc = applyTpc.invoke(tpcModule, contextElement)
+
+      val ctxCompanion = cl.loadClass("org.jetbrains.plugins.scala.lang.psi.types.Context$")
+      val ctxModule = ctxCompanion.getField("MODULE$").get(null)
+      val ctxClass = cl.loadClass("org.jetbrains.plugins.scala.lang.psi.types.Context")
+      val applyCtx = ctxCompanion.getMethod("apply", classOf[PsiElement])
+      val ctx = applyCtx.invoke(ctxModule, contextElement)
+
+      val method = scType.getClass.getMethod("presentableText", tpcClass, ctxClass)
+      Some(method.invoke(scType, tpc, ctx).asInstanceOf[String])
+    catch case ex: Exception =>
+      System.err.println(s"ScalaTypes.getScTypePresentableText: failed: $ex")
+      None
