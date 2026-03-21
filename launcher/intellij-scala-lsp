@@ -89,7 +89,9 @@ find_intellij_home() {
       elif [ -f "$app/build.txt" ]; then
         build_txt=$(cat "$app/build.txt")
       fi
-      local found_prefix="${build_txt%%.*}"
+      # Strip product prefix (e.g. "IU-253.32098.37" -> "253.32098.37")
+      local build_num="${build_txt#*-}"
+      local found_prefix="${build_num%%.*}"
       if [ "$found_prefix" = "$required_prefix" ]; then
         # Symlink into cache for consistent paths
         mkdir -p "$CACHE_DIR/sdk"
