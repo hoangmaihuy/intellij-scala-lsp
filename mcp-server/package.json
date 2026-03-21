@@ -1,0 +1,19 @@
+{
+  "name": "intellij-scala-lsp-mcp",
+  "version": "0.1.0",
+  "description": "MCP server bridging Claude Code to intellij-scala-lsp daemon",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "vscode-languageserver-protocol": "^3.17.5",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "@types/node": "^22.0.0"
+  }
+}
