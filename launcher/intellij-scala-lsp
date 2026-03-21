@@ -871,12 +871,20 @@ case "${1:-}" in
     # Detect build tool
     if [ -f "$PROJECT_PATH/build.mill" ] || [ -f "$PROJECT_PATH/build.sc" ]; then
       echo "Detected Mill project at: $PROJECT_PATH"
-      if ! command -v mill >/dev/null 2>&1; then
-        echo "ERROR: 'mill' not found on PATH. Install Mill: https://mill-build.org"
+      # Find mill command: prefer local scripts, fall back to global
+      if [ -x "$PROJECT_PATH/mill" ]; then
+        MILL_CMD="$PROJECT_PATH/mill"
+      elif [ -x "$PROJECT_PATH/millw" ]; then
+        MILL_CMD="$PROJECT_PATH/millw"
+      elif command -v mill >/dev/null 2>&1; then
+        MILL_CMD="mill"
+      else
+        echo "ERROR: 'mill' not found. No local ./mill or ./millw script, and 'mill' is not on PATH."
+        echo "Install Mill: https://mill-build.org"
         exit 1
       fi
-      echo "Running: mill mill.idea/ ..."
-      if cd "$PROJECT_PATH" && mill mill.idea/; then
+      echo "Running: $MILL_CMD mill.idea/ ..."
+      if cd "$PROJECT_PATH" && "$MILL_CMD" mill.idea/; then
         echo "Import complete."
         exit 0
       else

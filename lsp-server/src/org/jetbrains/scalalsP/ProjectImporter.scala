@@ -39,6 +39,10 @@ object ProjectImporter:
       )
     catch case e: Exception =>
       System.err.println(s"Warning: could not install global error processor: ${e.getMessage}")
+      LoggedErrorProcessor.executeWith(new LoggedErrorProcessor:
+        override def processError(category: String, message: String, details: Array[String], t: Throwable): java.util.Set[LoggedErrorProcessor.Action] =
+          EnumSet.of(LoggedErrorProcessor.Action.STDERR)
+      )
 
     // Bootstrap IntelliJ platform
     try
