@@ -69,57 +69,64 @@ This project exposes IntelliJ's analysis engine over LSP, bringing its performan
 | `workspace/didChangeWorkspaceFolders` | Multi-root workspace support |
 | `workspace/didChangeWatchedFiles` | External file change notification |
 
-## Prerequisites
-
-- **JDK 21+**
-- **sbt 1.11+**
-- **socat** (`brew install socat` on macOS, `apt install socat` on Linux) — required for stdio-to-TCP proxying
-
-The build uses [sbt-idea-plugin](https://github.com/JetBrains/sbt-idea-plugin) which automatically downloads the IntelliJ SDK, JBR, and Scala plugin on first build. No manual IntelliJ installation required for building.
-
-## Build
+## Install
 
 ```bash
-# Compile (first run downloads ~1.5GB of IntelliJ SDK + plugins)
-sbt lsp-server/compile
-
-# Run tests
-sbt lsp-server/test
-
-# Package plugin
-sbt lsp-server/packageArtifact
+curl -fsSL https://github.com/<owner>/intellij-scala-lsp/releases/latest/download/install.sh | bash
 ```
+
+This downloads the launcher, LSP server JARs, and sets up the IntelliJ SDK automatically. If you have IntelliJ installed, it reuses your installation. Otherwise, it downloads IntelliJ Community Edition (~800MB, first run only).
+
+### Requirements
+
+- **macOS** or **Linux**
+- **socat** (`brew install socat` on macOS, `apt install socat` on Linux) — required for daemon mode
+- **python3** — used by the launcher to parse IntelliJ's `product-info.json`
 
 ## Usage
 
 ### Daemon Mode (recommended)
 
-Pre-warm the daemon for instant responses:
-
 ```bash
-# Start daemon with project pre-warming (add to .zshrc for auto-start)
-./launcher/launch-lsp.sh --daemon /path/to/project1 /path/to/project2
+# Start daemon with project pre-warming
+intellij-scala-lsp --daemon /path/to/project1 /path/to/project2
 
 # Stop the daemon
-./launcher/launch-lsp.sh --stop
+intellij-scala-lsp --stop
 ```
 
-Claude Code connects automatically — the launcher starts the daemon if it's not running and proxies stdio-to-TCP via socat.
+### Editor Setup
 
-### Direct Mode (for testing)
+**VS Code:** Install the extension from `vscode-extension/`, or set `"intellijScalaLsp.launcher"` to `"intellij-scala-lsp"`.
+
+**Neovim:** `cmd = { "intellij-scala-lsp" }`
+
+**Claude Code:** Install the plugin from `claude-code/`. The daemon starts automatically.
+
+### Updating
+
+The launcher checks for updates daily. To update manually:
 
 ```bash
-echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"rootUri":"file:///path/to/project"}}' | \
-  socat - TCP:localhost:5007
+intellij-scala-lsp --update
 ```
 
-### With Claude Code
+## Development
 
 ```bash
-./setup-claude-code.sh
-```
+# Build (first run downloads ~1.5GB of IntelliJ SDK + plugins)
+sbt lsp-server/compile
 
-This registers the LSP server as a Claude Code plugin. The daemon starts automatically on first use. Requires `socat` (`brew install socat` on macOS).
+# Run tests
+sbt lsp-server/test
+
+# Build and run the LSP server
+sbt "lsp-server/runLsp --daemon"
+
+# Or run the launcher directly
+sbt lsp-server/packageArtifact
+./launcher/intellij-scala-lsp --daemon
+```
 
 ### Environment Variables
 
