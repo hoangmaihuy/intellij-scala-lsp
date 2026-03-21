@@ -14,8 +14,15 @@ import com.intellij.openapi.vfs.VirtualFile
 class ProjectImporterIntegrationTest extends ScalaLspTestBase:
 
   def testSbtOpenProjectProviderCanBeLoaded(): Unit =
-    // Verify the reflection that ProjectImporter uses actually works
-    val sbtProviderClass = Class.forName("org.jetbrains.sbt.project.SbtOpenProjectProvider")
+    // Verify the reflection that ProjectImporter uses actually works.
+    // Must load via the Scala plugin's classloader to avoid ClassCastException
+    // when sbt-api classes exist in both plugin and LSP server classloaders.
+    val pluginId = com.intellij.openapi.extensions.PluginId.getId("org.intellij.scala")
+    val plugin = com.intellij.ide.plugins.PluginManagerCore.getPlugin(pluginId)
+    assertNotNull("Scala plugin should be loaded", plugin)
+
+    val pluginClassLoader = plugin.getPluginClassLoader
+    val sbtProviderClass = Class.forName("org.jetbrains.sbt.project.SbtOpenProjectProvider", true, pluginClassLoader)
     assertNotNull("SbtOpenProjectProvider class should be loadable", sbtProviderClass)
 
     val provider = sbtProviderClass.getDeclaredConstructor().newInstance()
