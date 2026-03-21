@@ -80,11 +80,19 @@ The classpath is assembled from multiple sources — `product-info.json` alone i
 
 ### Classpath components
 
-1. **IntelliJ platform JARs** — parsed from `sdk/<build>/product-info.json` `launch[0].bootClassPathJarNames`
+1. **All IntelliJ platform JARs** — all `*.jar` files from `sdk/<build>/lib/` (not just the boot classpath from `product-info.json`). This includes `testFramework.jar` which is needed at runtime for `TestApplicationManager` bootstrap, plus many other platform JARs that IntelliJ services depend on.
 2. **Scala plugin JARs** — `sdk/<build>/plugins/scala/lib/scalaCommunity.jar`, `scala-library.jar`, `scala3-library_3.jar`
 3. **Java plugin JARs** — `sdk/<build>/plugins/java/lib/java-impl-frontend.jar`
 4. **LSP server JARs** — all JARs from the `lsp-server/` directory. Note: the `lsp-server.jar` must be **stripped** of `META-INF/plugin.xml` before adding to classpath (to avoid IntelliJ's "jarFiles is not set" fatal assertion when the plugin is discovered from both classpath and `-Dplugin.path`). The launcher creates a `lsp-server-stripped.jar` by copying and removing the `plugin.xml` entry.
-5. **Plugin path** — the original (unstripped) `lsp-server.jar` is passed via `-Dplugin.path=` so IntelliJ loads it as a plugin
+
+### Plugin path (`-Dplugin.path`)
+
+A colon-separated list of plugin directories (not individual JARs):
+- The LSP plugin directory (containing the unstripped `lsp-server.jar` with `plugin.xml`)
+- The Scala plugin directory (`sdk/<build>/plugins/scala/`)
+- The Java plugin directory (`sdk/<build>/plugins/java/`)
+
+IntelliJ's plugin loader needs all three directories to discover their `plugin.xml` descriptors.
 
 ### JVM flags
 
@@ -93,9 +101,14 @@ The classpath is assembled from multiple sources — `product-info.json` alone i
   - `-Djava.awt.headless=true`
   - `-Xlog:cds=off` (suppress CDS warnings)
   - `-Xmx${LSP_HEAP_SIZE:-2g}`
+  - `-Didea.home.path=<sdk-path>` (IntelliJ's `PathManager` root — required for JNA and SDK-relative lookups)
   - `-Didea.system.path=~/.cache/intellij-scala-lsp/system`
   - `-Didea.config.path=~/.cache/intellij-scala-lsp/config`
-  - `-Dplugin.path=<path to unstripped lsp-server.jar>`
+  - `-Didea.log.path=~/.cache/intellij-scala-lsp/system/log`
+  - `-Didea.plugins.path=~/.cache/intellij-scala-lsp/config/plugins`
+  - `-Didea.classpath.index.enabled=false`
+  - `-Dide.native.launcher=true`
+  - `-Dplugin.path=<lsp-plugin-dir>:<scala-plugin-dir>:<java-plugin-dir>`
 
 ### JDK table copying
 
