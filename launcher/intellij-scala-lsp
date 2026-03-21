@@ -495,11 +495,15 @@ do_update() {
     return
   fi
   log "Updating v${LSP_VERSION} -> v${latest}..."
-  # Download new launcher directly to file
+  # Download new launcher to a temp file, then atomically replace.
+  # Bash reads scripts lazily, so overwriting the running script in-place
+  # causes syntax errors when execution continues at the wrong byte offset.
   local self_path
   self_path="$(realpath "$0")"
-  curl -fsSL -o "$self_path" "https://github.com/${GITHUB_REPO}/releases/download/v${latest}/intellij-scala-lsp"
-  chmod +x "$self_path"
+  local tmp_path="${self_path}.tmp.$$"
+  curl -fsSL -o "$tmp_path" "https://github.com/${GITHUB_REPO}/releases/download/v${latest}/intellij-scala-lsp"
+  chmod +x "$tmp_path"
+  mv -f "$tmp_path" "$self_path"
   # Download new JARs
   download_lsp_jars "$latest"
   # Check if SDK version changed (new launcher might have different INTELLIJ_BUILD)
