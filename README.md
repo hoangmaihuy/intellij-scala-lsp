@@ -95,6 +95,20 @@ intellij-scala-lsp --daemon /path/to/project1 /path/to/project2
 intellij-scala-lsp --stop
 ```
 
+### Project Import
+
+If your project doesn't have an `.idea/` folder yet, import it first:
+
+```bash
+# Auto-detects Mill or sbt
+intellij-scala-lsp --import /path/to/project
+```
+
+- **Mill** (`build.mill`/`build.sc`): runs `mill mill.idea/` (prefers local `./mill` or `./millw`)
+- **sbt** (`build.sbt`): uses IntelliJ's sbt import API to generate `.idea/`
+
+Re-running `--import` on an already-imported project refreshes the project configuration.
+
 ### Editor Setup
 
 ```bash
