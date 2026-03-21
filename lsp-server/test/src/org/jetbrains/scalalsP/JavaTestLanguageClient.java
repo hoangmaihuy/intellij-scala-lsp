@@ -15,4 +15,8 @@ public class JavaTestLanguageClient implements LanguageClient {
         return java.util.concurrent.CompletableFuture.completedFuture(null);
     }
     @Override public void logMessage(MessageParams message) {}
+    @Override public java.util.concurrent.CompletableFuture<Void> createProgress(WorkDoneProgressCreateParams params) {
+        return java.util.concurrent.CompletableFuture.completedFuture(null);
+    }
+    @Override public void notifyProgress(ProgressParams params) {}
 }
