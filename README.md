@@ -112,7 +112,10 @@ Re-running `--import` on an already-imported project refreshes the project confi
 ### Editor Setup
 
 ```bash
-# Claude Code
+# Claude Code (MCP server — recommended, 22 tools)
+intellij-scala-lsp --setup-mcp
+
+# Claude Code (LSP plugin — 9 built-in LSP operations)
 intellij-scala-lsp --setup-claude-code
 
 # VS Code
@@ -121,6 +124,19 @@ intellij-scala-lsp --setup-vscode
 # Neovim (manual config)
 # cmd = { "intellij-scala-lsp" }
 ```
+
+#### Claude Code: MCP vs LSP
+
+There are two ways to connect Claude Code to this server:
+
+| | MCP Server (`--setup-mcp`) | LSP Plugin (`--setup-claude-code`) |
+|---|---|---|
+| **Tools** | 22 MCP tools (definition, references, hover, rename, code actions, completion, formatting, hierarchy, etc.) | 9 built-in LSP operations |
+| **Interface** | Symbol-name-based (e.g. `definition("MyClass")`) | File+position-based |
+| **Diagnostics** | On-demand via `diagnostics` tool | Push-based (automatic after edits) |
+| **Setup** | Adds MCP server to `~/.claude/settings.json` | Installs Claude Code LSP plugin |
+
+**Recommended:** Use `--setup-mcp` for the broadest feature coverage. The MCP server connects to the same daemon and exposes all LSP features as Claude Code tools with better ergonomics for AI use.
 
 ### Updating
 
@@ -147,8 +163,9 @@ sbt lsp-server/packageArtifact
 ./launcher/intellij-scala-lsp --daemon
 
 # Set up editor for local dev
-./launcher/intellij-scala-lsp --setup-claude-code-dev
-./launcher/intellij-scala-lsp --setup-vscode-dev
+./launcher/intellij-scala-lsp --setup-mcp-dev        # Claude Code (MCP)
+./launcher/intellij-scala-lsp --setup-claude-code-dev # Claude Code (LSP)
+./launcher/intellij-scala-lsp --setup-vscode-dev      # VS Code
 ```
 
 ### Environment Variables
