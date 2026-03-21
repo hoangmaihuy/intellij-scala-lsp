@@ -6,9 +6,6 @@ import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.search.searches.{DefinitionsScopedSearch, ReferencesSearch}
 import org.eclipse.lsp4j.{Position, PrepareRenameResult, Range, RenameFile, ResourceOperation, TextDocumentEdit, TextEdit, VersionedTextDocumentIdentifier, WorkspaceEdit}
 import org.eclipse.lsp4j.jsonrpc.messages.{Either as LspEither}
-import org.jetbrains.plugins.scala.lang.psi.api.toplevel.typedef.ScTypeDefinition
-import org.jetbrains.plugins.scala.lang.psi.ScalaPsiUtil
-
 import scala.jdk.CollectionConverters.*
 
 /**
@@ -89,11 +86,17 @@ class RenameProvider(projectManager: IntellijProjectManager):
           var allEdits = collectEditsFor(target)
 
           // Companion object/class pairing
-          target match
-            case typeDef: ScTypeDefinition =>
-              ScalaPsiUtil.getCompanionModule(typeDef).foreach: companion =>
-                allEdits = allEdits ++ collectEditsFor(companion)
-            case _ => ()
+          // Use Class.forName to avoid bytecode constant pool references to Scala plugin types,
+          // which would cause NoClassDefFoundError before IntelliJ's plugin classloader is ready
+          try
+            val scTypeDefClass = Class.forName("org.jetbrains.plugins.scala.lang.psi.api.toplevel.typedef.ScTypeDefinition")
+            if scTypeDefClass.isInstance(target) then
+              val utilClass = Class.forName("org.jetbrains.plugins.scala.lang.psi.ScalaPsiUtil")
+              val method = utilClass.getMethod("getCompanionModule", scTypeDefClass)
+              method.invoke(null, target).asInstanceOf[Option[?]].foreach:
+                case companion: PsiNamedElement => allEdits = allEdits ++ collectEditsFor(companion)
+                case _ => ()
+          catch case _: Exception => ()
 
           // Abstract method implementations
           target match
@@ -111,17 +114,21 @@ class RenameProvider(projectManager: IntellijProjectManager):
           if allEdits.isEmpty then null
           else
             // Check if we need a file rename resource operation
-            val fileRenameOp = target match
-              case typeDef: ScTypeDefinition =>
-                for
-                  containingFile <- Option(typeDef.getContainingFile)
-                  vf <- Option(containingFile.getVirtualFile)
-                  fileName = vf.getNameWithoutExtension
-                  if fileName == typeDef.getName
-                  oldFileUri = PsiUtils.vfToUri(vf)
-                  newFileUri = oldFileUri.substring(0, oldFileUri.lastIndexOf('/') + 1) + newName + ".scala"
-                yield (oldFileUri, newFileUri)
-              case _ => None
+            val isScalaTypeDef = try
+              Class.forName("org.jetbrains.plugins.scala.lang.psi.api.toplevel.typedef.ScTypeDefinition").isInstance(target)
+            catch case _: Exception => false
+
+            val fileRenameOp = if isScalaTypeDef then
+              val named = target.asInstanceOf[PsiNamedElement]
+              for
+                containingFile <- Option(named.getContainingFile)
+                vf <- Option(containingFile.getVirtualFile)
+                fileName = vf.getNameWithoutExtension
+                if fileName == named.getName
+                oldFileUri = PsiUtils.vfToUri(vf)
+                newFileUri = oldFileUri.substring(0, oldFileUri.lastIndexOf('/') + 1) + newName + ".scala"
+              yield (oldFileUri, newFileUri)
+            else None
 
             fileRenameOp match
               case Some((oldUri, newUri)) =>

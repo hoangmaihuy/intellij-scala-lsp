@@ -1,0 +1,1415 @@
+Manifest-Version: 1.0
+Bnd-LastModified: 1716315372359
+Bundle-ManifestVersion: 2
+Bundle-Name: org.eclipse.lsp4j
+Bundle-RequiredExecutionEnvironment: JavaSE-11
+Bundle-SymbolicName: org.eclipse.lsp4j
+Bundle-Vendor: Eclipse LSP4J
+Bundle-Version: 0.23.1.v20240521-1815
+Created-By: 11.0.22 (Eclipse Adoptium)
+Export-Package: org.eclipse.lsp4j;uses:="com.google.gson.annotations,org
+ .eclipse.lsp4j.adapters,org.eclipse.lsp4j.jsonrpc.messages,org.eclipse.
+ lsp4j.jsonrpc.validation";version="0.23.1",org.eclipse.lsp4j.adapters;u
+ ses:="com.google.gson,com.google.gson.reflect,com.google.gson.stream,or
+ g.eclipse.lsp4j,org.eclipse.lsp4j.jsonrpc.messages";version="0.23.1",or
+ g.eclipse.lsp4j.launch;uses:="org.eclipse.lsp4j.jsonrpc,org.eclipse.lsp
+ 4j.services";version="0.23.1",org.eclipse.lsp4j.services;uses:="org.ecl
+ ipse.lsp4j,org.eclipse.lsp4j.adapters,org.eclipse.lsp4j.jsonrpc.json,or
+ g.eclipse.lsp4j.jsonrpc.messages,org.eclipse.lsp4j.jsonrpc.services";ve
+ rsion="0.23.1",org.eclipse.lsp4j.util;uses:="org.eclipse.lsp4j";version
+ ="0.23.1"
+Import-Package: com.google.gson;version="[2.9.1,3.0)",com.google.gson.an
+ notations;version="[2.9.1,3.0)",com.google.gson.reflect;version="[2.9.1
+ ,3.0)",com.google.gson.stream;version="[2.9.1,3.0)",java.io,java.lang,j
+ ava.lang.invoke,java.lang.reflect,java.util,java.util.concurrent,java.u
+ til.function,org.eclipse.lsp4j,org.eclipse.lsp4j.adapters,org.eclipse.l
+ sp4j.jsonrpc;version="[0.23,1)",org.eclipse.lsp4j.jsonrpc.json;version=
+ "[0.23,1)",org.eclipse.lsp4j.jsonrpc.json.adapters;version="[0.23,1)",o
+ rg.eclipse.lsp4j.jsonrpc.messages;version="[0.23,1)",org.eclipse.lsp4j.
+ jsonrpc.services;version="[0.23,1)",org.eclipse.lsp4j.jsonrpc.util;vers
+ ion="[0.23,1)",org.eclipse.lsp4j.jsonrpc.validation;version="[0.23,1)",
+ org.eclipse.lsp4j.services
+Require-Capability: osgi.ee;filter:="(&(osgi.ee=JavaSE)(version=11))"
+Tool: Bnd-6.4.0.202211291949
+
+Name: org/eclipse/lsp4j/TextDocumentChangeRegistrationOptions.class
+SHA-256-Digest: dLanpzugDF9EA7+3RcB7QH5iCpjInrEM6wW0R3KvvM4=
+
+Name: org/eclipse/lsp4j/FileChangeType.class
+SHA-256-Digest: tIAw/VzeUtdbhJRExPoHBMb9WMWSoy6PzSeyb35nrTM=
+
+Name: org/eclipse/lsp4j/UnchangedDocumentDiagnosticReport.class
+SHA-256-Digest: sD3EKXEM0VglrDgyTduWiRg0kwTpOf4C6fo1vNPSeRg=
+
+Name: org/eclipse/lsp4j/InsertReplaceRange.class
+SHA-256-Digest: tBC07Bn1L/adZxrSMbPRi8IsQkTO6FzIef5scuHAPOk=
+
+Name: org/eclipse/lsp4j/SignatureInformation.class
+SHA-256-Digest: L/pcrQoBgNv51O6j2fref99Ml5Oh5jrgaD/4Rf7G5GA=
+
+Name: org/eclipse/lsp4j/SelectionRangeRegistrationOptions.class
+SHA-256-Digest: Wuwa5rxoURtDqnGbKEkNc/bGHeIEtkzkwJAbFeSaBsU=
+
+Name: org/eclipse/lsp4j/InlineValueWorkspaceCapabilities.class
+SHA-256-Digest: K9vsQA1VE4xaGq7s1EUr6mcZAC4QuN8gaBf2R/sZ8us=
+
+Name: org/eclipse/lsp4j/TextDocumentPositionParams.class
+SHA-256-Digest: j/omxni7V08dl8NVqDOU6BVFEey5CiTw6fqXDiZYuJo=
+
+Name: org/eclipse/lsp4j/CreateFile.class
+SHA-256-Digest: ccb2xPEvEFj2TML0i3P/8+kT+3G894WLfITtNOLtwBE=
+
+Name: org/eclipse/lsp4j/CreateFilesParams.class
+SHA-256-Digest: 5b8vYVqHnHJkckmehs7WDrPiZA31pOCLNuTBPrli13o=
+
+Name: org/eclipse/lsp4j/FormattingCapabilities.class
+SHA-256-Digest: UwGH95gUNvd3Kjxm8wk3KK9Z49HqCUo3zqLmQv3HAKo=
+
+Name: org/eclipse/lsp4j/DocumentOnTypeFormattingOptions.class
+SHA-256-Digest: VlZJ5t260VCWYC+2SBGfO47N7fI6teZeOJ6AUaJcnVk=
+
+Name: org/eclipse/lsp4j/CompletionTriggerKind.class
+SHA-256-Digest: LqTDsfuNMYN3mEh5TS1Xkc5X2KYOaXAAK34P7oz1E4Q=
+
+Name: org/eclipse/lsp4j/DeleteFileOptions.class
+SHA-256-Digest: 7FIgJDbT8M39p1xyO7/2zmwGVfWgXI2VmEMBcX4kIpk=
+
+Name: org/eclipse/lsp4j/DiagnosticServerCancellationData.class
+SHA-256-Digest: xY87zyPF9QdHQd0Q8CqITqbcMOaefnrZzPR5xaf2ufk=
+
+Name: org/eclipse/lsp4j/CodeActionResolveSupportCapabilities.class
+SHA-256-Digest: BTUZuphvPkZRVHxw5tIXeZsYO0yyzJvuNCmZY8qf5hA=
+
+Name: org/eclipse/lsp4j/DocumentColorParams.class
+SHA-256-Digest: JVZqu5kmcX1WYhjnCgOpQOEPVsMYjSEviVbEDGPH2hQ=
+
+Name: org/eclipse/lsp4j/ColorPresentationParams.class
+SHA-256-Digest: ypytJpe9Dloe/ph8g1dP0oR/J5EmcvrBujFJDTMzutE=
+
+Name: org/eclipse/lsp4j/CompletionItemDefaults.class
+SHA-256-Digest: gtqeHE1gExr9MCwltURL1ITEx9MqcXmSoLzjWBFlHcA=
+
+Name: org/eclipse/lsp4j/WorkspaceEdit.class
+SHA-256-Digest: MvO1GDpI6GeP4+jwneZubV/tzuZrdBmUDfkHbNdqzgU=
+
+Name: org/eclipse/lsp4j/DocumentDiagnosticReportKind.class
+SHA-256-Digest: E8YSkVPJWe53zUWs/VZrTXSg04m2dej/YcEoUcgXoKo=
+
+Name: org/eclipse/lsp4j/DocumentLinkRegistrationOptions.class
+SHA-256-Digest: GPnii5TYlsV5DsArKLJYuFPixYf+qebwyBOHJNaD99E=
+
+Name: org/eclipse/lsp4j/ImplementationParams.class
+SHA-256-Digest: Hwp/0eW3Ud9gQJnEQk865aXMdQOda/VaEgPNeQrrr8s=
+
+Name: org/eclipse/lsp4j/SelectionRange.class
+SHA-256-Digest: lGqTVpnNNm+/o4uhO7K92oxz5y6nMVh//B4DpcIawc4=
+
+Name: org/eclipse/lsp4j/SignatureHelpTriggerKind.class
+SHA-256-Digest: gcpVspSH5dE0uSHziF/IcjbzRV0NTjrpdhi7tZG/13U=
+
+Name: org/eclipse/lsp4j/RenameFilesParams.class
+SHA-256-Digest: J5JnpC40EVq/67ZGO4aXxEgCT8bhdqgh3MlpOt6rtNo=
+
+Name: org/eclipse/lsp4j/WindowShowMessageRequestCapabilities.class
+SHA-256-Digest: diUFUvvY7umuCoUf0sv8PMzJ7G4Az8dHySGr6XEwBF0=
+
+Name: org/eclipse/lsp4j/TextDocumentItem.class
+SHA-256-Digest: AR7nCfiiaFuJU4WiyDDGZ2HDhtDixcUgKvawoynqB7c=
+
+Name: org/eclipse/lsp4j/adapters/WorkspaceSymbolResponseAdapter.class
+SHA-256-Digest: N+mP8dHiLFeyzMDZ/vxKKGTGtrl0GFWeDmFvZt2kt3k=
+
+Name: org/eclipse/lsp4j/InsertReplaceEdit.class
+SHA-256-Digest: o6/oJndJUM3K4ToGkiD/6qoXb4o5HsWXQ0kh1qfNeI4=
+
+Name: org/eclipse/lsp4j/CallHierarchyPrepareParams.class
+SHA-256-Digest: zvSPtARc9JEUYwDWXWqJcFTBYeGCbB2A+Bj8fDINFL8=
+
+Name: org/eclipse/lsp4j/DocumentHighlight.class
+SHA-256-Digest: vhYDJCAjDgTix7KW39b9FPzLeHcU5L5y8p2Hdk26iZY=
+
+Name: org/eclipse/lsp4j/HoverParams.class
+SHA-256-Digest: TJ85X9/zE7w0nCBxD6LATJxswZeBkans86/1F1XoX1I=
+
+Name: org/eclipse/lsp4j/WorkDoneProgressKind.class
+SHA-256-Digest: Qly0FKkU6PvYsmLzoCkEWpa1t/KZDoT119POySbdih8=
+
+Name: org/eclipse/lsp4j/DefinitionParams.class
+SHA-256-Digest: 6AdqoWOFMURhy3wuULozWWoaRCh+ZUHdqYFtAUQKKV4=
+
+Name: org/eclipse/lsp4j/CodeActionOptions.class
+SHA-256-Digest: 8wjCGYIuoWRLbA9u3lhtWR3WnZh+PUdb8Wx5naXaslk=
+
+Name: org/eclipse/lsp4j/TokenFormat.class
+SHA-256-Digest: zjeVpZVrTRdA7I/LQthXyDnto9SamSPi3LSliZdLNmA=
+
+Name: org/eclipse/lsp4j/adapters/InlineValueResponseAdapter$2.class
+SHA-256-Digest: yD1vloOEIbJuq05iJJYqwBaTDXO2csNqyxhCxWmg9Rk=
+
+Name: org/eclipse/lsp4j/CompletionItemTag.class
+SHA-256-Digest: NaAIrTicrYC2V31VDRR+mJC6NRZ2091GCOSNLZKb3vk=
+
+Name: org/eclipse/lsp4j/InlayHintLabelPart.class
+SHA-256-Digest: RksPhJ62Z7QVZosTQQRsPOJ3JRWYZKNB0T1Zn0sZzbw=
+
+Name: org/eclipse/lsp4j/LinkedEditingRangeRegistrationOptions.class
+SHA-256-Digest: kUe77b/S9kyjiZY7H5RkGnM38WowZV7hd24hMeUziI8=
+
+Name: org/eclipse/lsp4j/RelativePattern.class
+SHA-256-Digest: Q9bC0dvGDqNBn0xhwdTBgN4EiPernSTjH9KeChj7k6A=
+
+Name: org/eclipse/lsp4j/ImplementationRegistrationOptions.class
+SHA-256-Digest: 1y1vB/pCYl4Vf0KhD44wN7bHt3qcqbdIWbTR3c6PoJo=
+
+Name: org/eclipse/lsp4j/PositionEncodingKind.class
+SHA-256-Digest: hf0uAUR4UCimYKVhzBVGZApa9yRitP/+tbo3XgFdF0c=
+
+Name: org/eclipse/lsp4j/adapters/SemanticTokensFullDeltaResponseAdapter.
+ class
+SHA-256-Digest: bTvfr//newdp7eu7La+8VkvO4fbh/enYwAvg0jxhsmc=
+
+Name: org/eclipse/lsp4j/services/LanguageServer.class
+SHA-256-Digest: xxkXnbHR5lq+Uo3dVfEO06hRrj05hZDAC5TXeiep64E=
+
+Name: org/eclipse/lsp4j/Command.class
+SHA-256-Digest: EYTi7WXFT7aNIzUAZSoDbAASi9OQg4N0NjN6Wwy2tjY=
+
+Name: org/eclipse/lsp4j/adapters/HoverTypeAdapter$2.class
+SHA-256-Digest: rAsWXnGmUcgw1nROMEHKyQIMU3sZau4scK2E51RuTGI=
+
+Name: org/eclipse/lsp4j/DocumentHighlightCapabilities.class
+SHA-256-Digest: NdwiHUr0QFU+/ArIi5KjocNTGFCKZmJ28hy2l9WiY9Y=
+
+Name: org/eclipse/lsp4j/SemanticTokensEdit.class
+SHA-256-Digest: R3nwoUCOS2sMAvEycICyC84FItOFF2NJw7l5mv1eauY=
+
+Name: org/eclipse/lsp4j/CodeActionRegistrationOptions.class
+SHA-256-Digest: 6Z1i89gpsADsSSOVR9Q70E8+66NhBrEWR3vEooRwr+Y=
+
+Name: org/eclipse/lsp4j/adapters/CodeActionResponseAdapter.class
+SHA-256-Digest: SYFekkhMySAAHdLO7taS/GmiGPkoPUJASdjkg9/Xq4c=
+
+Name: org/eclipse/lsp4j/util/DocumentSymbols$BreadthFirstIterator.class
+SHA-256-Digest: EYHeNj1ZXmVxHpxRZeQUAYHQUbTBcM3AEc3drQcW+Yc=
+
+Name: org/eclipse/lsp4j/CompletionItemLabelDetails.class
+SHA-256-Digest: eBiGF/UY0p6jpaQR9XDwlFxi+4jc3PgPoZY1TJ/lpmU=
+
+Name: org/eclipse/lsp4j/MonikerKind.class
+SHA-256-Digest: Cn1C59LTJ2CWaIEcolNFNTL/riD0sFI8d7C45m661GU=
+
+Name: org/eclipse/lsp4j/TypeHierarchyPrepareParams.class
+SHA-256-Digest: w8kJNFldcDM/8vx7ims6AkTcG9tYEr4DoKHepVUbysA=
+
+Name: org/eclipse/lsp4j/util/Ranges.class
+SHA-256-Digest: p922byoP7nJoL4NhnFZvWxIUwLN1ULtWWXEZ4Sw69ds=
+
+Name: org/eclipse/lsp4j/DocumentSymbol.class
+SHA-256-Digest: vIhQDNs8q7Yf938BD9mMwHLqFW09A6NIaFC+KB+9q98=
+
+Name: org/eclipse/lsp4j/InlineValueRegistrationOptions.class
+SHA-256-Digest: GYXgJ2W5RqUqD4zt/Oo8n3hrJ0sH0q41LXc8dTnixcI=
+
+Name: org/eclipse/lsp4j/adapters/DocumentChangeListAdapter$1.class
+SHA-256-Digest: gtncNGCBq63gahF6ZTDMsQDcN9lQkB0gtoFwwr4Ex6w=
+
+Name: org/eclipse/lsp4j/DiagnosticRelatedInformation.class
+SHA-256-Digest: Qkw/3eHSYXsHsrirNorekG9b0BdoD41SgRSmnEHVRIk=
+
+Name: org/eclipse/lsp4j/DidCloseNotebookDocumentParams.class
+SHA-256-Digest: Y6xQYbSgtgylAz6z95vT4Yh+63ZZZdsObmkEuPRZel8=
+
+Name: org/eclipse/lsp4j/MonikerParams.class
+SHA-256-Digest: /BkZ3x76oRxYFolVH4QAB9wBArIibVeWyKVltndvqOQ=
+
+Name: org/eclipse/lsp4j/InlayHintParams.class
+SHA-256-Digest: JOyyRiMn47cMzpQ+ODGfLatWzAxXOdyf/3fPWkYGjHA=
+
+Name: org/eclipse/lsp4j/adapters/LocationLinkListAdapter$1.class
+SHA-256-Digest: 0IIFamH8gifCc7Z72AoGFQD5jgjERz2kzFlxFCQgn68=
+
+Name: org/eclipse/lsp4j/Unregistration.class
+SHA-256-Digest: BR/+v8LdGhTrdYVz7iGh5aDXtrq3crLknMc9oJVNNw8=
+
+Name: org/eclipse/lsp4j/SemanticTokensClientCapabilitiesRequestsFull.cla
+ ss
+SHA-256-Digest: vro3/noXQoKK5joX/14qDKr4dlhTCiydrwlElRB4OmM=
+
+Name: org/eclipse/lsp4j/WorkDoneProgressEnd.class
+SHA-256-Digest: mE1um9JY86Gc70XpsOhY15egTj8QHWo/VXAx3xXjslM=
+
+Name: org/eclipse/lsp4j/WorkspaceDiagnosticReport.class
+SHA-256-Digest: 59ngdcbBGk/zY608NkyOWS93tWxrwbA+FvGHhtZPnO8=
+
+Name: org/eclipse/lsp4j/adapters/DocumentSymbolResponseAdapter.class
+SHA-256-Digest: APMHy/Vgmba3WW+7IgXN7ZZRx4wYEAieFx6OGEZtOnk=
+
+Name: org/eclipse/lsp4j/SemanticTokensWithRegistrationOptions.class
+SHA-256-Digest: KWmLgM+tMn7eAoAHjrAPo3HA0hoqK2wRIvC6zMMv2MY=
+
+Name: org/eclipse/lsp4j/CallHierarchyOptions.class
+SHA-256-Digest: 0b/7YUSUaBJ/ay3jesCwa3/Fd8b9VWaQt4pTHWPVTlk=
+
+Name: org/eclipse/lsp4j/DocumentSymbolParams.class
+SHA-256-Digest: 4xM1lkUkQ6DoVRlq1K9l9BfZH2sW7K1mrHn8U7QLcZQ=
+
+Name: org/eclipse/lsp4j/SelectionRangeParams.class
+SHA-256-Digest: N2RzNOcYfW8D9i3jl6zGzjyud3MwdWgMSE3jY+WUGtI=
+
+Name: org/eclipse/lsp4j/TypeDefinitionRegistrationOptions.class
+SHA-256-Digest: eWRlDkyUIE/y/EdAiAEl7eOcFN8SzyingXA/snrZixM=
+
+Name: org/eclipse/lsp4j/StaticRegistrationOptions.class
+SHA-256-Digest: byyNnnti1Q110mXMLXoJnwOOcDwyjl1FsFiTqpBod2Q=
+
+Name: org/eclipse/lsp4j/CallHierarchyIncomingCall.class
+SHA-256-Digest: YFN6etRCoe1o1anelQosYMoJRzATUCncS2IbjSdHwIg=
+
+Name: org/eclipse/lsp4j/SymbolKindCapabilities.class
+SHA-256-Digest: KMg9/2X+KV+xipDGOiu3mnpLWjSR7kV9d+BuUKSJxkU=
+
+Name: org/eclipse/lsp4j/DocumentSymbolRegistrationOptions.class
+SHA-256-Digest: W5G5D9+Ps3RK3tl3biaZVH/PSr6as71/DngHiVUTtUo=
+
+Name: org/eclipse/lsp4j/HoverCapabilities.class
+SHA-256-Digest: YBJBTk5w2isURG1nVFZA6GCdjWBL7htMhWfB4ij1nyw=
+
+Name: org/eclipse/lsp4j/ExecuteCommandParams.class
+SHA-256-Digest: qproFSa8LiMH/tVXQWi+Gxy02RF3BxTlZdIUw9ej+yQ=
+
+Name: org/eclipse/lsp4j/DocumentHighlightOptions.class
+SHA-256-Digest: Jz9Og5t4/r6bHJZxx7nZ+KPc2RHKeqTV++ISWPxG9Vc=
+
+Name: org/eclipse/lsp4j/CompletionListCapabilities.class
+SHA-256-Digest: b+tFqwlX1ZJQ89uYRM+S8ipfljHI1GHblW9M6lGTxc0=
+
+Name: org/eclipse/lsp4j/ConfigurationParams.class
+SHA-256-Digest: H0KqLr99IfSMzCWFIY3raJZTgyRR845LPzneLu4ha0A=
+
+Name: org/eclipse/lsp4j/ExecuteCommandRegistrationOptions.class
+SHA-256-Digest: sboMGORji5N9Emd5ElvcbR6Gwhw6WwBdm7b0Rxnz2WM=
+
+Name: org/eclipse/lsp4j/CallHierarchyOutgoingCall.class
+SHA-256-Digest: 1scW8ognhWFXVKQvH0/+IdxxClncxj8Eff8kqh24Bc8=
+
+Name: org/eclipse/lsp4j/SemanticTokenModifiers.class
+SHA-256-Digest: Gb9sv8/n/b4ffxpZCZdAKYVibsTQ7sIHTHlmuMa55Rg=
+
+Name: org/eclipse/lsp4j/PrepareSupportDefaultBehavior.class
+SHA-256-Digest: nwj4YUOTAAaNovpKIIL1gOD/gO6KnSDc1gmr4FygutY=
+
+Name: org/eclipse/lsp4j/SemanticTokensDeltaPartialResult.class
+SHA-256-Digest: 2J+ZxGafMy+hTJ0QiUwBfUvHi6iasboWvgGgtgROQPA=
+
+Name: org/eclipse/lsp4j/adapters/WorkspaceSymbolLocationTypeAdapter$1.cl
+ ass
+SHA-256-Digest: VpqEGWmIllGC7umVTnHhP8k4rJ8Yzccy3bAqIv+2lQQ=
+
+Name: org/eclipse/lsp4j/services/WorkspaceService.class
+SHA-256-Digest: 2iTNUnqhKJle87bmDhufCt33ZqUwHrlYXowvcIM749g=
+
+Name: org/eclipse/lsp4j/InsertTextFormat.class
+SHA-256-Digest: hR9SGzghz1GQOLcKm2tXp4ErNqeJZ92I8MB6cwPPI30=
+
+Name: org/eclipse/lsp4j/CodeAction.class
+SHA-256-Digest: u9CJnwY83/R6ou2J2r33bPdwq1bOvyH5RP9wOLsns0o=
+
+Name: org/eclipse/lsp4j/InlineValueVariableLookup.class
+SHA-256-Digest: le/vaR8BwErLxo311j9Y+atJ7rIBbV/p32S4/FNtY1Q=
+
+Name: org/eclipse/lsp4j/PrepareRenameParams.class
+SHA-256-Digest: C8mnrHrVQIZdhrgRumXFka+cuBiyiAH1SBpzxIgxAXY=
+
+Name: org/eclipse/lsp4j/RenameParams.class
+SHA-256-Digest: VB0yFDRJLHudNyEEyYRPcQucnglpLQotC6i3fSkwldY=
+
+Name: org/eclipse/lsp4j/TextEdit.class
+SHA-256-Digest: QLLwAOPkFCNBSgBw+/VZB2zked8McDXzCHlyKPln+LU=
+
+Name: org/eclipse/lsp4j/LogTraceParams.class
+SHA-256-Digest: +1D6Y/xPSEqTxMdxG9X0diHPNvJDzzzostcS/Ti+jbs=
+
+Name: org/eclipse/lsp4j/MonikerCapabilities.class
+SHA-256-Digest: Q6YP2kneLiU7o3XOcGDL38PPG7bskYSZ/HIRddMZCL4=
+
+Name: org/eclipse/lsp4j/FileDelete.class
+SHA-256-Digest: B6+vf3lpRIgkY6HoTIdGKHWpTPonRFig9kBaNdt0GoM=
+
+Name: org/eclipse/lsp4j/LocationLink.class
+SHA-256-Digest: bQHP00Pi/TcN5/YsvBO17QO/PtCYLO3+3m9dHAdfBao=
+
+Name: org/eclipse/lsp4j/MessageType.class
+SHA-256-Digest: g9CYc1INENRJhJDSp9NGxpkCNlUEcod3aMWqSyfM/NI=
+
+Name: org/eclipse/lsp4j/TypeDefinitionParams.class
+SHA-256-Digest: CfWHvtdrui1qcU3jrUUdp/cCZuYKNceYDuaPpFVaMEw=
+
+Name: org/eclipse/lsp4j/services/NotebookDocumentService.class
+SHA-256-Digest: zt/g97wuIBG+KlyTlbZYrJy/fVkB6PpmozdPfzH3Omc=
+
+Name: org/eclipse/lsp4j/ClientInfo.class
+SHA-256-Digest: hqogsiPc+tzxHMXZt2tuPdD8p2GE+C/DD3QyBhOSKFA=
+
+Name: org/eclipse/lsp4j/InlineValueParams.class
+SHA-256-Digest: JHx/21u1KIqquqU/s6Wrtnqsmp4EulEUG0RLMGjOWko=
+
+Name: org/eclipse/lsp4j/ExecuteCommandCapabilities.class
+SHA-256-Digest: ojQuFAKNPNamGb+QaR8IcajT6guxJwnfqlLV7NKr0bM=
+
+Name: org/eclipse/lsp4j/LinkedEditingRangeOptions.class
+SHA-256-Digest: 069RkSpJBUumFmdClO+oBzEUmGkxKqY1TiEXPc17U+Y=
+
+Name: org/eclipse/lsp4j/util/Positions.class
+SHA-256-Digest: MAjW8LZwsVC0rTmBPRrshPx+G87O6aEhiA4KeXhc+Gw=
+
+Name: org/eclipse/lsp4j/DiagnosticsTagSupport.class
+SHA-256-Digest: 2VmXK+v5rAYDY+EWEm/1z3ypYn9aMI/tYIbiEwVdHSk=
+
+Name: org/eclipse/lsp4j/OnTypeFormattingCapabilities.class
+SHA-256-Digest: 5BBDODlg1est9FCXeGiGshwx8STt8VY6Y5TQXfbRN60=
+
+Name: org/eclipse/lsp4j/TextDocumentSaveRegistrationOptions.class
+SHA-256-Digest: FsO2SCIHB/SHVcEcYnVXt85NkhbY3+T4XRbR++J9XvA=
+
+Name: org/eclipse/lsp4j/FoldingRangeKind.class
+SHA-256-Digest: 2DYFXBw2qNwIXRbTQfkc1GQghdO7TGmlSzYDNnxaFls=
+
+Name: org/eclipse/lsp4j/DidChangeConfigurationCapabilities.class
+SHA-256-Digest: 9B99dfkK4sewkvG2zeXBTk/wW9xvuYFWysqvQeWUhNM=
+
+Name: org/eclipse/lsp4j/NotebookDocumentChangeEvent.class
+SHA-256-Digest: FZErZnQERU138kzEI62P2Wjkox8oZEa5zxpPv+0ISmk=
+
+Name: org/eclipse/lsp4j/LinkedEditingRanges.class
+SHA-256-Digest: bUW3g2c1ppVH9kbuYVuoa0R1e04Wx+lGt/p6PJQRhns=
+
+Name: org/eclipse/lsp4j/adapters/VersionedTextDocumentIdentifierTypeAdap
+ ter$Factory.class
+SHA-256-Digest: 5yl94iFdT2d2Irt0uXEz+q88PpgYfue1ymWJtvI4sFc=
+
+Name: org/eclipse/lsp4j/CompletionOptions.class
+SHA-256-Digest: UCX9AaqgLYmVGVdS+J+eLMdiayTaSbIGfDoed4W4Prk=
+
+Name: org/eclipse/lsp4j/Registration.class
+SHA-256-Digest: 0nBzVaw+rOZy+BnjBHSxAaQqwGexE7ShNOIPkw4kCNY=
+
+Name: org/eclipse/lsp4j/SemanticTokensPartialResult.class
+SHA-256-Digest: hFRX/hw6tkpYEs5EJdAGnJHC/MLrqgNQQuInVyNQqjM=
+
+Name: org/eclipse/lsp4j/CreateFileOptions.class
+SHA-256-Digest: ApQL+Bb43q19FLm53ltbY2JXKBvi/j6kCkeYGzRHoHA=
+
+Name: org/eclipse/lsp4j/DocumentSymbolOptions.class
+SHA-256-Digest: b28JYLOTjaFu9eMBuJnOuhuT8pmeGHwr/PywUgkLEqE=
+
+Name: org/eclipse/lsp4j/FileOperationsServerCapabilities.class
+SHA-256-Digest: c0sNrtJSczRYX7G1ca259Ox3MpnaOfaa2cy5J7yw0Gg=
+
+Name: org/eclipse/lsp4j/SemanticTokensRangeParams.class
+SHA-256-Digest: jvJBZkTozMCju/GzADQF9RqM6bBpIqQWv+YNN/lr9ik=
+
+Name: org/eclipse/lsp4j/DeleteFilesParams.class
+SHA-256-Digest: voMJPPjV+GUe5coKaZb1QzQTJ7TLhPT1Fr7XCXhnlFk=
+
+Name: org/eclipse/lsp4j/InitializeErrorCode.class
+SHA-256-Digest: AhfMkji3ua/kntvwkrMx472sk+1Ci112MDjJ6tL46QQ=
+
+Name: org/eclipse/lsp4j/ServerInfo.class
+SHA-256-Digest: sPaMY05c4RuU2cCLhZjni7GhZU1LXZYouaAw4k06R5g=
+
+Name: org/eclipse/lsp4j/TypeHierarchySubtypesParams.class
+SHA-256-Digest: fsV1/j7w+qDzMjls2KCgUaBTUXwHUMvhd5wOgDAUQjY=
+
+Name: org/eclipse/lsp4j/WorkspaceSymbol.class
+SHA-256-Digest: WxeKYV+52SYgSTdC93sjX33eekNF0WQWybLDUiMpynk=
+
+Name: org/eclipse/lsp4j/InsertTextMode.class
+SHA-256-Digest: v90OAX02AuwC+0Jrzi4RtpkvMjYbCUGIExKTeF391AE=
+
+Name: org/eclipse/lsp4j/adapters/CodeActionResponseAdapter$1.class
+SHA-256-Digest: DzQIGfrTAm83Nk6RXrEbDiR04J9q4YGTHdIwb7Wty84=
+
+Name: org/eclipse/lsp4j/InlineValueText.class
+SHA-256-Digest: 4mSVEy1vMRF2WNZE4BzAQhZqb/8MNsPp2K6UgqXlUnA=
+
+Name: org/eclipse/lsp4j/InitializeError.class
+SHA-256-Digest: 7gsBd7dJjykXkR1LuNsYfZy+C9mT/JNUnq3P50Hki5s=
+
+Name: org/eclipse/lsp4j/InlayHintResolveSupportCapabilities.class
+SHA-256-Digest: 68N3sptBWs0Kkr1MYWW/CSkt7HmaTJUDG4G4p1binAQ=
+
+Name: org/eclipse/lsp4j/adapters/WorkspaceDocumentDiagnosticReportListAd
+ apter.class
+SHA-256-Digest: 0GMArwGTi3nQnxZOkoaYXRHGzQ9JhihlE25kC/Xk5y4=
+
+Name: org/eclipse/lsp4j/DocumentLinkParams.class
+SHA-256-Digest: cSiwoic1q0kSouvOsOV4Pd4BblRz5UJgN7gyLNOkxVQ=
+
+Name: org/eclipse/lsp4j/ClientCapabilities.class
+SHA-256-Digest: CHLlS0GA8cbIlLZc7kde7JZESy3VLh0lgxfMApQ47BM=
+
+Name: org/eclipse/lsp4j/DocumentOnTypeFormattingParams.class
+SHA-256-Digest: gebWZ2fmvA8IK4sorSYmAgyX7vJRFTsAKfGx1gv00Bc=
+
+Name: org/eclipse/lsp4j/DidChangeConfigurationParams.class
+SHA-256-Digest: zZwlLoxpRsVQ7m88EpAOPUb5SEhDl4oKWbb2atPj4KI=
+
+Name: org/eclipse/lsp4j/ServerCapabilities.class
+SHA-256-Digest: rc1BneU1BK1PHaLbrEgIaKKO3y5dAjBkECGzDP10oGA=
+
+Name: org/eclipse/lsp4j/UnregistrationParams.class
+SHA-256-Digest: KHFQ8BF+4Q2pVMjcQW678h8JYg6FMVK1UPzQjC0fZcI=
+
+Name: org/eclipse/lsp4j/WindowShowMessageRequestActionItemCapabilities.c
+ lass
+SHA-256-Digest: SZemrJv+DFMBluMgXEMhzKmHvbQYqXSwa0zM3R98j1I=
+
+Name: org/eclipse/lsp4j/FileSystemWatcher.class
+SHA-256-Digest: MgS7M9Mn6yV75vfAYTFwfE6NPctaKEVVjf1iz06QGO0=
+
+Name: org/eclipse/lsp4j/WillSaveTextDocumentParams.class
+SHA-256-Digest: Jm2ilhm8CcV3gO2i/ug4j7v7OavsG8pD/xA3RDvY9Dg=
+
+Name: org/eclipse/lsp4j/GeneralClientCapabilities.class
+SHA-256-Digest: 83GwUNC2JGu8CfHDtt+13+wftbj+swQ9EKffcwqCUXo=
+
+Name: org/eclipse/lsp4j/SetTraceParams.class
+SHA-256-Digest: Ez7eR2Jo4JjeSIhekDuuAlsReVXlm+NXoozQBm/xpig=
+
+Name: org/eclipse/lsp4j/CompletionItemKindCapabilities.class
+SHA-256-Digest: 2ve3/Xhfbn5diAOWFZ4McX7eeUJkjm/8kMEWu6lok/E=
+
+Name: org/eclipse/lsp4j/InlineValueCapabilities.class
+SHA-256-Digest: O4dPqWo5Hi08ouzFA3+CxiRec9B2uQ/xLs0ueTKOLtc=
+
+Name: org/eclipse/lsp4j/ReferenceOptions.class
+SHA-256-Digest: bbwIkJLKLj7BkgNezbVTqgkI/sXLi4sAO5T/X5wcwVE=
+
+Name: org/eclipse/lsp4j/InlayHintKind.class
+SHA-256-Digest: sABuX/JHyRlCxuQNUtGLWVg26Enflw8L/87545m5Vck=
+
+Name: org/eclipse/lsp4j/TextDocumentIdentifier.class
+SHA-256-Digest: lTSpxTqHdLaTDsqQQW3M19bCP/kVz1PCsz9k0N4Ox3A=
+
+Name: org/eclipse/lsp4j/util/DocumentSymbols$DocumentSymbolIterator.clas
+ s
+SHA-256-Digest: m++x8GkvgcTs17CBsaTn7+jyikGF8xrBLO/f0THS/Gs=
+
+Name: org/eclipse/lsp4j/WorkDoneProgressAndPartialResultParams.class
+SHA-256-Digest: g/Xroif9WjL+ebw0cmBPc93QstlQVvxOPpA2+whOlwE=
+
+Name: org/eclipse/lsp4j/CodeActionDisabled.class
+SHA-256-Digest: fdLN90KWgtD69mk/tltjiejsSEVaL80WRX7GmGeH8wU=
+
+Name: org/eclipse/lsp4j/CodeLensOptions.class
+SHA-256-Digest: ZyJYrOUbDDsXyypAhh7Ntw277OIUWO2VKtYdMa1FRYs=
+
+Name: org/eclipse/lsp4j/Color.class
+SHA-256-Digest: CUUlvxfUr76YheDpyzMSY/W5Dm2XaBxM6SIn9rXNaqE=
+
+Name: org/eclipse/lsp4j/RenameFileOptions.class
+SHA-256-Digest: 4cfp2wPmAuIeUWn7DARA0ZATMKTw3IVgkxuSLqWBZkk=
+
+Name: org/eclipse/lsp4j/NotebookDocumentChangeEventCells.class
+SHA-256-Digest: ePxCmdBSCkywzHBBdzPsq3BoP/Ljgtt66wb8Pt9zSAw=
+
+Name: org/eclipse/lsp4j/NotebookCellTextDocumentFilter.class
+SHA-256-Digest: LvfiIZ/ByvSFNwbUTAL60EAth7MXcYcU4hxRGwBalEw=
+
+Name: org/eclipse/lsp4j/ConfigurationItem.class
+SHA-256-Digest: Bstm3bq0Zd2uAvDZVQuPmDWNUvP3fWNIkpTkZAq0u0I=
+
+Name: org/eclipse/lsp4j/SymbolTagSupportCapabilities.class
+SHA-256-Digest: CCk4iLFQPc8eEYt1xMe2ZVYRApkfi5L8S5iDmcssn3A=
+
+Name: org/eclipse/lsp4j/TypeDefinitionCapabilities.class
+SHA-256-Digest: BoXTG8sGzpEwE+XZSnsksXMlPmh1tMa/qPF0Ckw4BFc=
+
+Name: org/eclipse/lsp4j/ExecuteCommandOptions.class
+SHA-256-Digest: rGAJRZ8pfMJnXTlRSOmLCR/+RAn4sZGtgrf9AiFOdz0=
+
+Name: org/eclipse/lsp4j/InlayHint.class
+SHA-256-Digest: 88cV8pI9qtzBnO4EXmNj5vNiHGF02Ij67iR9fuXrnf4=
+
+Name: org/eclipse/lsp4j/FailureHandlingKind.class
+SHA-256-Digest: PlPWeNJzLGgLLQ2KOhzPSzDdbzGef27WvFMaTMbiZ/A=
+
+Name: org/eclipse/lsp4j/WorkDoneProgressNotification.class
+SHA-256-Digest: //vAz46I6tnaVyA1AeJIByXusYas984iocBalX8VZqI=
+
+Name: org/eclipse/lsp4j/adapters/ProgressNotificationAdapter$1.class
+SHA-256-Digest: WbVFSc0fBHe5IdEn+y/1+SxxjPeIRIIm4tNaPpxR1g8=
+
+Name: org/eclipse/lsp4j/DocumentFormattingParams.class
+SHA-256-Digest: NEjwkaxK4MeovEN4IMGEUwEbjq6vga37X8JNzCIGD4E=
+
+Name: org/eclipse/lsp4j/DiagnosticCodeDescription.class
+SHA-256-Digest: 9FBUMSbleKPF3nFwg3tWbVSDhHRsaMWtA7WYOU5iTgk=
+
+Name: org/eclipse/lsp4j/adapters/SymbolInformationTypeAdapter$1.class
+SHA-256-Digest: i1HKkZL7GG5nv1JeTRa+KcKLz6bae64eeRszzunbg7g=
+
+Name: org/eclipse/lsp4j/DidCloseTextDocumentParams.class
+SHA-256-Digest: HiKiRp7PYMmK2QWkXBJ4r1pgsx1g/gpmIFqTlV0+Fzg=
+
+Name: org/eclipse/lsp4j/MarkupKind.class
+SHA-256-Digest: WxPy6TfrB6pUqy8pzPypoAlS1JHZ1t42EXmdpabZqm8=
+
+Name: org/eclipse/lsp4j/adapters/PrepareRenameResponseAdapter.class
+SHA-256-Digest: jpeHf+CPOBU0xt/6jDAp3qc8FAXMt6rm01Cbsr5zXQA=
+
+Name: org/eclipse/lsp4j/services/LanguageClientAware.class
+SHA-256-Digest: 8hR8bQsKkGEoq/Gvc/6jSWjUv9GTd9xUokyvmMFn8Yw=
+
+Name: org/eclipse/lsp4j/NotebookCell.class
+SHA-256-Digest: 8XYfDyDDKU/zLI+m2hrtxgtsRwMxGL5B2AeS3Txn7o4=
+
+Name: org/eclipse/lsp4j/ShowDocumentResult.class
+SHA-256-Digest: q7uQrTOweVE0EQosO0BFsjQHvoDlBW5QZDlQux8JkuM=
+
+Name: org/eclipse/lsp4j/DidChangeTextDocumentParams.class
+SHA-256-Digest: gzT30f/rC0LTWWl629wmV5LFc9uoqfd1xbcRCVreJCM=
+
+Name: org/eclipse/lsp4j/adapters/WorkspaceSymbolResponseAdapter$1.class
+SHA-256-Digest: p4HPZI9yprEGNMSrYrxdUXR2+M/MGOgU/ElBmxGIPdA=
+
+Name: org/eclipse/lsp4j/NotebookDocumentSyncRegistrationOptions.class
+SHA-256-Digest: h33mO1u4T/n/MKZX8y9kWbV55xbkL+HDE+yjRx51eQU=
+
+Name: org/eclipse/lsp4j/DocumentRangeFormattingOptions.class
+SHA-256-Digest: +sSeRXe+PfStM3hQpr6DOQ8HM2Bpq9O8J2/gUC8liJc=
+
+Name: org/eclipse/lsp4j/ShowDocumentParams.class
+SHA-256-Digest: z2RpSHBmcpwjqX5TQbXTRccHZwU3DgnD/iKbaRla3Mw=
+
+Name: org/eclipse/lsp4j/adapters/WorkDoneProgressNotificationAdapter$1.c
+ lass
+SHA-256-Digest: hs4RGklJGZimvK737AnbKDp+PwdwO7fw+7hSrkqKUjg=
+
+Name: org/eclipse/lsp4j/WorkspaceFolder.class
+SHA-256-Digest: 3ibLoCeQiim9ZGwp1OpjkM99J8ArBM3LCGJm0Y5ZUIU=
+
+Name: org/eclipse/lsp4j/SymbolCapabilities.class
+SHA-256-Digest: 3m3uKQrCYkc+Z4FWoIk6GqXchq5Vp77kA0WvLn8Nq0Y=
+
+Name: org/eclipse/lsp4j/SignatureInformationCapabilities.class
+SHA-256-Digest: gtsYu2SD8guGL491yAs2bE1Op9czQMGtuu38/El62Gc=
+
+Name: org/eclipse/lsp4j/adapters/DocumentDiagnosticReportTypeAdapter$1.c
+ lass
+SHA-256-Digest: a/XXh48OQAJnLfYTCbN8Lb73u/+SAAe5jY8f3mjZ9U0=
+
+Name: org/eclipse/lsp4j/LinkedEditingRangeParams.class
+SHA-256-Digest: v5DortBMnTVl5qmgfpt31KnWlg3B0LH0s98tCyJkHyA=
+
+Name: org/eclipse/lsp4j/SaveOptions.class
+SHA-256-Digest: j3xhwCYH5W0u/alG+HEJjYY9v1iLWSaPFrIQMMlkzh0=
+
+Name: org/eclipse/lsp4j/CallHierarchyOutgoingCallsParams.class
+SHA-256-Digest: CkuKr0V0Sua6dw7IQvuBV2osa4+6gNxSnAbg4nS1C1A=
+
+Name: org/eclipse/lsp4j/CompletionItemTagSupportCapabilities.class
+SHA-256-Digest: NB/42tz1WxCQzZPBnVKF+5UAFa/BtlRmPshybLcnF3M=
+
+Name: org/eclipse/lsp4j/DeclarationParams.class
+SHA-256-Digest: 77VXK2X4ouJkgqU+WMo4Sk2YzP1/X0b7122qg42T/b0=
+
+Name: org/eclipse/lsp4j/DocumentDiagnosticReport.class
+SHA-256-Digest: asE3gg9MIodbhhzA5dPpU+dwigISusUz13BHaOBOn1o=
+
+Name: org/eclipse/lsp4j/adapters/InitializeParamsTypeAdapter.class
+SHA-256-Digest: Mh8m9xPa7S7+srvR4EFsAGQHwCij0Y1Oxzz+q01QAHU=
+
+Name: org/eclipse/lsp4j/TraceValue.class
+SHA-256-Digest: pG46xueAG9neXOumBSBHv+6Oksxoh0LJxT0sDFqWOa8=
+
+Name: org/eclipse/lsp4j/adapters/HoverTypeAdapter$3.class
+SHA-256-Digest: qipl44ouitq0J9nYVjgORONsS9U2HKARn/w1Nc/zHao=
+
+Name: org/eclipse/lsp4j/PublishDiagnosticsCapabilities.class
+SHA-256-Digest: AG88i7zPiq5b/jQA8/XIPFq1EG09ZHpeLVIhVmMJXuw=
+
+Name: org/eclipse/lsp4j/DeleteFile.class
+SHA-256-Digest: /lBTJEKaDTbUul2bSci6kZAnHqxcn9O94k/xexMXXE8=
+
+Name: org/eclipse/lsp4j/NotebookDocumentChangeEventCellStructure.class
+SHA-256-Digest: GsBJWscqAszTUfCXCK7wjhKcsR4ybj6Ie1SEGEjZAjQ=
+
+Name: org/eclipse/lsp4j/DiagnosticSeverity.class
+SHA-256-Digest: OP/dTC6yktIbtAA8ioaFhqYSUR4x8hOGmMsa/zcL4GM=
+
+Name: org/eclipse/lsp4j/SignatureHelp.class
+SHA-256-Digest: M8YfLPU5vGGxuyhzYoNUloT+xmPvqSDDhfOvyDBJeTs=
+
+Name: org/eclipse/lsp4j/adapters/DocumentDiagnosticReportTypeAdapter.cla
+ ss
+SHA-256-Digest: mRhuwQGd3oj6Q24X8aVLPksKrjQpjSqcgFEMBsNHeKM=
+
+Name: org/eclipse/lsp4j/CompletionItemInsertTextModeSupportCapabilities.
+ class
+SHA-256-Digest: xE557VCzYfn3E/DVipbUt0eSzuThFfEGHJnQ8CkoovM=
+
+Name: org/eclipse/lsp4j/WindowClientCapabilities.class
+SHA-256-Digest: aItHQn5b2Ixd/vMeg97RSqgIKKtGRrGhIld5UC6zm5M=
+
+Name: org/eclipse/lsp4j/NotebookDocumentSyncOptions.class
+SHA-256-Digest: qj/kgkf6dkrqsHmq9y2xitMcp0j/uqJPtbyp0Q6Pmhk=
+
+Name: org/eclipse/lsp4j/ApplyWorkspaceEditParams.class
+SHA-256-Digest: LtwjCqH4rjiRlFN3gnLI/G9TwHH2xBtk4+MHugL38e4=
+
+Name: org/eclipse/lsp4j/ReferencesCapabilities.class
+SHA-256-Digest: ehraQYs1yarTeG2gxs/Kww+D5xG3eumTk3nZ5vUK0Es=
+
+Name: org/eclipse/lsp4j/TextDocumentSyncOptions.class
+SHA-256-Digest: waNmu5Y5t8f8m6TtF/iiFvGYxvFUq5cFKltguhCOGys=
+
+Name: org/eclipse/lsp4j/ImplementationCapabilities.class
+SHA-256-Digest: 9FBfIKarOfF73bEWafwxZfTLa/KbwWzP/ElTHdqz3LM=
+
+Name: org/eclipse/lsp4j/DocumentDiagnosticReportPartialResult.class
+SHA-256-Digest: MTL7Mo425q8FKIPglBfA6HVmy528R6bsr6p87N32xwU=
+
+Name: org/eclipse/lsp4j/Moniker.class
+SHA-256-Digest: CMZ/RNVpj3NgVVtESwECNs98D63i8+bfFPyc9EeG0hU=
+
+Name: org/eclipse/lsp4j/RenameOptions.class
+SHA-256-Digest: Ymk0dr6agc5AsKEtOUwSgMeBAb31u+R5TjovQ7iHW0c=
+
+Name: org/eclipse/lsp4j/NotebookSelectorCell.class
+SHA-256-Digest: 8YheHI5CgoeePLktd44gGl1cDTGrG0W7EMAvAD1qrOw=
+
+Name: org/eclipse/lsp4j/HoverRegistrationOptions.class
+SHA-256-Digest: mG/XzRES8bUyUDTMqkKiy8W9OAw+A5mSURsdg8U3700=
+
+Name: org/eclipse/lsp4j/FoldingRangeRequestParams.class
+SHA-256-Digest: TZVF84O+PUQwKvr8MseHmC4STOWMyr+/7+Tz0Vl79dk=
+
+Name: org/eclipse/lsp4j/CodeLensWorkspaceCapabilities.class
+SHA-256-Digest: 1gpee7BlKRtsF1z6DLUGxGkcvIlLETeW5qx1N5DGKWM=
+
+Name: org/eclipse/lsp4j/DidSaveNotebookDocumentParams.class
+SHA-256-Digest: sUm3wHThf3++NWbeBRj3KRjBtRwrJmmYUFzu1YAsfVY=
+
+Name: org/eclipse/lsp4j/RenameFile.class
+SHA-256-Digest: QOTAyl+0TVuAkSKeCyoPz4qEOdfMa88rBnSZgPf2gl8=
+
+Name: org/eclipse/lsp4j/TextDocumentClientCapabilities.class
+SHA-256-Digest: ntX3XksT7cfLybImXskhax/3zG/QY59s+AIU9MmAr6w=
+
+Name: org/eclipse/lsp4j/DocumentLink.class
+SHA-256-Digest: IvpBO7zShZR5WhQBZTcXiUMMHTu0bKsSOXSHLZrSMeE=
+
+Name: org/eclipse/lsp4j/FileEvent.class
+SHA-256-Digest: CyH5NRKr29ZdrlXsAPqYMW9BkTG5QNh58+OBaeF0ceI=
+
+Name: org/eclipse/lsp4j/DefinitionOptions.class
+SHA-256-Digest: CZeLsnmQyDC9Kymwyj/qLdIok/0GQI1p2/MVPntudO8=
+
+Name: org/eclipse/lsp4j/CompletionItemKind.class
+SHA-256-Digest: 5z5waT/be+Kj4OdPc/naeFXCcbj3WnLcGMOmkUoebdc=
+
+Name: org/eclipse/lsp4j/DocumentDiagnosticParams.class
+SHA-256-Digest: cINiK5QfSd7mBk//qscPQtOIcWCoC9pbOFlnEaaYKCw=
+
+Name: org/eclipse/lsp4j/adapters/HoverTypeAdapter$Factory.class
+SHA-256-Digest: YCcdhSzZ6UcJqt6g+bzAhHojHNYFK638mDNUkf9XNXs=
+
+Name: org/eclipse/lsp4j/DocumentOnTypeFormattingRegistrationOptions.clas
+ s
+SHA-256-Digest: ehIlWEPVYS2Kp2MmsgefuO6W+DlqfBhQM5ReKqt06aI=
+
+Name: org/eclipse/lsp4j/FileOperationPatternOptions.class
+SHA-256-Digest: 7m81XMRP70pfqe5SH8kf3oBoLuOTYrIns55OEMWVjvM=
+
+Name: org/eclipse/lsp4j/DidChangeWatchedFilesCapabilities.class
+SHA-256-Digest: ziueYOs0YX3R6KPuvPQyzuI5hvAb/Cy8KDypnv/ZINM=
+
+Name: org/eclipse/lsp4j/adapters/InitializeParamsTypeAdapter$Factory.cla
+ ss
+SHA-256-Digest: BozTImrT/n4m+nkVd7qkE0uoKJig0D1/Mx9oXJB3zVs=
+
+Name: org/eclipse/lsp4j/SymbolKind.class
+SHA-256-Digest: rwxv6gZ4i3Txu7c22iAAFcqi2+KX/Fk4naVP8XEJu0c=
+
+Name: org/eclipse/lsp4j/ShowDocumentCapabilities.class
+SHA-256-Digest: q6RU1xuo6xSALXrT9YNlHgZSvNEnHLkfyIfF5NxrqrY=
+
+Name: org/eclipse/lsp4j/adapters/PrepareRenameResponseAdapter$2.class
+SHA-256-Digest: N1n+GYf+kG2VB8VtUS1TFRv7/SCvjUwXS+d0eLwf4yM=
+
+Name: org/eclipse/lsp4j/CompletionItemOptions.class
+SHA-256-Digest: 9FFsYWSHUkDSaqiRqtf6cSm46t9bLHb622217awXg7E=
+
+Name: org/eclipse/lsp4j/launch/LSPLauncher$Builder.class
+SHA-256-Digest: WTwE3+moCp7dfAUAO2eQjF/yhow5ax5sZZzmrN6Krw4=
+
+Name: org/eclipse/lsp4j/TypeHierarchySupertypesParams.class
+SHA-256-Digest: LstILaOSTGunxjeF4UkrGbr+J9YrtUk37/2i3nNmwf4=
+
+Name: org/eclipse/lsp4j/Range.class
+SHA-256-Digest: yGUgG0PS/1PmCvV07OuWC9jcRwRl1NjRQ/4xJ3/OTAg=
+
+Name: org/eclipse/lsp4j/DidChangeWatchedFilesParams.class
+SHA-256-Digest: oI0Sf4r9lx6anwgL4iRsiA0tL9MSB7gkF+vMFgnN4lM=
+
+Name: org/eclipse/lsp4j/WorkspaceSymbolParams.class
+SHA-256-Digest: TC3fcTeMbcKH68K5LFcTkWT/+UlGrV21roN3n+d3NGs=
+
+Name: org/eclipse/lsp4j/ChangeAnnotation.class
+SHA-256-Digest: nn6X0Le7BwKz5VY8rmHWC6wU+hyIyQtx95eo8rAzKXA=
+
+Name: org/eclipse/lsp4j/CodeLensCapabilities.class
+SHA-256-Digest: AqOioDQI/L5Mb/oSASspX4fSBgR7+CN9u+5iHkgLXKQ=
+
+Name: org/eclipse/lsp4j/services/LanguageClient.class
+SHA-256-Digest: KLaSZ0EneA2qOz6Uo4yYamS/OMYN3IpP3C5H6v6ClF0=
+
+Name: org/eclipse/lsp4j/CodeLens.class
+SHA-256-Digest: PQqz+aUDzUsisV50gANxmja1SV4u2zoKZDzRYk9025I=
+
+Name: org/eclipse/lsp4j/WorkDoneProgressBegin.class
+SHA-256-Digest: +pqTPPS2BQiiv2W9Urkd6BkGnvUoLWkulUGjgD53vII=
+
+Name: org/eclipse/lsp4j/adapters/DocumentChangeListAdapter.class
+SHA-256-Digest: OJhgdFm8ryu7Xj66B0bs9F6kO4dqK7bloybgZXz3whQ=
+
+Name: org/eclipse/lsp4j/RelatedUnchangedDocumentDiagnosticReport.class
+SHA-256-Digest: 2JTSKqdoWaMrMMs6YNJOvyaZgXaV39PD0kzPg2fHujI=
+
+Name: org/eclipse/lsp4j/FormattingOptions.class
+SHA-256-Digest: ci+kaaMCxmx6Gfpb5DNzRXGCyn4Ty6I5v3pTJwKCx04=
+
+Name: org/eclipse/lsp4j/DocumentHighlightKind.class
+SHA-256-Digest: PCIIkOlt4jerbw5oj3/54EBKqmLtZXqHiavJHfzdcg0=
+
+Name: org/eclipse/lsp4j/ReferenceRegistrationOptions.class
+SHA-256-Digest: C/qaQanIwWrFhtwHcLf7+gTyJ/wRff7A5sscXfxa5+U=
+
+Name: org/eclipse/lsp4j/InitializeResult.class
+SHA-256-Digest: dNjSAoj08Il/C7h5FB9arPNYxsRB7/LLKsfkp/+UoHg=
+
+Name: org/eclipse/lsp4j/NotebookCellKind.class
+SHA-256-Digest: OQPBw8lexdOfdbgl4VHF4qOOtpAC4a/YMtGV/NK4afs=
+
+Name: org/eclipse/lsp4j/adapters/LocationLinkListAdapter.class
+SHA-256-Digest: lck87pMcotXiI/ZoxOd33eO/oiyjEucr4hvCm/ONztA=
+
+Name: org/eclipse/lsp4j/Diagnostic.class
+SHA-256-Digest: DSqVKvNnZDuY1fv+3r87iymrhcAHQqGtuHlPuM5BNo0=
+
+Name: org/eclipse/lsp4j/TypeHierarchyCapabilities.class
+SHA-256-Digest: q5ExcNH2dLoU2pPA7LFZ03pkezMoSBVdJf8UKobXQrg=
+
+Name: org/eclipse/lsp4j/SemanticTokensServerFull.class
+SHA-256-Digest: fVom7pWbDV37Jy3oqSLI1DCHc4jo7mqfRF9w1gOnydc=
+
+Name: org/eclipse/lsp4j/DiagnosticTag.class
+SHA-256-Digest: LLmNM67AB1DDN/c6ofb6GnAyizqhqyEBOfMd1wlWi5c=
+
+Name: org/eclipse/lsp4j/adapters/WorkDoneProgressNotificationAdapter.cla
+ ss
+SHA-256-Digest: 6sNO2WGVwEjqh3kSHZ4u+OWaNF+NEfAEEeiWwbXM8H4=
+
+Name: org/eclipse/lsp4j/SignatureHelpContext.class
+SHA-256-Digest: 478WakyGDEJKVfJpj+2WU0rY5Qo1Kuc/IgsUbIahfno=
+
+Name: org/eclipse/lsp4j/TextDocumentPositionAndWorkDoneProgressParams.cl
+ ass
+SHA-256-Digest: kmxf/cnpkKGxPa3okIQlcRCN63k9JEA10GNrlNJ0z50=
+
+Name: org/eclipse/lsp4j/NotebookDocumentClientCapabilities.class
+SHA-256-Digest: DMCTJ3cQofBeY40PKt5p47fVp6IgXpFRF42A2ZZUpBE=
+
+Name: org/eclipse/lsp4j/services/LanguageClientExtensions.class
+SHA-256-Digest: FANYyBCDeZ0fIkAtSz//KdumULxRxvQk8k9Zy6on93A=
+
+Name: org/eclipse/lsp4j/ExecutionSummary.class
+SHA-256-Digest: CZDA6oig++36P9pDVfWjJCa9pMUSHVXj08S8ojq2ymI=
+
+Name: org/eclipse/lsp4j/adapters/VersionedTextDocumentIdentifierTypeAdap
+ ter.class
+SHA-256-Digest: MLn16hbah2t8dLN+tH6J9HNY+jlj6eodZCymuvLNPEM=
+
+Name: org/eclipse/lsp4j/TypeHierarchyRegistrationOptions.class
+SHA-256-Digest: 0P+X2ZRyyc5NnO0McesTvvvt+X6/DV0mWTskfGIJzvA=
+
+Name: org/eclipse/lsp4j/WorkspaceDiagnosticParams.class
+SHA-256-Digest: LjF2znIhzLyXvPn/PVFkjU7qWjzvPYgpywwI35Ii9xk=
+
+Name: org/eclipse/lsp4j/NotebookCellArrayChange.class
+SHA-256-Digest: 6/taE91HqptKnV/PE4ldjrgXkHUecM3Q8aZ5XqAXh2E=
+
+Name: org/eclipse/lsp4j/NotebookDocumentIdentifier.class
+SHA-256-Digest: C8LAVefKjO9+JhNZYX9oXEl9CHbMf/gJJNNMJaAxkOg=
+
+Name: org/eclipse/lsp4j/MarkedString.class
+SHA-256-Digest: 2Xb2fgTidp/GMptFyILc7SjM0bXwL5CWhZDbW6f5Dms=
+
+Name: org/eclipse/lsp4j/DocumentFormattingRegistrationOptions.class
+SHA-256-Digest: kD1OOa2/JTKk6DCHUPBjEelKU/JZi5yZR9sjwvgqlCY=
+
+Name: org/eclipse/lsp4j/SignatureHelpParams.class
+SHA-256-Digest: uqvNYxvM7mqgZEfSwiMD33o6nsYJh/tlR6pUd8PXa+w=
+
+Name: org/eclipse/lsp4j/DefinitionRegistrationOptions.class
+SHA-256-Digest: zQKXPCYbF/lVgMSK4O4k7fafn6bok083Q46m9mnppIk=
+
+Name: org/eclipse/lsp4j/MarkupContent.class
+SHA-256-Digest: dGMM7PCMnvN+bib9c+sPv1HIzulIHV9jM0sJ16SnSd4=
+
+Name: org/eclipse/lsp4j/DidOpenNotebookDocumentParams.class
+SHA-256-Digest: KF4rs+DQJbiWxuVnjv1Z/O7S6TzDCCW+OnkKA+kS7WQ=
+
+Name: org/eclipse/lsp4j/CompletionContext.class
+SHA-256-Digest: Ht1c2O2Yegia8XE+wYB7p9LoPpFsu4ykDhvlx6wEohA=
+
+Name: org/eclipse/lsp4j/InitializeParams.class
+SHA-256-Digest: UR9AdeIsL34dTp49XrKmpTkb2pgpq5fjULS3CWtNeoQ=
+
+Name: org/eclipse/lsp4j/WorkspaceDiagnosticReportPartialResult.class
+SHA-256-Digest: mCtGJhZjJvcC+LkTjgJDVCiMo42iPx60b6R0OGlC3pU=
+
+Name: org/eclipse/lsp4j/FoldingRangeCapabilities.class
+SHA-256-Digest: InIzJwomAAckqWPANUvYUgaKIPcWzndtYzsMjsnQjZ4=
+
+Name: org/eclipse/lsp4j/NotebookDocumentFilter.class
+SHA-256-Digest: xevD8iSlJpeVjDb4WK1Wpr8tCfxCD6ARHIlLO+3sN0k=
+
+Name: org/eclipse/lsp4j/ReferenceContext.class
+SHA-256-Digest: bEJnFXkK1s3IscVkisF13kTcnilNYJMbmLub8lhIMZU=
+
+Name: org/eclipse/lsp4j/adapters/SymbolInformationTypeAdapter$Factory.cl
+ ass
+SHA-256-Digest: HXmka3ntNDeQUz2QDq7vZuil7480vaqCaz6LHjZPyN8=
+
+Name: org/eclipse/lsp4j/adapters/InlineValueResponseAdapter$1.class
+SHA-256-Digest: C5yXN8zIhc7PJfP9GfqCI7E8nbEE1TnVPCNPU2OXkYE=
+
+Name: org/eclipse/lsp4j/DidChangeWatchedFilesRegistrationOptions.class
+SHA-256-Digest: m84HyQ997R4bcrjyIsaJe+WIhzYab4++m0rZstQ4xmw=
+
+Name: org/eclipse/lsp4j/SemanticTokensLegend.class
+SHA-256-Digest: 0eg0eOkBo2EwVI18XR3+Dt6nGvCaar5ySqhBwCZmXbc=
+
+Name: org/eclipse/lsp4j/DidChangeNotebookDocumentParams.class
+SHA-256-Digest: tqzMVafq0B8eUBuazAt/wRoQ/f9qtSqfbKt2524MOcY=
+
+Name: org/eclipse/lsp4j/adapters/HoverTypeAdapter$1.class
+SHA-256-Digest: FpKWwxV0kwf1NQy6XvPvsfOptIEqBrdF8/T62Eps6PY=
+
+Name: org/eclipse/lsp4j/SemanticTokensDeltaParams.class
+SHA-256-Digest: pOYPKwMjPD7a3psdEb3bNbgWJwRN+bplC2hkRY9bcHk=
+
+Name: org/eclipse/lsp4j/SemanticTokensClientCapabilitiesRequests.class
+SHA-256-Digest: ben7f/6hmsNYRQpy+zGk54yADcGZ22ohDtsgoylyJAM=
+
+Name: org/eclipse/lsp4j/RangeFormattingCapabilities.class
+SHA-256-Digest: rg4yzM0eRAfzf40abu/O3KayoBS/BPqC8tlZBWOktIA=
+
+Name: org/eclipse/lsp4j/InlineValueContext.class
+SHA-256-Digest: jr8ThKzX9A4Hq9U7JzjZB2jQDeW9YQ9GfxL7kJrl93Y=
+
+Name: org/eclipse/lsp4j/CallHierarchyIncomingCallsParams.class
+SHA-256-Digest: Wa6axUaYtqmihYYOWMVUZ0ggp053PyGNwLmE8xlTElQ=
+
+Name: org/eclipse/lsp4j/RegistrationParams.class
+SHA-256-Digest: g7zz1+caJVsXl14NA9Z9LgIXzf5b+amHDAG/VF+Pwrs=
+
+Name: org/eclipse/lsp4j/WorkspaceSymbolOptions.class
+SHA-256-Digest: 6pmULURa/jmlbhdkBU+owvCbHMPGvT4eoE8cCeh11+c=
+
+Name: org/eclipse/lsp4j/DiagnosticCapabilities.class
+SHA-256-Digest: WjTfVg67NaZIPU2wjkR3pfo/00Wuo/q0CqRqqDIYCH0=
+
+Name: org/eclipse/lsp4j/FileOperationOptions.class
+SHA-256-Digest: jdNg6LwqZwfY3+ul6iVmpCYSV6EEX9j/NvH/opU3MnI=
+
+Name: org/eclipse/lsp4j/adapters/HoverTypeAdapter.class
+SHA-256-Digest: t2RmO6cUmYwcGKBMTYE7cnbXBvuLegXiPvsY4sXG/ac=
+
+Name: org/eclipse/lsp4j/WorkDoneProgressCreateParams.class
+SHA-256-Digest: Gy84bs2YWreNh4ySA15s4mwgVs+XGRFLjWWZmJ6xlWY=
+
+Name: org/eclipse/lsp4j/HoverOptions.class
+SHA-256-Digest: xHVI/2UgGFSAQkfts8fsIbrcpkzjuzU5efJR/eij4/c=
+
+Name: org/eclipse/lsp4j/ResourceOperationKind.class
+SHA-256-Digest: S44Cu6FbDBIPAQ8MLpfENPJL78SRchn2JvSptoX3dzQ=
+
+Name: org/eclipse/lsp4j/InlineValue.class
+SHA-256-Digest: VzyBujbPXY8vhHDYUOl84/kmva7u3pqiCR5Hy1ouN40=
+
+Name: org/eclipse/lsp4j/WorkspaceEditCapabilities.class
+SHA-256-Digest: jaR7P7CEmz+jOiVrtaTWeShHzMe1tTqlKAfAJITW44c=
+
+Name: org/eclipse/lsp4j/CompletionRegistrationOptions.class
+SHA-256-Digest: +4M2uiwFzPsWTaR1g0Ju03etIWDI1K3sgRkdcDYDPKg=
+
+Name: org/eclipse/lsp4j/CompletionItem.class
+SHA-256-Digest: tUzO5QAaafxW6YPT4wyfF4MRWAQVHvZeR5wnP3aZJV8=
+
+Name: org/eclipse/lsp4j/NotebookDocumentSyncClientCapabilities.class
+SHA-256-Digest: 2EAxV7NwxwFZAtmGSrPOBIHoglAp6M6Irn8mhIp0Fms=
+
+Name: org/eclipse/lsp4j/TextDocumentPositionAndWorkDoneProgressAndPartia
+ lResultParams.class
+SHA-256-Digest: CR+Dy2AnZAEgoAyBGrd7OvaJgoahGzRiDwikY7IYR/U=
+
+Name: org/eclipse/lsp4j/ColorPresentation.class
+SHA-256-Digest: XUCMC1+6iETL16ih21mOoTX5ToYT+jrZ58FrRlEA29s=
+
+Name: org/eclipse/lsp4j/RenameCapabilities.class
+SHA-256-Digest: g/7ToulMewrCQljkYU1JazVD1Q4t6TSMUnYkdFkJ6Y4=
+
+Name: org/eclipse/lsp4j/CodeActionTriggerKind.class
+SHA-256-Digest: eN65oT4VtuwrL6Y0VR0+Thp+MOaOQWZQcoxBDy4dVBU=
+
+Name: org/eclipse/lsp4j/TextDocumentEdit.class
+SHA-256-Digest: JK0C4l2bMYwAa2CanSmHIQ9Tn/GgftER8+0YFfFTesI=
+
+Name: org/eclipse/lsp4j/DeclarationCapabilities.class
+SHA-256-Digest: t2gio7nTyPAoLXAnXpiaQvy8wIYiJ8w+GZ0qasAwIE0=
+
+Name: org/eclipse/lsp4j/Hover.class
+SHA-256-Digest: OqTrwCF50VFNzF5O14k5WCG2xY618pagDostyrCaX3k=
+
+Name: org/eclipse/lsp4j/MarkdownCapabilities.class
+SHA-256-Digest: WOiwj248rqIwBQkAHQhxg+a/18xU4roosGMXFD0nQBI=
+
+Name: org/eclipse/lsp4j/SynchronizationCapabilities.class
+SHA-256-Digest: oLiZsh0lUQoh8vVgeNNixbCKjmUezMqQV4Jbzo2D/9U=
+
+Name: org/eclipse/lsp4j/FileOperationPattern.class
+SHA-256-Digest: E2F5B9kNALxuEiTR1xmL3j8NuZWxUumLqqoCYYozNlk=
+
+Name: org/eclipse/lsp4j/ParameterInformation.class
+SHA-256-Digest: NtVPeg7OhK4+vh7C5CmtMr2Axx5zm7YoXJaEiT4jJLQ=
+
+Name: org/eclipse/lsp4j/SymbolTag.class
+SHA-256-Digest: 7ZrT+fEOuQcCZGxJ9TzXmRU80PVUaqmwPB9WbU05cXU=
+
+Name: org/eclipse/lsp4j/adapters/ResourceOperationTypeAdapter$InnerResou
+ rceOperationTypeAdapter.class
+SHA-256-Digest: KWwqEQmhUVi3FrixmxUm7ZDV/uY5Lln+GAqezaVrUrg=
+
+Name: org/eclipse/lsp4j/ResourceOperation.class
+SHA-256-Digest: HAVLCLiF0h1qbZzTcXTWjKU72NJkI78PRTn8Q5wZmTc=
+
+Name: org/eclipse/lsp4j/TextDocumentRegistrationOptions.class
+SHA-256-Digest: 3L48Q4YZOB41AATDwDGyOdRKPhuOd+jBv7ej/L63lWw=
+
+Name: org/eclipse/lsp4j/ColorProviderOptions.class
+SHA-256-Digest: cE1eDpct/MtOV8DXWrj7cBIEJ7ZMhFtJ3vUV/tKWCtQ=
+
+Name: org/eclipse/lsp4j/PreviousResultId.class
+SHA-256-Digest: FsqmDceMlIopFMQcJjvORMUQwNVmOMxexP2aitMIBzw=
+
+Name: org/eclipse/lsp4j/WorkspaceClientCapabilities.class
+SHA-256-Digest: FxDgBiC8osj1SL/p9AqbxXC00TxmsfPbr+w4kN26ukM=
+
+Name: org/eclipse/lsp4j/TextDocumentContentChangeEvent.class
+SHA-256-Digest: C45zC/FUMYcIbwhHQ18xtSMacel/iywCUtVSJrV61VY=
+
+Name: org/eclipse/lsp4j/SemanticTokensParams.class
+SHA-256-Digest: G0HCGjYEkKzZAJyjsxMKMlUDs9xrKCfa+LkoZgTDXBQ=
+
+Name: org/eclipse/lsp4j/RelatedFullDocumentDiagnosticReport.class
+SHA-256-Digest: ldnrQZvXVbrxgMskrD7vn7qhvLf5jktVcW7ZFOkfJvA=
+
+Name: org/eclipse/lsp4j/DidOpenTextDocumentParams.class
+SHA-256-Digest: Hf+vh6KhChcviTVp2hM1C2KVmf0b+78qyd2RzSJZNVI=
+
+Name: org/eclipse/lsp4j/SignatureHelpRegistrationOptions.class
+SHA-256-Digest: rmCl+rmZxwD6JgYALGsX8V4nMhrkQRmXhmSikz9UEUA=
+
+Name: org/eclipse/lsp4j/DocumentLinkCapabilities.class
+SHA-256-Digest: g0+op7lRSXKYDcNYytB2L7o6NA+n7osSxLKsvzSIPUc=
+
+Name: org/eclipse/lsp4j/FileOperationsWorkspaceCapabilities.class
+SHA-256-Digest: 3A3xnCuoL9KeLD+fKkPahFJ8+ik0aJY6X/BKbhdp54s=
+
+Name: org/eclipse/lsp4j/CodeActionLiteralSupportCapabilities.class
+SHA-256-Digest: KdULxdN8pqdSVG+fDYH/F27f8KexBeAY/KlbDS0BFtw=
+
+Name: org/eclipse/lsp4j/DocumentHighlightRegistrationOptions.class
+SHA-256-Digest: 1gCfBHler023uea/kfdmUk6yG8fUUwFvXAAdlEbdTFc=
+
+Name: org/eclipse/lsp4j/NotebookDocument.class
+SHA-256-Digest: 85OHZ9atVONv+ubNnf59Y9855lTCPpjeyLqj8CrLzus=
+
+Name: org/eclipse/lsp4j/MessageParams.class
+SHA-256-Digest: ZJAYgZcUQoLrwUudxBRMiO3yyGCzCm32wjYvE83ZJq8=
+
+Name: org/eclipse/lsp4j/CodeActionContext.class
+SHA-256-Digest: yVFcq8YlgOof9ZUOnzlnAwMSWa/EH0yarxjUVD/psbM=
+
+Name: org/eclipse/lsp4j/SelectionRangeOptions.class
+SHA-256-Digest: TbN5v/G8s9k+y9Mpow1V/eBwPmS/P5/L7f8QycKH6wA=
+
+Name: org/eclipse/lsp4j/FoldingRangeProviderOptions.class
+SHA-256-Digest: 4tUMxsvvkVSnLJN3tBwLgkMxU+SiCYsT0Q1U5JxiHwM=
+
+Name: org/eclipse/lsp4j/InitializedParams.class
+SHA-256-Digest: SFCAdnv9jjjGAAkwX+W4rjXkDUzXkV2Xg8iIVbrv8j0=
+
+Name: org/eclipse/lsp4j/NotebookSelector.class
+SHA-256-Digest: 3wk6IQml+rBOype/EbCdNpy6rPT/RzibOTGMZN5CSYM=
+
+Name: org/eclipse/lsp4j/Position.class
+SHA-256-Digest: a6aCCwu2lxpLCbbSQ7PLlaOaj6Q5Dmac4G5EqFVxiNA=
+
+Name: org/eclipse/lsp4j/WorkspaceFoldersOptions.class
+SHA-256-Digest: za0mjC8nQVnxP9PvACpd4Lk/l9a6BjwPnBWc06fwWTs=
+
+Name: org/eclipse/lsp4j/FileRename.class
+SHA-256-Digest: P4mZDa2lxvZ079IAWqcanX5NEkYoPjgq2QLuJh+vwvQ=
+
+Name: org/eclipse/lsp4j/StaleRequestCapabilities.class
+SHA-256-Digest: z3vGQVZnk8K2Ah7+5hloisVbTCRoq2fikI/vMHcZ1Ts=
+
+Name: org/eclipse/lsp4j/adapters/InitializeParamsTypeAdapter$1.class
+SHA-256-Digest: E8bNVypP719jz6XX+TFxJLczGyYiWEAKp5JZSmL3jkc=
+
+Name: org/eclipse/lsp4j/adapters/WorkDoneProgressNotificationAdapter$Fac
+ tory.class
+SHA-256-Digest: 0+yBIvp8hNUnD5dkxrCPvYEItrfa55eirRWeykKJ9Go=
+
+Name: org/eclipse/lsp4j/launch/LSPLauncher.class
+SHA-256-Digest: /UT5j8WbwmVYXmvYrgZAGOmAdIl4wmgTiQKgDSK5xaA=
+
+Name: org/eclipse/lsp4j/DocumentFilter.class
+SHA-256-Digest: NgOeUaBjxbesowWYbg+S74vh/Ychaseo5Blx1GAhD1U=
+
+Name: org/eclipse/lsp4j/PrepareRenameDefaultBehavior.class
+SHA-256-Digest: lG4awzAzIVfLilGJ2fLbXRudApmiploAkMh18Oc4CyM=
+
+Name: org/eclipse/lsp4j/DiagnosticWorkspaceCapabilities.class
+SHA-256-Digest: 18jD/oyQSC3yvQ21g2s6gG9jQ7apsc7iollnVU3hNlU=
+
+Name: org/eclipse/lsp4j/SymbolInformation.class
+SHA-256-Digest: IaVjtIpjNEQq6MhvbcwTn94BZKmVfdzsaxTdI9JpIgw=
+
+Name: org/eclipse/lsp4j/adapters/CompletionItemDefaultsEditRangeTypeAdap
+ ter$1.class
+SHA-256-Digest: /YLoM9Z/OlW7mPgF2VLndS/dEMSfDogG7xBqv3wQD8M=
+
+Name: org/eclipse/lsp4j/FileOperationFilter.class
+SHA-256-Digest: mzf+bPndYDwy2jcdRms+8NA8kqjtS93ouknMdzZZhzc=
+
+Name: org/eclipse/lsp4j/adapters/SymbolInformationTypeAdapter.class
+SHA-256-Digest: 8eIBtJ2xdDd02dwD3N+1ga8PjamGwt9yICylPv7Ek2A=
+
+Name: org/eclipse/lsp4j/CodeActionParams.class
+SHA-256-Digest: ymRQdEw2O2rdtYyeg51Jzi5/WPDdpGEj3fs3ft8Pb88=
+
+Name: org/eclipse/lsp4j/ParameterInformationCapabilities.class
+SHA-256-Digest: rUVZ2eG3tf+pnLlfjOlgBeeq6w+5aRxm25uKj0T6Okw=
+
+Name: org/eclipse/lsp4j/CallHierarchyRegistrationOptions.class
+SHA-256-Digest: ndPvyQUAod4dz6UEOk2fXAnQ9cxrravW4MxNwfVcN+Y=
+
+Name: org/eclipse/lsp4j/WorkspaceSymbolResolveSupportCapabilities.class
+SHA-256-Digest: kq0s1TK77E4872CB/a62rFt927i9xWMvvqPU9CQBqCk=
+
+Name: org/eclipse/lsp4j/FoldingRangeKindSupportCapabilities.class
+SHA-256-Digest: sd6o1Xuori5JgOapDJF5jiA41U1CxcvN8bT6yz5a4uQ=
+
+Name: org/eclipse/lsp4j/adapters/ProgressNotificationAdapter.class
+SHA-256-Digest: rq+uBDjYFRQhN8WOqYhtGNhNVMPXXCyFpM+eCjoB1gI=
+
+Name: org/eclipse/lsp4j/util/DocumentSymbols.class
+SHA-256-Digest: Twl0SfG9FeSiNS7RxBleDF+svsfCWCEwYvasrBt+X8c=
+
+Name: org/eclipse/lsp4j/WorkspaceServerCapabilities.class
+SHA-256-Digest: xvBaePRqwwTT7zpss957AuQrbVlI9aTEcjalXF/2wLw=
+
+Name: org/eclipse/lsp4j/CompletionItemResolveSupportCapabilities.class
+SHA-256-Digest: CSN6ax4xKhEErvJLPob3NhHZyWkyYmhZeNnVcFn3qy8=
+
+Name: org/eclipse/lsp4j/UniquenessLevel.class
+SHA-256-Digest: Nr7ldaoPQ0oPeS/C1qreVqcN9IXXbDLBbxK/CPmAqCY=
+
+Name: org/eclipse/lsp4j/MonikerOptions.class
+SHA-256-Digest: PGrxeeF3j/oBHucyZbf+1wlAnnHmBv9gRf6/nyJVh5s=
+
+Name: org/eclipse/lsp4j/CodeActionKind.class
+SHA-256-Digest: hAH8KPAR43OsBTNMYYvcEODcFhD9OiGABaB2BIVsWI0=
+
+Name: org/eclipse/lsp4j/AnnotatedTextEdit.class
+SHA-256-Digest: DwAQLgybqbWlVFDDuxYQRDRkN7SDX7hR6qxgsX0zLkk=
+
+Name: org/eclipse/lsp4j/WorkspaceDocumentDiagnosticReport.class
+SHA-256-Digest: ZkZI9wgO1OQAdlPxzBkQTR9nwPmeMb34sdcbyjhTO4Y=
+
+Name: org/eclipse/lsp4j/adapters/WorkspaceDocumentDiagnosticReportListAd
+ apter$1.class
+SHA-256-Digest: CgCmHREoGNdaEaJDSSjbuFPXUtpDyFohcmHZuJx96gs=
+
+Name: org/eclipse/lsp4j/SignatureHelpOptions.class
+SHA-256-Digest: BlZzkIQsk4omemNnNtjaNUg84kvYokH1/sHYEBH1dTo=
+
+Name: org/eclipse/lsp4j/MonikerRegistrationOptions.class
+SHA-256-Digest: +YQP5jbNNKV3m6kEkjA+993wBmZscAmIUwYjXM4NBis=
+
+Name: org/eclipse/lsp4j/CompletionCapabilities.class
+SHA-256-Digest: j+qqYUK1uqVxkKBjWbfDJcyVC94N2vAINK2hxOgmtZw=
+
+Name: org/eclipse/lsp4j/VersionedTextDocumentIdentifier.class
+SHA-256-Digest: auTsxdJIVw0NxWN0/PhLs6RTOCSIGXnBLagspKU9lnY=
+
+Name: org/eclipse/lsp4j/LinkedEditingRangeCapabilities.class
+SHA-256-Digest: k1Z8xucSJGDmtw7C058Loj1Q2+oZ+1v6bpWPhVJYSTU=
+
+Name: org/eclipse/lsp4j/NotebookDocumentChangeEventCellTextContent.class
+SHA-256-Digest: BjZOazamfgICk98EInBJ2mV2gp/+0Nkvd8yto2s5a+Y=
+
+Name: org/eclipse/lsp4j/WorkDoneProgressOptions.class
+SHA-256-Digest: Qv9KzBpZcFws6ljC93nF9ionPvi/kyH41ZXt5aZvuBs=
+
+Name: org/eclipse/lsp4j/CompletionList.class
+SHA-256-Digest: ZGDlbxRzFz2nmJTn0i/5yj3hNkWIAR/lU/siKR5+Sz4=
+
+Name: org/eclipse/lsp4j/adapters/CompletionItemDefaultsEditRangeTypeAdap
+ ter.class
+SHA-256-Digest: zGXBPDIdONCnwQ9s5GPNDjqiOSyR6OriY6kGF4DAfek=
+
+Name: org/eclipse/lsp4j/SemanticTokensDelta.class
+SHA-256-Digest: 2+vW6j93GSIzN2aOFSFPqhdFCO31ZbNoz1LXHL8bazs=
+
+Name: org/eclipse/lsp4j/adapters/InlineValueResponseAdapter.class
+SHA-256-Digest: LABQEwLwmBbG4OpquJDwghx/W2nBMJwnSWszIaY6O3k=
+
+Name: org/eclipse/lsp4j/FullDocumentDiagnosticReport.class
+SHA-256-Digest: jxq705DL2RsShaEzxkqwtWUnfZDQZjsDdGNcJOGTjew=
+
+Name: org/eclipse/lsp4j/WorkspaceUnchangedDocumentDiagnosticReport.class
+SHA-256-Digest: czIZBPZYgU5ufp5nwiWVgKCoRJMwQCAgZEqJ3qYmdhc=
+
+Name: org/eclipse/lsp4j/adapters/DocumentSymbolResponseAdapter$1.class
+SHA-256-Digest: p41IFmlt73Dx7n+CwUfnra7mXeZ5UPDbmJcsfwX20PQ=
+
+Name: org/eclipse/lsp4j/MessageActionItem.class
+SHA-256-Digest: /k5XL/YVCYv5grdcmoxSeO6CpYbDBD1ipyNJdMrMiMY=
+
+Name: org/eclipse/lsp4j/DefinitionCapabilities.class
+SHA-256-Digest: ywsfBbGaW60O3hNa+Mt0ad8IqEoEVF+K9bCaggfr3nQ=
+
+Name: org/eclipse/lsp4j/DidSaveTextDocumentParams.class
+SHA-256-Digest: kpuexIu41phZmZqfC8IwGxBaNmR51560X5WH4N5lh/U=
+
+Name: org/eclipse/lsp4j/DocumentSymbolCapabilities.class
+SHA-256-Digest: vYlxUzFZbomG6Dn9BDmfCasC3rN0ntWSyE5Gij6UENU=
+
+Name: org/eclipse/lsp4j/WorkspaceFullDocumentDiagnosticReport.class
+SHA-256-Digest: 8eSX8ar+CwAfc8Csj0J6ULoXG3616k60mflI/0hDZp0=
+
+Name: org/eclipse/lsp4j/SignatureHelpCapabilities.class
+SHA-256-Digest: qPoVE3IswSkKGW4PPUKmz6Djw4JZSid8uBUzQ22psi0=
+
+Name: org/eclipse/lsp4j/TypeDefinitionOptions.class
+SHA-256-Digest: dY6FMF1REbsuso0LrJsir5b2Ijc7df8oIZaYN0wQw60=
+
+Name: org/eclipse/lsp4j/DocumentFormattingOptions.class
+SHA-256-Digest: jWgmgZCb4oVkeC62azl5mu3LA93q6MP9P+CivWx4Lq8=
+
+Name: org/eclipse/lsp4j/PartialResultParams.class
+SHA-256-Digest: ZzL2idRI0/1BpVugcMVyro/wPJOwbHQu31kyQR5wIOM=
+
+Name: org/eclipse/lsp4j/DeclarationOptions.class
+SHA-256-Digest: dqolaUBV0WdWrPbmCCpO8AsK4x6Bzb+G+CHF/6in9wA=
+
+Name: org/eclipse/lsp4j/AbstractTextDocumentRegistrationAndWorkDoneProgr
+ essOptions.class
+SHA-256-Digest: Yn6lAzWqNhW6adHGdEqva7j/ws+hJMCyLf1c15pNUsI=
+
+Name: org/eclipse/lsp4j/SelectionRangeCapabilities.class
+SHA-256-Digest: c4Ay83rip2r171Hzi8JG3ymnOT8JSdDETu8qnP3C8SY=
+
+Name: org/eclipse/lsp4j/CallHierarchyCapabilities.class
+SHA-256-Digest: g5L7QW2RzPQMpjyDtLiI6dnOC76xQYxdFOKpuZ6sOY0=
+
+Name: org/eclipse/lsp4j/CompletionItemCapabilities.class
+SHA-256-Digest: 6sRl8ZQKRFg0C+NmbQWPcC9YW8xm89LJUQM/QfV+K80=
+
+Name: org/eclipse/lsp4j/DocumentRangeFormattingParams.class
+SHA-256-Digest: PmjZOWiRItFncv8ORqIT6Cl4wWgkJmDWBcJtGDvClpw=
+
+Name: org/eclipse/lsp4j/InlayHintRegistrationOptions.class
+SHA-256-Digest: R1f/uAJls1gwZXadPekt98AZJ4bDzkokLBaMr+iZFy8=
+
+Name: org/eclipse/lsp4j/RegularExpressionsCapabilities.class
+SHA-256-Digest: TpJ2wR3hc/P58xce4PalI676eWOv5l5y82LWn6OBzdE=
+
+Name: org/eclipse/lsp4j/ShowMessageRequestParams.class
+SHA-256-Digest: iWD/OFWtNALJ7z/WyHqsh7liCckNySzksHUe5DfiO68=
+
+Name: org/eclipse/lsp4j/CodeLensParams.class
+SHA-256-Digest: Wrzr+++g4HioJidHMDJn4UNAhAy/8bTkogxVhP+ZbWY=
+
+Name: org/eclipse/lsp4j/services/TextDocumentService.class
+SHA-256-Digest: ylOJetl9Pe8KBnqEugkewL26uBv8Nc56xQ4ZpaHTlLE=
+
+Name: org/eclipse/lsp4j/ReferenceParams.class
+SHA-256-Digest: 6D7IDBRz+Nso8Os9Tak5JbzAOidZgqe3xx3+y2Ve8XA=
+
+Name: org/eclipse/lsp4j/InlayHintCapabilities.class
+SHA-256-Digest: DZ/a0yf5n1+bs2M9voCbIZIpFWXHFk/OOeGMZGKusww=
+
+Name: org/eclipse/lsp4j/FileCreate.class
+SHA-256-Digest: vIyYdjITXFWN9iuOTzAkAEDxiJQgkupFvRAw0QhuoXk=
+
+Name: org/eclipse/lsp4j/WorkDoneProgressReport.class
+SHA-256-Digest: BQnMPTdUVT3dB7G43rlsmlwrfoBioDh3kdgRO2iugRg=
+
+Name: org/eclipse/lsp4j/SemanticTokenTypes.class
+SHA-256-Digest: S05wAfezzn8Zl7fM+KE2Lq4/q66QgTG4jaEmjIztmvA=
+
+Name: org/eclipse/lsp4j/PrepareRenameResult.class
+SHA-256-Digest: kZ+i8POWAXw7eeGbXK6m73RmTvVRC4950pKvZiB2YuQ=
+
+Name: org/eclipse/lsp4j/SemanticTokensWorkspaceCapabilities.class
+SHA-256-Digest: A4Qp15oD1lzz7LRSTS3iuy9mKsYBNyH1iKXt5utzeo0=
+
+Name: org/eclipse/lsp4j/DocumentHighlightParams.class
+SHA-256-Digest: tqvSsCdOafQPVn83Dp7L/oG4+bifAtHF8PUP6Yb/FV4=
+
+Name: org/eclipse/lsp4j/SemanticTokens.class
+SHA-256-Digest: q1+ag1QY8XYG3GqdtJ23HUeF6xvEjKML4EcYdGmmBLM=
+
+Name: org/eclipse/lsp4j/SemanticTokensCapabilities.class
+SHA-256-Digest: AJgooeD60Hqq7WU3YQH8h5wBTSxfWc99BY6IjPuulw8=
+
+Name: org/eclipse/lsp4j/CallHierarchyItem.class
+SHA-256-Digest: fmAZHRkSbWBtswabz0iNzZJJv5q+uyKdmf0dR1+SnCo=
+
+Name: org/eclipse/lsp4j/DocumentRangeFormattingRegistrationOptions.class
+SHA-256-Digest: wVYAh26wK2ebc7JfrleEGYqHO1dAHZlJ9TUBgouqaD8=
+
+Name: org/eclipse/lsp4j/adapters/CompletionItemTextEditTypeAdapter$1.cla
+ ss
+SHA-256-Digest: AQVhA5UzsDJQ2A2kg8gzywenuq+6iqdX6itGHDc2TmA=
+
+Name: org/eclipse/lsp4j/DiagnosticRegistrationOptions.class
+SHA-256-Digest: LKq/LT7C/+6FPk+D1NArK2w/CrOzRYS6j1oKrR6yJZw=
+
+Name: org/eclipse/lsp4j/WatchKind.class
+SHA-256-Digest: UkRsf/eiH2rSaDomXR/3zg2J30ZnTNK67fs9d+24oyU=
+
+Name: org/eclipse/lsp4j/adapters/ResourceOperationTypeAdapter.class
+SHA-256-Digest: eDa7AWy0GsvNZeR1/MBH9LbGxIjlPzu68xRcQK+LmmM=
+
+Name: org/eclipse/lsp4j/DeclarationRegistrationOptions.class
+SHA-256-Digest: KLnwbTCieP9Ly6wC9Km2oqhLlW+Y4q/yw80CSpyoqf0=
+
+Name: org/eclipse/lsp4j/CodeActionCapabilities.class
+SHA-256-Digest: ZRsjH1eNp7BWTmLbibeLrRvLLEP+STvE3uKvoOGZDxM=
+
+Name: org/eclipse/lsp4j/WorkDoneProgressParams.class
+SHA-256-Digest: tNZV0alPPPLNgjY3Hd8AyD7X75vUolnIOpZ4yeiLPeo=
+
+Name: org/eclipse/lsp4j/WorkspaceSymbolRegistrationOptions.class
+SHA-256-Digest: LeAjFO2FE6S+2mdbULuM6/8fLAt+LBKsgC0U/U4DOJQ=
+
+Name: org/eclipse/lsp4j/TextDocumentSyncKind.class
+SHA-256-Digest: HCIOaELatLKYbjKRgkW959MtlMRIxJdB6/XYuBn1zSQ=
+
+Name: org/eclipse/lsp4j/TextDocumentSaveReason.class
+SHA-256-Digest: RFINCoFRLN/nle3xZt6fNIiLnTkWEhtgTVaFxcUjB5g=
+
+Name: org/eclipse/lsp4j/Location.class
+SHA-256-Digest: qdX7JJxfkncAQSWlrhYgBezFW/Bixct0cLBWQcV3XXw=
+
+Name: org/eclipse/lsp4j/ApplyWorkspaceEditResponse.class
+SHA-256-Digest: ApaOJmQll1faEdR28s7csLSkNOwtFM3DdGiUUjz38IE=
+
+Name: org/eclipse/lsp4j/ColorInformation.class
+SHA-256-Digest: mKFTfbqbcyY7A3HeK00e53a/bY7j6wiT4D9T+FBodPg=
+
+Name: org/eclipse/lsp4j/FileOperationPatternKind.class
+SHA-256-Digest: mVBX0PhCJpmVwTbq9qW7EFerU7dQf3l4KMvoI0Z1Tw8=
+
+Name: org/eclipse/lsp4j/InlayHintWorkspaceCapabilities.class
+SHA-256-Digest: PR/0bOkn2zZThkQFEe6h+SlMREZQwYBNdu3lSWb1qtE=
+
+Name: org/eclipse/lsp4j/FoldingRangeSupportCapabilities.class
+SHA-256-Digest: 0so+ItL9wf2BtrxbKfE/tAjr6Lq5PiUSMOtdSLqIj50=
+
+Name: org/eclipse/lsp4j/ImplementationOptions.class
+SHA-256-Digest: 84nbh/HGRiwoUf/RiB9nfC5DimLyVKsWHri9yBYOx98=
+
+Name: org/eclipse/lsp4j/adapters/SemanticTokensFullDeltaResponseAdapter$
+ 1.class
+SHA-256-Digest: J78Y4xU4sggmgW1o9TtZKcevMXRw/lfhLtFk7jcTL+M=
+
+Name: org/eclipse/lsp4j/CodeLensRegistrationOptions.class
+SHA-256-Digest: Sgv7E442Pi/7B+xPo9PMlAmOBjk20VFl44nXxQu/Qfg=
+
+Name: org/eclipse/lsp4j/FoldingRange.class
+SHA-256-Digest: hGJ2bGTRdqBODzVNwPdZEIhVg9iFwTcQwhpGnI8jXd0=
+
+Name: org/eclipse/lsp4j/WorkDoneProgressCancelParams.class
+SHA-256-Digest: b1KmC2kvMPLuuvQuqZY/ER2KITuszDknkR9GEnGNYpU=
+
+Name: org/eclipse/lsp4j/DidChangeWorkspaceFoldersParams.class
+SHA-256-Digest: qA6idihA5MTpF7szr3JYbU5TB/sLnya8VohXX8/kDlY=
+
+Name: org/eclipse/lsp4j/adapters/WorkspaceSymbolLocationTypeAdapter.clas
+ s
+SHA-256-Digest: W2NqhHha9XOEruFYM+ySWh7GEDCbiBE1M9ey7BCMQ88=
+
+Name: org/eclipse/lsp4j/adapters/PrepareRenameResponseAdapter$1.class
+SHA-256-Digest: gzITHdxRpZ1xT9rJyHNoQwFFytlrN08+gZQ15IGHYJ0=
+
+Name: about.html
+SHA-256-Digest: nHFX9V09SN3s1mjLDEYlZfF1cHH95xsX0U6CG6LnGCg=
+
+Name: org/eclipse/lsp4j/ProgressParams.class
+SHA-256-Digest: gzRRcvkN6V/ypukm0ffnSwSVwY4D5ZNjHpP+P4XdXlg=
+
+Name: org/eclipse/lsp4j/DynamicRegistrationCapabilities.class
+SHA-256-Digest: JV4zGR6gr+njGmXwu1aF3DG4rleADJ8KEVG4tswiHP4=
+
+Name: org/eclipse/lsp4j/CodeActionKindCapabilities.class
+SHA-256-Digest: BOPhQdxI2+rNT+Nlc0sD8ko1uavQFq7Rkixh3TxlyZI=
+
+Name: org/eclipse/lsp4j/adapters/InitializeParamsTypeAdapter$2.class
+SHA-256-Digest: mGyJ9vvXvArK00KMoaYzOQOyL/PuV090+7lBk8nf4ls=
+
+Name: org/eclipse/lsp4j/ColorProviderCapabilities.class
+SHA-256-Digest: 9fxEYUkVMHZQZs1dswah0dmib17npZHlGWitHanlgh4=
+
+Name: org/eclipse/lsp4j/WorkspaceFoldersChangeEvent.class
+SHA-256-Digest: t7o/vRYUHfhdKmW7mW0zxErSbP4kgSa4v/eCI63yNH8=
+
+Name: org/eclipse/lsp4j/adapters/CompletionItemTextEditTypeAdapter.class
+SHA-256-Digest: LcDJCYK+7vf31NfNrD1tT9UkibmBBxH8Ncvv7yHExcQ=
+
+Name: org/eclipse/lsp4j/PublishDiagnosticsParams.class
+SHA-256-Digest: rW9+EAHO10KQlWnzUD2jgrIkPR8sRBJAvCH4TjPfYek=
+
+Name: org/eclipse/lsp4j/TypeHierarchyItem.class
+SHA-256-Digest: ligptuceg7LDUcRaUd4ds2n3gJwGODbRFG8KQmX9gXk=
+
+Name: org/eclipse/lsp4j/WorkspaceEditChangeAnnotationSupportCapabilities
+ .class
+SHA-256-Digest: 6b6RLKoQuzgdAvoek5Ti0PgHn0EJQorNPThzrMY131U=
+
+Name: org/eclipse/lsp4j/WorkspaceSymbolLocation.class
+SHA-256-Digest: tPxEu5TxgcLX6AziaytxgXk9YWRshXvgWPyNkYmu5BQ=
+
+Name: org/eclipse/lsp4j/AbstractWorkDoneProgressOptions.class
+SHA-256-Digest: IVOdk8ozqF2AqXU+i7swSr3ZawhBTWEltOGKYhJiVyg=
+
+Name: org/eclipse/lsp4j/DocumentLinkOptions.class
+SHA-256-Digest: ZffSsUqYhntK3xfrSVEwISH/DrwFMHJjiiQzSDmeYrw=
+
+Name: org/eclipse/lsp4j/VersionedNotebookDocumentIdentifier.class
+SHA-256-Digest: qIUA6KrovVhWJ1AzLP78sY8EO4EWFiVeovHShg9VCNQ=
+
+Name: org/eclipse/lsp4j/CompletionParams.class
+SHA-256-Digest: lYlDmIFgJXEFnY0yCjdUz340bcYR9vavIGxAQcHSIYc=
+
+Name: org/eclipse/lsp4j/InlineValueEvaluatableExpression.class
+SHA-256-Digest: FACkVKH+qXQpYi2SwkfhUdc6C3qP/t+OYPYppnFml44=
+

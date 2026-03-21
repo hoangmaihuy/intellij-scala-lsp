@@ -255,12 +255,12 @@ for jar in "$LSP_LIB_DIR/"*.jar; do
 done
 
 # Add Scala runtime JARs to classpath (needed by our Scala code).
-# Only the runtime JARs, not the full Scala plugin (which loads via -Dplugin.path).
 for jar in "scala-library.jar" "scala3-library_3.jar"; do
   if [ -f "$SCALA_PLUGIN_DIR/lib/$jar" ]; then
     CLASSPATH="${CLASSPATH:+$CLASSPATH:}$SCALA_PLUGIN_DIR/lib/$jar"
   fi
 done
+
 
 # --- Isolated config/system dirs ---
 
@@ -307,6 +307,8 @@ JVM_ARGS+=("-Didea.classpath.index.enabled=false")
 
 # Tell plugin loader where plugins are (same approach as test framework in build.sbt)
 PLUGIN_PATH="$LSP_LIB_DIR/.."
+# Scala plugin JARs are already on the classpath above, so we still add
+# the Scala plugin dir here for IntelliJ to discover its plugin descriptors.
 PLUGIN_PATH="${PLUGIN_PATH}:${SCALA_PLUGIN_DIR}"
 if [ -d "$IDEA_HOME/plugins/java" ]; then
   PLUGIN_PATH="${PLUGIN_PATH}:${IDEA_HOME}/plugins/java"

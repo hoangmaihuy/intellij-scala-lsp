@@ -146,23 +146,20 @@ class ScalaWorkspaceService(projectManager: IntellijProjectManager) extends Work
                 vf <- projectManager.findVirtualFile(oldUri)
                 document <- Option(FileDocumentManager.getInstance().getDocument(vf))
               yield
-                // Find top-level named elements matching old filename
-                // Use PsiNameIdentifierOwner to avoid loading Scala plugin classes at class-init time
+                // Use Class.forName to avoid constant pool reference to ScTypeDefinition
+                // (IntelliJ's plugin classloader isn't ready when this class is first loaded)
                 import com.intellij.psi.{PsiNameIdentifierOwner, PsiNamedElement}
-                val topLevel = psiFile.getChildren.collect:
-                  case named: PsiNameIdentifierOwner if named.getName == oldFileName => named
-                val nested = psiFile.getChildren.flatMap: child =>
-                  // Also check inside ScPackaging (Scala package blocks)
-                  if child.getClass.getName.contains("ScPackaging") then
-                    child.getChildren.collect:
-                      case named: PsiNameIdentifierOwner if named.getName == oldFileName => named
-                  else Array.empty[PsiNameIdentifierOwner]
-                (topLevel ++ nested).flatMap: td =>
-                  Option(td.getNameIdentifier).map: nameId =>
-                    val start = PsiUtils.offsetToPosition(document, nameId.getTextRange.getStartOffset)
-                    val end = PsiUtils.offsetToPosition(document, nameId.getTextRange.getEndOffset)
-                    TextEdit(Range(start, end), newFileName)
-                .toSeq
+                val scTypeDefClass = try Class.forName("org.jetbrains.plugins.scala.lang.psi.api.toplevel.typedef.ScTypeDefinition") catch case _: Exception => null
+                if scTypeDefClass != null then
+                  psiFile.getChildren.collect:
+                    case elem: PsiNameIdentifierOwner if scTypeDefClass.isInstance(elem) && elem.getName == oldFileName => elem
+                  .flatMap: td =>
+                    Option(td.getNameIdentifier).map: nameId =>
+                      val start = PsiUtils.offsetToPosition(document, nameId.getTextRange.getStartOffset)
+                      val end = PsiUtils.offsetToPosition(document, nameId.getTextRange.getEndOffset)
+                      TextEdit(Range(start, end), newFileName)
+                  .toSeq
+                else Seq.empty
               ).getOrElse(Seq.empty)
 
             if edits.nonEmpty then
