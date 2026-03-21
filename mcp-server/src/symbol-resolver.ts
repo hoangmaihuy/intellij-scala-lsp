@@ -55,10 +55,14 @@ export class SymbolResolver {
   }
 
   private matchesName(symbolName: string, query: string, kind: SymbolKind): boolean {
+    // Exact match
     if (symbolName === query) return true;
 
+    // Scala companion object: "Foo$" matches query "Foo"
+    if (symbolName === query + '$') return true;
+
+    // Qualified name: "Container.method"
     if (query.includes('.')) {
-      if (symbolName === query) return true;
       const parts = query.split('.');
       const methodName = parts[parts.length - 1];
       if (kind === SymbolKind.Method || kind === SymbolKind.Function) {
@@ -69,6 +73,7 @@ export class SymbolResolver {
       return false;
     }
 
+    // Method suffix match: symbol "Foo.bar" matches query "bar"
     if (kind === SymbolKind.Method || kind === SymbolKind.Function) {
       if (symbolName.endsWith('.' + query) || symbolName.endsWith('::' + query)) return true;
     }
