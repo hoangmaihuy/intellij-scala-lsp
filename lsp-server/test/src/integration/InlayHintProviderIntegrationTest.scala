@@ -29,9 +29,8 @@ class InlayHintProviderIntegrationTest extends ScalaLspTestBase:
     assertNotNull("Should return a list of hints", hints)
     val typeHints = hints.filter(_.getKind == InlayHintKind.Type)
     val intHint = typeHints.find(h => labelOf(h).contains("Int"))
-    // Type resolution requires full project indexing; in light test mode, verify structure only
-    if intHint.isDefined then
-      assertEquals("Type hint should be on line 1", 1, intHint.get.getPosition.getLine)
+    assertTrue("Should have Int type hint", intHint.isDefined)
+    assertEquals("Type hint should be on line 1", 1, intHint.get.getPosition.getLine)
 
   def testTypeHintValueAfterIdentifier(): Unit =
     val uri = configureScalaFile(
@@ -44,10 +43,9 @@ class InlayHintProviderIntegrationTest extends ScalaLspTestBase:
     assertNotNull("Should return a list of hints", hints)
     val typeHints = hints.filter(_.getKind == InlayHintKind.Type)
     val intHint = typeHints.find(h => labelOf(h).contains("Int"))
-    // Type resolution requires full project indexing; in light test mode, verify structure only
-    if intHint.isDefined then
-      // "val x" — 'x' is at char 6; end offset of identifier is char 7
-      assertTrue("Type hint should be after 'x' (char >= 7)", intHint.get.getPosition.getCharacter >= 7)
+    assertTrue("Should have Int type hint", intHint.isDefined)
+    // "val x" — 'x' is at char 6; end offset of identifier is char 7
+    assertTrue("Type hint should be after 'x' (char >= 7)", intHint.get.getPosition.getCharacter >= 7)
 
   def testTypeHintLabelStartsWithColon(): Unit =
     val uri = configureScalaFile(
@@ -60,10 +58,9 @@ class InlayHintProviderIntegrationTest extends ScalaLspTestBase:
     assertNotNull("Should return a list of hints", hints)
     val typeHints = hints.filter(_.getKind == InlayHintKind.Type)
     val intHint = typeHints.find(h => labelOf(h).contains("Int"))
-    // Type resolution requires full project indexing; in light test mode, verify structure only
-    if intHint.isDefined then
-      val label = labelOf(intHint.get)
-      assertTrue(s"Type hint label should start with ': ', got: $label", label.startsWith(": "))
+    assertTrue("Should have Int type hint", intHint.isDefined)
+    val label = labelOf(intHint.get)
+    assertTrue(s"Type hint label should start with ': ', got: $label", label.startsWith(": "))
 
   def testNoTypeHintWhenExplicit(): Unit =
     val uri = configureScalaFile(
@@ -174,10 +171,9 @@ class InlayHintProviderIntegrationTest extends ScalaLspTestBase:
     assertNotNull("Should return a list of hints", hints)
     val typeHints = hints.filter(_.getKind == InlayHintKind.Type)
     val intHint = typeHints.find(h => labelOf(h).contains("Int"))
-    // Type resolution requires full project indexing; in light test mode, verify structure only
-    if intHint.isDefined then
-      val label = labelOf(intHint.get)
-      assertTrue(s"Type hint label should start with ': ', got: $label", label.startsWith(": "))
+    assertTrue("Should have Int type hint for var", intHint.isDefined)
+    val label = labelOf(intHint.get)
+    assertTrue(s"Type hint label should start with ': ', got: $label", label.startsWith(": "))
 
   def testComplexExpressionProducesHints(): Unit =
     val uri = configureScalaFile(

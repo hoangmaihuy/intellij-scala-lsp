@@ -73,13 +73,24 @@ class InlayHintProvider(projectManager: IntellijProjectManager):
       case _ => false
 
   private def getTypeText(element: PsiElement): Option[String] =
-    // Use NavigationItem.getPresentation for type display text
     try
+      import org.jetbrains.plugins.scala.lang.psi.types.{TypePresentationContext, Context}
       element match
-        case nav: com.intellij.navigation.NavigationItem =>
-          Option(nav.getPresentation)
-            .flatMap(p => Option(p.getLocationString))
-            .filter(_.nonEmpty)
+        case pd: ScPatternDefinition =>
+          pd.`type`().toOption.map: t =>
+            implicit val tpc: TypePresentationContext = TypePresentationContext(pd)
+            implicit val ctx: Context = Context(pd)
+            t.presentableText
+        case vd: ScVariableDefinition =>
+          vd.`type`().toOption.map: t =>
+            implicit val tpc: TypePresentationContext = TypePresentationContext(vd)
+            implicit val ctx: Context = Context(vd)
+            t.presentableText
+        case fd: ScFunctionDefinition =>
+          fd.returnType.toOption.map: t =>
+            implicit val tpc: TypePresentationContext = TypePresentationContext(fd)
+            implicit val ctx: Context = Context(fd)
+            t.presentableText
         case _ => None
     catch
       case _: Exception => None
