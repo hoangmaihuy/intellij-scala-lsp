@@ -4,7 +4,11 @@ An LSP server that runs IntelliJ IDEA headless + the [intellij-scala](https://gi
 
 ## Why
 
-Metals (the existing Scala LSP) uses its own compiler infrastructure, which diverges from IntelliJ-Scala's analysis engine. This project bridges that gap by exposing IntelliJ's PSI-based analysis through LSP.
+IntelliJ-Scala's static analysis engine is significantly faster than compiler-based approaches. It uses PSI (Program Structure Interface) — a lightweight, incremental AST that resolves types, references, and implicits without running the Scala compiler. This makes operations like go-to-definition, find-references, and code completion near-instant even on large codebases, where compiler-based tools like Metals can struggle with latency.
+
+Metals, the existing Scala LSP, builds on the Scala compiler (via the presentation compiler and SemanticDB). While accurate, this ties its performance to compilation speed and requires re-compiling on every change. IntelliJ-Scala avoids this by maintaining an always-up-to-date PSI index that updates incrementally as you type.
+
+This project exposes IntelliJ's analysis engine over LSP, bringing its performance to any editor — not just IntelliJ IDEA.
 
 ## Supported Features
 
@@ -141,6 +145,14 @@ See [docs/architecture.md](docs/architecture.md) for detailed architecture docum
 | sbt-idea-plugin | 5.1.3 |
 | lsp4j | 0.23.1 |
 
+## Acknowledgements
+
+This project stands on the shoulders of:
+
+- **[IntelliJ IDEA Community Edition](https://github.com/JetBrains/intellij-community)** — the open-source IDE platform that provides the PSI framework, indexing infrastructure, and code analysis pipeline that powers this server.
+- **[intellij-scala](https://github.com/JetBrains/intellij-scala)** — JetBrains' Scala plugin for IntelliJ, whose type inference, reference resolution, and refactoring engine is the core of everything this LSP exposes. Without the years of work that went into this plugin, this project would not exist.
+- **[Metals](https://github.com/scalameta/metals)** — the Scala language server that pioneered Scala LSP support and defined the feature expectations for Scala tooling in non-IntelliJ editors. Its protocol design and feature set served as a reference for this project's LSP implementation.
+
 ## License
 
-Apache 2.0 — see [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE).
