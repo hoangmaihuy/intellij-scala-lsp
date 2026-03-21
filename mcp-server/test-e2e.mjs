@@ -34,7 +34,7 @@ async function main() {
   console.log('Starting MCP server...');
   const serverProcess = spawn('node', [path.join(__dirname, 'dist/index.js')], {
     cwd: WORKSPACE,
-    env: { ...process.env, LOG_LEVEL: 'info', ENABLE_ALL_TOOLS: '1' },
+    env: { ...process.env, LOG_LEVEL: 'info' },
     stdio: ['pipe', 'pipe', 'pipe'],
   });
 
@@ -45,7 +45,7 @@ async function main() {
   const transport = new StdioClientTransport({
     command: 'node',
     args: [path.join(__dirname, 'dist', 'index.js')],
-    env: { ...process.env, LOG_LEVEL: 'info', ENABLE_ALL_TOOLS: '1' },
+    env: { ...process.env, LOG_LEVEL: 'info' },
     cwd: WORKSPACE,
   });
 

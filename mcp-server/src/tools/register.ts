@@ -17,15 +17,10 @@ export function registerTools(
   diagnostics: DiagnosticsCache,
   symbolResolver: SymbolResolver,
 ): void {
-  // Phase 1 tools
   registerNavigationTools(mcp, lsp, fileManager, symbolResolver);
   registerDisplayTools(mcp, lsp, fileManager, diagnostics);
   registerEditingTools(mcp, lsp, fileManager);
   registerWorkspaceTools(mcp, lsp);
-
-  // Phase 2 tools (gated by ENABLE_ALL_TOOLS)
-  if (process.env.ENABLE_ALL_TOOLS === '1') {
-    registerHierarchyTools(mcp, lsp, fileManager, symbolResolver);
-    registerFormattingTools(mcp, lsp, fileManager);
-  }
+  registerHierarchyTools(mcp, lsp, fileManager, symbolResolver);
+  registerFormattingTools(mcp, lsp, fileManager);
 }
