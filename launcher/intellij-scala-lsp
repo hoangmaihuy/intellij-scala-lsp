@@ -443,7 +443,7 @@ do_install() {
   log "Installation complete!"
   log ""
   log "Set up your editor:"
-  log "  Claude Code:  intellij-scala-lsp --setup-claude-code"
+  log "  Claude Code:  intellij-scala-lsp --setup-claude-code-mcp"
   log "  VS Code:      intellij-scala-lsp --setup-vscode"
   log "  Zed:          intellij-scala-lsp --setup-zed"
   log "  Neovim:       cmd = { \"intellij-scala-lsp\" }"
@@ -1030,10 +1030,10 @@ case "${1:-}" in
     echo "  --stop                    Stop the daemon"
     echo "  --install                 Download LSP JARs and SDK"
     echo "  --update                  Update to latest version"
-    echo "  --setup-claude-code       Set up Claude Code plugin (installed users)"
-    echo "  --setup-claude-code-dev   Set up Claude Code plugin (local dev)"
-    echo "  --setup-mcp              Set up MCP server for Claude Code (installed users)"
-    echo "  --setup-mcp-dev          Set up MCP server for Claude Code (local dev)"
+    echo "  --setup-claude-code-mcp       Set up Claude Code MCP server (recommended)"
+    echo "  --setup-claude-code-mcp-dev   Set up Claude Code MCP server (local dev)"
+    echo "  --setup-claude-code-lsp       Set up Claude Code LSP plugin"
+    echo "  --setup-claude-code-lsp-dev   Set up Claude Code LSP plugin (local dev)"
     echo "  --setup-vscode            Set up VS Code extension (installed users)"
     echo "  --setup-vscode-dev        Set up VS Code extension (local dev)"
     echo "  --setup-zed               Set up Zed extension (installed users)"
@@ -1045,30 +1045,30 @@ case "${1:-}" in
     echo "Default (no args): proxy stdio to daemon (auto-starts daemon if needed)"
     exit 0
     ;;
-  --setup-claude-code)
-    setup_claude_code "intellij-scala-lsp"
-    exit 0
-    ;;
-  --setup-claude-code-dev)
-    if [ "$DEV_MODE" != true ]; then
-      echo "ERROR: --setup-claude-code-dev must be run from the repo directory."
-      echo "Use --setup-claude-code for installed users."
-      exit 1
-    fi
-    setup_claude_code "$SCRIPT_DIR/intellij-scala-lsp"
-    exit 0
-    ;;
-  --setup-mcp)
+  --setup-claude-code-mcp)
     setup_mcp "$HOME/.local/share/intellij-scala-lsp/mcp-server"
     exit 0
     ;;
-  --setup-mcp-dev)
+  --setup-claude-code-mcp-dev)
     if [ "$DEV_MODE" != true ]; then
-      echo "ERROR: --setup-mcp-dev must be run from the repo directory."
-      echo "Use --setup-mcp for installed users."
+      echo "ERROR: --setup-claude-code-mcp-dev must be run from the repo directory."
+      echo "Use --setup-claude-code-mcp for installed users."
       exit 1
     fi
     setup_mcp "$PROJECT_ROOT/mcp-server"
+    exit 0
+    ;;
+  --setup-claude-code-lsp)
+    setup_claude_code "intellij-scala-lsp"
+    exit 0
+    ;;
+  --setup-claude-code-lsp-dev)
+    if [ "$DEV_MODE" != true ]; then
+      echo "ERROR: --setup-claude-code-lsp-dev must be run from the repo directory."
+      echo "Use --setup-claude-code-lsp for installed users."
+      exit 1
+    fi
+    setup_claude_code "$SCRIPT_DIR/intellij-scala-lsp"
     exit 0
     ;;
   --setup-vscode)
