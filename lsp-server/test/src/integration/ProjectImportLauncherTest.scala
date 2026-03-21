@@ -2,7 +2,6 @@ package org.jetbrains.scalalsP.integration
 
 import org.junit.Test
 import org.junit.Assert.*
-import org.junit.Assume.*
 import java.nio.file.{Files, Path}
 
 /**

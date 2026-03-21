@@ -888,7 +888,7 @@ case "${1:-}" in
         echo "Import complete."
         exit 0
       else
-        echo "ERROR: mill mill.idea/ failed with exit code $?"
+        echo "ERROR: mill mill.idea/ failed"
         exit 1
       fi
     elif [ -f "$PROJECT_PATH/build.sbt" ]; then
