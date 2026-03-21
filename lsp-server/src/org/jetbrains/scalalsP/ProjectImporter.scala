@@ -49,6 +49,7 @@ object ProjectImporter:
       System.err.println("[Import] Initializing IntelliJ platform...")
       IntellijBootstrap.initialize()
       System.err.println("[Import] IntelliJ platform initialized")
+      BootstrapState.bootstrapComplete.countDown()
     catch
       case e: Exception =>
         System.err.println(s"[Import] Bootstrap failed: ${e.getMessage}")
