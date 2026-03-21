@@ -51,6 +51,7 @@ set -euo pipefail
 # --- Version constants (substituted by CI on release) ---
 LSP_VERSION="dev"
 INTELLIJ_BUILD="253.32098.37"
+INTELLIJ_VERSION="2025.3.4"  # Marketing version for download URLs
 SCALA_PLUGIN_VERSION="2025.3.26"
 GITHUB_REPO="nicholasgasior/intellij-scala-lsp"  # TODO: update to actual repo
 
@@ -200,19 +201,21 @@ download_sdk() {
   rm -rf "$tmp_dir"
   mkdir -p "$tmp_dir"
 
-  # Determine download URL
-  # IntelliJ build 253.32098.37 -> version 2025.3.4 (mapped in release notes)
-  # We use the no-jbr variant and rely on detecting JBR separately
-  local version_suffix=""
+  # Determine download URL using marketing version (e.g. "2025.3.4")
+  # JetBrains URLs use marketing versions, NOT build numbers
   local url=""
   if [ "$PLATFORM" = "macos" ]; then
     if [ "$ARCH" = "aarch64" ]; then
-      url="https://download.jetbrains.com/idea/ideaIC-${INTELLIJ_BUILD}-aarch64.tar.gz"
+      url="https://download.jetbrains.com/idea/ideaIC-${INTELLIJ_VERSION}-aarch64.tar.gz"
     else
-      url="https://download.jetbrains.com/idea/ideaIC-${INTELLIJ_BUILD}.tar.gz"
+      url="https://download.jetbrains.com/idea/ideaIC-${INTELLIJ_VERSION}.tar.gz"
     fi
   else
-    url="https://download.jetbrains.com/idea/ideaIC-${INTELLIJ_BUILD}.tar.gz"
+    if [ "$ARCH" = "aarch64" ]; then
+      url="https://download.jetbrains.com/idea/ideaIC-${INTELLIJ_VERSION}-aarch64.tar.gz"
+    else
+      url="https://download.jetbrains.com/idea/ideaIC-${INTELLIJ_VERSION}.tar.gz"
+    fi
   fi
 
   log "Downloading from: $url"
@@ -552,12 +555,11 @@ do_update() {
     return
   fi
   log "Updating v${LSP_VERSION} -> v${latest}..."
-  # Download new launcher (replaces self)
-  local new_launcher
-  new_launcher=$(curl -fsSL "https://github.com/${GITHUB_REPO}/releases/download/v${latest}/intellij-scala-lsp")
+  # Download new launcher directly to file (don't use shell variable — avoids
+  # stripping trailing newlines or mangling large scripts)
   local self_path
   self_path="$(realpath "$0")"
-  echo "$new_launcher" > "$self_path"
+  curl -fsSL -o "$self_path" "https://github.com/${GITHUB_REPO}/releases/download/v${latest}/intellij-scala-lsp"
   chmod +x "$self_path"
   # Download new JARs
   download_lsp_jars "$latest"
@@ -842,10 +844,16 @@ jobs:
           tar czf "$GITHUB_WORKSPACE/intellij-scala-lsp-${VERSION}.tar.gz" *.jar
           cd "$GITHUB_WORKSPACE"
 
-      - name: Stamp version in launcher
+      - name: Stamp version constants in launcher
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
+          # Extract INTELLIJ_BUILD and SCALA_PLUGIN_VERSION from build.sbt
+          IJ_BUILD=$(grep 'intellijBuild' build.sbt | grep -o '"[^"]*"' | tr -d '"')
+          # Map build prefix to marketing version (e.g., 253.32098.37 -> need to maintain this mapping)
+          # For now, read INTELLIJ_VERSION from the launcher itself (kept in sync manually)
           sed -i "s/^LSP_VERSION=\"dev\"/LSP_VERSION=\"${VERSION}\"/" launcher/intellij-scala-lsp
+          # Stamp INTELLIJ_BUILD from build.sbt to ensure they stay in sync
+          sed -i "s/^INTELLIJ_BUILD=\"[^\"]*\"/INTELLIJ_BUILD=\"${IJ_BUILD}\"/" launcher/intellij-scala-lsp
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -874,19 +882,24 @@ git commit -m "ci: add GitHub Actions release workflow"
 
 - [ ] **Step 1: Add the `runLsp` task to `build.sbt`**
 
-Add at the end of the `lsp-server` settings block:
+Add **before** the `lazy val root = ...` line (around line 11 of `build.sbt`) define the key, then add the task implementation inside the `lsp-server` project's `.settings(...)` block:
 
+At the top of `build.sbt`, after imports:
 ```scala
-    // Custom task: build and run the LSP server via the launcher script
-    lazy val runLsp = inputKey[Unit]("Build and run the LSP server via the launcher script")
-    `lsp-server` / runLsp := {
+lazy val runLsp = inputKey[Unit]("Build and run the LSP server via the launcher script")
+```
+
+Inside the `lsp-server` `.settings(...)` block (after the last existing setting, before the closing parenthesis):
+```scala
+    // Build and run the LSP server via the launcher script
+    runLsp := {
       val args = sbt.Def.spaceDelimited("<args>").parsed
-      val _ = (`lsp-server` / packageArtifact).value  // ensure JARs are built
+      val _ = packageArtifact.value  // ensure JARs are built
       val launcher = (ThisBuild / baseDirectory).value / "launcher" / "intellij-scala-lsp"
       val cmd = Seq(launcher.absolutePath) ++ args
       val exitCode = scala.sys.process.Process(cmd).!
       if (exitCode != 0) sys.error(s"Launcher exited with code $exitCode")
-    }
+    },
 ```
 
 - [ ] **Step 2: Test the sbt task**
