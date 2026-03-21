@@ -241,10 +241,15 @@ done
 # TestApplicationManager's plugin loader to discover it from the classpath
 # AND from -Dplugin.path, leading to "jarFiles is not set" fatal assertion.
 # Fix: create a stripped copy without plugin.xml for the classpath.
+# NOTE: We use jar xf/cf instead of zip -qd because zip -qd corrupts ZIP
+# extra fields in a way IntelliJ's ImmutableZipEntry rejects.
 STRIPPED_JAR="$CACHE_DIR/lsp-server-stripped.jar"
 if [ "$LSP_LIB_DIR/lsp-server.jar" -nt "$STRIPPED_JAR" ] 2>/dev/null; then
-  cp "$LSP_LIB_DIR/lsp-server.jar" "$STRIPPED_JAR"
-  zip -qd "$STRIPPED_JAR" "META-INF/plugin.xml" 2>/dev/null || true
+  STRIP_TMP="$CACHE_DIR/strip-tmp"
+  rm -rf "$STRIP_TMP"
+  mkdir -p "$STRIP_TMP"
+  (cd "$STRIP_TMP" && jar xf "$LSP_LIB_DIR/lsp-server.jar" && rm -f META-INF/plugin.xml && jar cf "$STRIPPED_JAR" .)
+  rm -rf "$STRIP_TMP"
 fi
 for jar in "$LSP_LIB_DIR/"*.jar; do
   if [ "$(basename "$jar")" = "lsp-server.jar" ]; then
@@ -254,12 +259,21 @@ for jar in "$LSP_LIB_DIR/"*.jar; do
   fi
 done
 
-# Add Scala runtime JARs to classpath (needed by our Scala code).
-for jar in "scala-library.jar" "scala3-library_3.jar"; do
+# Add Scala plugin JARs to classpath for class resolution at load time.
+# scalaCommunity.jar: Scala PSI API types (ScTypeDefinition, ScalaPsiUtil, etc.)
+# java-impl-frontend.jar: PsiClass (parent of Scala PSI types, lives in Java plugin)
+# scala-library/scala3-library: Scala runtime needed by our Scala code.
+# NOTE: These JARs are on the boot classpath for class LOADING only. Actual
+# instanceof checks use ScalaTypes helper (which uses the element's own
+# classloader) to work across the boot-CP / PluginClassLoader boundary.
+for jar in "scalaCommunity.jar" "scala-library.jar" "scala3-library_3.jar"; do
   if [ -f "$SCALA_PLUGIN_DIR/lib/$jar" ]; then
     CLASSPATH="${CLASSPATH:+$CLASSPATH:}$SCALA_PLUGIN_DIR/lib/$jar"
   fi
 done
+if [ -f "$IDEA_HOME/plugins/java/lib/java-impl-frontend.jar" ]; then
+  CLASSPATH="${CLASSPATH:+$CLASSPATH:}$IDEA_HOME/plugins/java/lib/java-impl-frontend.jar"
+fi
 
 
 # --- Isolated config/system dirs ---
