@@ -63,10 +63,12 @@ class OnTypeFormattingProviderIntegrationTest extends ScalaLspTestBase:
 
   def testNewlineTriggerOnWellFormattedCodeProducesEmptyOrIdempotentEdits(): Unit =
     val uri = configureScalaFile(
-      """object Main:
-        |  def foo: Int =
+      """object Main {
+        |  def foo: Int = {
         |    val x = 42
         |    x + 1
+        |  }
+        |}
         |""".stripMargin
     )
     val pos = Position(2, 0)

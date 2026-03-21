@@ -37,8 +37,9 @@ class RenameProviderIntegrationTest extends ScalaLspTestBase:
 
   def testPrepareRenameOnVal(): Unit =
     val uri = configureScalaFile(
-      """object Main:
+      """object Main {
         |  val myValue = 42
+        |}
         |""".stripMargin
     )
     val result = provider.prepareRename(uri, positionAt(1, 6))
@@ -47,8 +48,9 @@ class RenameProviderIntegrationTest extends ScalaLspTestBase:
 
   def testPrepareRenameOnMethod(): Unit =
     val uri = configureScalaFile(
-      """object Main:
+      """object Main {
         |  def greet(name: String) = s"Hello, $name"
+        |}
         |""".stripMargin
     )
     val result = provider.prepareRename(uri, positionAt(1, 6))
@@ -57,9 +59,10 @@ class RenameProviderIntegrationTest extends ScalaLspTestBase:
 
   def testPrepareRenameOnEmptyLine(): Unit =
     val uri = configureScalaFile(
-      """object Main:
+      """object Main {
         |  val x = 42
         |
+        |}
         |""".stripMargin
     )
     val result = provider.prepareRename(uri, positionAt(2, 0))
@@ -67,8 +70,9 @@ class RenameProviderIntegrationTest extends ScalaLspTestBase:
 
   def testForbiddenRenameEquals(): Unit =
     val uri = configureScalaFile(
-      """class Foo:
+      """class Foo {
         |  override def equals(other: Any): Boolean = false
+        |}
         |""".stripMargin
     )
     val result = provider.prepareRename(uri, positionAt(1, 15))
@@ -76,8 +80,9 @@ class RenameProviderIntegrationTest extends ScalaLspTestBase:
 
   def testForbiddenRenameHashCode(): Unit =
     val uri = configureScalaFile(
-      """class Foo:
+      """class Foo {
         |  override def hashCode(): Int = 0
+        |}
         |""".stripMargin
     )
     val result = provider.prepareRename(uri, positionAt(1, 15))
@@ -85,8 +90,9 @@ class RenameProviderIntegrationTest extends ScalaLspTestBase:
 
   def testForbiddenRenameToString(): Unit =
     val uri = configureScalaFile(
-      """class Foo:
+      """class Foo {
         |  override def toString: String = "foo"
+        |}
         |""".stripMargin
     )
     val result = provider.prepareRename(uri, positionAt(1, 15))
@@ -96,10 +102,11 @@ class RenameProviderIntegrationTest extends ScalaLspTestBase:
 
   def testRenameUpdatesAllReferences(): Unit =
     val uri = configureScalaFile(
-      """object Main:
+      """object Main {
         |  def hello = "world"
         |  val x = hello
         |  val y = hello
+        |}
         |""".stripMargin
     )
     val edit = provider.rename(uri, positionAt(1, 6), "greet")
@@ -115,10 +122,11 @@ class RenameProviderIntegrationTest extends ScalaLspTestBase:
 
   def testRenameLocalVariable(): Unit =
     val uri = configureScalaFile(
-      """object Main:
+      """object Main {
         |  val x = 42
         |  def foo = x + 1
         |  def bar = x + 2
+        |}
         |""".stripMargin
     )
     val edit = provider.rename(uri, positionAt(1, 6), "y")
@@ -138,10 +146,11 @@ class RenameProviderIntegrationTest extends ScalaLspTestBase:
 
   def testRenameMethod(): Unit =
     val uri = configureScalaFile(
-      """object Main:
+      """object Main {
         |  def greet(name: String) = s"Hello, $name"
         |  def a = greet("Alice")
         |  def b = greet("Bob")
+        |}
         |""".stripMargin
     )
     val edit = provider.rename(uri, positionAt(1, 6), "sayHello")
@@ -154,10 +163,11 @@ class RenameProviderIntegrationTest extends ScalaLspTestBase:
 
   def testRenameWithConflict(): Unit =
     val uri = configureScalaFile(
-      """object Main:
+      """object Main {
         |  val x = 1
         |  val y = 2
         |  def foo = x + y
+        |}
         |""".stripMargin
     )
     // Rename x to y — conflict detection is client-side; server must still produce edits
@@ -170,8 +180,9 @@ class RenameProviderIntegrationTest extends ScalaLspTestBase:
 
   def testFileRenameIncludedWhenClassMatchesFilename(): Unit =
     val uri = addScalaFile("Foo.scala",
-      """class Foo:
+      """class Foo {
         |  def bar(): Unit = ()
+        |}
         |""".stripMargin
     )
     val edit = provider.rename(uri, positionAt(0, 6), "Bar")
@@ -194,8 +205,9 @@ class RenameProviderIntegrationTest extends ScalaLspTestBase:
 
   def testNoFileRenameWhenClassNameDiffersFromFilename(): Unit =
     val uri = addScalaFile("SomeFile.scala",
-      """class MyClass:
+      """class MyClass {
         |  def hello(): Unit = ()
+        |}
         |""".stripMargin
     )
     val edit = provider.rename(uri, positionAt(0, 6), "NewClass")
@@ -213,8 +225,9 @@ class RenameProviderIntegrationTest extends ScalaLspTestBase:
   def testRenameClassWithCompanionObject(): Unit =
     val uri = configureScalaFile(
       """class MyData(val x: Int)
-        |object MyData:
+        |object MyData {
         |  def empty: MyData = MyData(0)
+        |}
         |""".stripMargin
     )
     val edit = provider.rename(uri, positionAt(0, 6), "YourData")
@@ -235,14 +248,16 @@ class RenameProviderIntegrationTest extends ScalaLspTestBase:
   def testRenameCrossFile(): Unit =
     addScalaFile("Helper.scala",
       """package example
-        |object Helper:
+        |object Helper {
         |  def compute(x: Int): Int = x * 2
+        |}
         |""".stripMargin
     )
     val uri = configureScalaFile("Main.scala",
       """package example
-        |object Main:
+        |object Main {
         |  val result = Helper.compute(21)
+        |}
         |""".stripMargin
     )
     val edit = provider.rename(uri, positionAt(2, 27), "calculate")

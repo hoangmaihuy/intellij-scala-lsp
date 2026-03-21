@@ -36,8 +36,9 @@ class SemanticTokensProviderIntegrationTest extends ScalaLspTestBase:
 
   def testSemanticTokensDataIsMultipleOfFive(): Unit =
     val uri = configureScalaFile(
-      """object Main:
+      """object Main {
         |  val x = 42
+        |}
         |""".stripMargin
     )
     myFixture.doHighlighting()
@@ -49,8 +50,9 @@ class SemanticTokensProviderIntegrationTest extends ScalaLspTestBase:
 
   def testKeywordsClassified(): Unit =
     val uri = configureScalaFile(
-      """object Main:
+      """object Main {
         |  val x = 42
+        |}
         |""".stripMargin
     )
     myFixture.doHighlighting()
@@ -82,18 +84,20 @@ class SemanticTokensProviderIntegrationTest extends ScalaLspTestBase:
 
   def testOperatorTokenType(): Unit =
     val uri = configureScalaFile(
-      """object Ops:
-        |  case class Vec(x: Int, y: Int):
+      """object Ops {
+        |  case class Vec(x: Int, y: Int) {
         |    def +(other: Vec): Vec = Vec(x + other.x, y + other.y)
+        |  }
         |  val a = Vec(1, 2)
         |  val b = Vec(3, 4)
         |  val c = a + b
+        |}
         |""".stripMargin
     )
     myFixture.doHighlighting()
     val tokens = decodeTokens(provider.getSemanticTokensFull(uri))
 
-    // The `+` operator call on line 5 (val c = a + b) should have token type 14 (operator)
+    // The `+` operator call on line 6 (val c = a + b) should have token type 14 (operator)
     val operatorTokens = tokens.filter(_._4 == 14)
     assertTrue(
       s"Should have at least one operator token (type 14), all tokens: $tokens",
@@ -102,8 +106,9 @@ class SemanticTokensProviderIntegrationTest extends ScalaLspTestBase:
 
   def testOperatorMethodClassified(): Unit =
     val uri = configureScalaFile(
-      """object Main:
+      """object Main {
         |  val x = 1 + 2
+        |}
         |""".stripMargin
     )
     myFixture.doHighlighting()
@@ -119,11 +124,12 @@ class SemanticTokensProviderIntegrationTest extends ScalaLspTestBase:
 
   def testDeprecatedModifier(): Unit =
     val uri = configureScalaFile(
-      """object DeprecatedTest:
+      """object DeprecatedTest {
         |  @deprecated("use newFoo instead", "1.0")
         |  def oldFoo(): Int = 42
         |
         |  val result = oldFoo()
+        |}
         |""".stripMargin
     )
     myFixture.doHighlighting()
@@ -138,9 +144,10 @@ class SemanticTokensProviderIntegrationTest extends ScalaLspTestBase:
 
   def testDeprecatedMethodHasModifier(): Unit =
     val uri = configureScalaFile(
-      """object Main:
+      """object Main {
         |  @deprecated("use bar", "1.0")
         |  def foo(): Unit = ()
+        |}
         |""".stripMargin
     )
     myFixture.doHighlighting()
@@ -150,14 +157,14 @@ class SemanticTokensProviderIntegrationTest extends ScalaLspTestBase:
     val fooTokens = tokens.filter(t => t._1 == 2 && t._4 == 5) // line 2, method type
     val fooToken = fooTokens.find(t => t._3 == 3) // length 3 for "foo"
     assertTrue(s"Should find 'foo' as a method token on line 2, tokens on line 2: ${tokens.filter(_._1 == 2)}", fooToken.isDefined)
-    if fooToken.isDefined then
-      assertTrue("'foo' should have deprecated modifier (bit 7)", (fooToken.get._5 & 128) != 0)
-      assertTrue("'foo' should have declaration modifier (bit 0)", (fooToken.get._5 & 1) != 0)
+    assertTrue("'foo' should have deprecated modifier (bit 7)", (fooToken.get._5 & 128) != 0)
+    assertTrue("'foo' should have declaration modifier (bit 0)", (fooToken.get._5 & 1) != 0)
 
   def testStringEscapeSequences(): Unit =
     val uri = configureScalaFile(
-      """object EscapeTest:
+      """object EscapeTest {
         |  val s = "hello\nworld"
+        |}
         |""".stripMargin
     )
     myFixture.doHighlighting()
@@ -172,8 +179,9 @@ class SemanticTokensProviderIntegrationTest extends ScalaLspTestBase:
 
   def testStringEscapeSequenceSplit(): Unit =
     val uri = configureScalaFile(
-      """object Main:
+      """object Main {
         |  val s = "hello\nworld"
+        |}
         |""".stripMargin
     )
     myFixture.doHighlighting()
@@ -209,19 +217,18 @@ class SemanticTokensProviderIntegrationTest extends ScalaLspTestBase:
     assertTrue(s"Should classify 'MyTrait', all tokens: $tokens", traitToken.isDefined)
     assertTrue(s"Should classify 'MyObject', all tokens: $tokens", objectToken.isDefined)
 
-    if classToken.isDefined  then assertEquals("MyClass -> class(2)",     2, classToken.get._4)
-    if traitToken.isDefined  then
-      assertEquals("MyTrait -> interface(3)", 3, traitToken.get._4)
-      assertTrue("MyTrait should have abstract modifier (bit 2)", (traitToken.get._5 & 4) != 0)
-    if objectToken.isDefined then
-      assertEquals("MyObject -> class(2)",    2, objectToken.get._4)
-      assertTrue("MyObject should have static modifier (bit 1)", (objectToken.get._5 & 2) != 0)
+    assertEquals("MyClass -> class(2)",     2, classToken.get._4)
+    assertEquals("MyTrait -> interface(3)", 3, traitToken.get._4)
+    assertTrue("MyTrait should have abstract modifier (bit 2)", (traitToken.get._5 & 4) != 0)
+    assertEquals("MyObject -> class(2)",    2, objectToken.get._4)
+    assertTrue("MyObject should have static modifier (bit 1)", (objectToken.get._5 & 2) != 0)
 
   def testValReadonlyModifier(): Unit =
     val uri = configureScalaFile(
-      """object Main:
+      """object Main {
         |  val x = 42
         |  var y = 0
+        |}
         |""".stripMargin
     )
     myFixture.doHighlighting()
@@ -234,8 +241,8 @@ class SemanticTokensProviderIntegrationTest extends ScalaLspTestBase:
 
     assertTrue(s"Should find 'x' declaration on line 1, tokens: $tokens", xToken.isDefined)
     assertTrue(s"Should find 'y' declaration on line 2, tokens: $tokens", yToken.isDefined)
-    if xToken.isDefined then assertTrue("val 'x' should have readonly modifier (bit 3)", (xToken.get._5 & 8) != 0)
-    if yToken.isDefined then assertFalse("var 'y' should not have readonly modifier", (yToken.get._5 & 8) != 0)
+    assertTrue("val 'x' should have readonly modifier (bit 3)", (xToken.get._5 & 8) != 0)
+    assertFalse("var 'y' should not have readonly modifier", (yToken.get._5 & 8) != 0)
 
   def testParameterAndTypeHaveDifferentTokenTypes(): Unit =
     val uri = configureScalaFile(
@@ -260,13 +267,12 @@ class SemanticTokensProviderIntegrationTest extends ScalaLspTestBase:
     assertTrue(s"Should have a token for parameter 'batchUploadId', tokens: $tokens", paramToken.isDefined)
     assertTrue(s"Should have a token for type 'BatchUploadId', tokens: $tokens", typeToken.isDefined)
 
-    if paramToken.isDefined && typeToken.isDefined then
-      val paramType = paramToken.get._4
-      val typeType = typeToken.get._4
-      assertNotEquals(
-        s"Parameter '${tokenTypeNames.get(paramType)}' and type '${tokenTypeNames.get(typeType)}' should have different token types",
-        paramType, typeType
-      )
+    val paramType = paramToken.get._4
+    val typeType = typeToken.get._4
+    assertNotEquals(
+      s"Parameter '${tokenTypeNames.get(paramType)}' and type '${tokenTypeNames.get(typeType)}' should have different token types",
+      paramType, typeType
+    )
 
   def testTokenTypeMappingKnown(): Unit =
     val legend = SemanticTokensProvider.legend
@@ -279,10 +285,11 @@ class SemanticTokensProviderIntegrationTest extends ScalaLspTestBase:
 
   def testSemanticTokensRangeIsSubset(): Unit =
     val uri = configureScalaFile(
-      """object Main:
+      """object Main {
         |  val x = 42
         |  val y = "hello"
         |  def foo: Int = x
+        |}
         |""".stripMargin
     )
     myFixture.doHighlighting()

@@ -15,8 +15,9 @@ class CodeActionProviderIntegrationTest extends ScalaLspTestBase:
 
   def testIntentionActionsHaveNonEmptyTitles(): Unit =
     val uri = configureScalaFile(
-      """object Main:
+      """object Main {
         |  val x = 1 + 2
+        |}
         |""".stripMargin
     )
     val actions = getActions(uri, Range(Position(1, 10), Position(1, 15)))
@@ -28,8 +29,9 @@ class CodeActionProviderIntegrationTest extends ScalaLspTestBase:
 
   def testIntentionActionsHaveDataField(): Unit =
     val uri = configureScalaFile(
-      """object Main:
+      """object Main {
         |  val x = 1 + 2
+        |}
         |""".stripMargin
     )
     val actions = getActions(uri, Range(Position(1, 10), Position(1, 15)))
@@ -52,8 +54,9 @@ class CodeActionProviderIntegrationTest extends ScalaLspTestBase:
 
   def testIntentionActionsHaveValidKind(): Unit =
     val uri = configureScalaFile(
-      """object Main:
+      """object Main {
         |  val x = 1 + 2
+        |}
         |""".stripMargin
     )
     val actions = getActions(uri, Range(Position(1, 10), Position(1, 15)))
@@ -75,8 +78,9 @@ class CodeActionProviderIntegrationTest extends ScalaLspTestBase:
 
   def testTypeMismatchQuickFix(): Unit =
     val uri = configureScalaFile(
-      """object Main:
+      """object Main {
         |  val x: Int = "hello"
+        |}
         |""".stripMargin
     )
     myFixture.doHighlighting()
@@ -91,8 +95,9 @@ class CodeActionProviderIntegrationTest extends ScalaLspTestBase:
 
   def testQuickFixLinkedToDiagnosticHasRangeAndMessage(): Unit =
     val uri = configureScalaFile(
-      """object Main:
+      """object Main {
         |  val x: Int = "wrong"
+        |}
         |""".stripMargin
     )
     myFixture.doHighlighting()
@@ -110,8 +115,9 @@ class CodeActionProviderIntegrationTest extends ScalaLspTestBase:
 
   def testNoActionsForCleanCodeReturnsEmptyList(): Unit =
     val uri = configureScalaFile(
-      """object Main:
+      """object Main {
         |  val x: Int = 42
+        |}
         |""".stripMargin
     )
     myFixture.doHighlighting()
@@ -121,8 +127,9 @@ class CodeActionProviderIntegrationTest extends ScalaLspTestBase:
 
   def testMissingImportActionHasSourceKind(): Unit =
     val uri = configureScalaFile(
-      """object Main:
+      """object Main {
         |  val buf = new ArrayBuffer[Int]()
+        |}
         |""".stripMargin
     )
     myFixture.doHighlighting()

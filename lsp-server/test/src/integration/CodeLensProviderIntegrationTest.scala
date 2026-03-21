@@ -12,11 +12,13 @@ class CodeLensProviderIntegrationTest extends ScalaLspTestBase:
 
   def testSuperMethodLens(): Unit =
     val uri = configureScalaFile(
-      """trait Base:
+      """trait Base {
         |  def doWork(): Unit
+        |}
         |
-        |class Impl extends Base:
+        |class Impl extends Base {
         |  override def doWork(): Unit = println("done")
+        |}
         |""".stripMargin
     )
     val lenses = getProvider.getCodeLenses(uri)
@@ -25,11 +27,13 @@ class CodeLensProviderIntegrationTest extends ScalaLspTestBase:
 
   def testLensDataContainsContributorIdAndTitle(): Unit =
     val uri = configureScalaFile(
-      """trait Base:
+      """trait Base {
         |  def doWork(): Unit
+        |}
         |
-        |class Impl extends Base:
+        |class Impl extends Base {
         |  override def doWork(): Unit = println("done")
+        |}
         |""".stripMargin
     )
     val lenses = getProvider.getCodeLenses(uri)
@@ -47,8 +51,9 @@ class CodeLensProviderIntegrationTest extends ScalaLspTestBase:
 
   def testNoLensForNonOverride(): Unit =
     val uri = configureScalaFile(
-      """object Main:
+      """object Main {
         |  def plainMethod(): Unit = println("plain")
+        |}
         |""".stripMargin
     )
     val lenses = getProvider.getCodeLenses(uri)
@@ -56,11 +61,13 @@ class CodeLensProviderIntegrationTest extends ScalaLspTestBase:
 
   def testResolvedLensHasCommandNameScalaGotoLocation(): Unit =
     val uri = configureScalaFile(
-      """trait Animal:
+      """trait Animal {
         |  def sound(): String
+        |}
         |
-        |class Dog extends Animal:
+        |class Dog extends Animal {
         |  override def sound(): String = "woof"
+        |}
         |""".stripMargin
     )
     val provider = getProvider
@@ -79,11 +86,13 @@ class CodeLensProviderIntegrationTest extends ScalaLspTestBase:
 
   def testResolvedLensCommandArgumentsIncludeUri(): Unit =
     val uri = configureScalaFile(
-      """trait Animal:
+      """trait Animal {
         |  def sound(): String
+        |}
         |
-        |class Dog extends Animal:
+        |class Dog extends Animal {
         |  override def sound(): String = "woof"
+        |}
         |""".stripMargin
     )
     val provider = getProvider
@@ -107,13 +116,15 @@ class CodeLensProviderIntegrationTest extends ScalaLspTestBase:
 
   def testMultipleOverridesProduceSeparateLenses(): Unit =
     val uri = configureScalaFile(
-      """trait Shape:
+      """trait Shape {
         |  def area(): Double
         |  def perimeter(): Double
+        |}
         |
-        |class Square(side: Double) extends Shape:
+        |class Square(side: Double) extends Shape {
         |  override def area(): Double = side * side
         |  override def perimeter(): Double = 4 * side
+        |}
         |""".stripMargin
     )
     val lenses = getProvider.getCodeLenses(uri)
@@ -127,16 +138,18 @@ class CodeLensProviderIntegrationTest extends ScalaLspTestBase:
 
   def testLensRangeIsAtMethodNameLine(): Unit =
     val uri = configureScalaFile(
-      """trait Base:
+      """trait Base {
         |  def foo(): Int
+        |}
         |
-        |class Child extends Base:
+        |class Child extends Base {
         |  override def foo(): Int = 42
+        |}
         |""".stripMargin
     )
     val lenses = getProvider.getCodeLenses(uri)
     assertTrue("Should have at least one lens", lenses.nonEmpty)
     val lens = lenses.head
     assertNotNull("Lens range must not be null", lens.getRange)
-    assertEquals("Lens must be on line 4 (override is on line 4, 0-based)",
-      4, lens.getRange.getStart.getLine)
+    assertEquals("Lens must be on line 5 (override is on line 5, 0-based)",
+      5, lens.getRange.getStart.getLine)

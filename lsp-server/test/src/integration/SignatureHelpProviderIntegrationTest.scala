@@ -10,9 +10,10 @@ class SignatureHelpProviderIntegrationTest extends ScalaLspTestBase:
 
   def testSignatureLabelFormat(): Unit =
     val uri = configureScalaFile(
-      """object Main:
+      """object Main {
         |  def add(a: Int, b: Int): Int = a + b
         |  val result = add(
+        |}
         |""".stripMargin
     )
     val help = provider.getSignatureHelp(uri, positionAt(2, 19))
@@ -27,9 +28,10 @@ class SignatureHelpProviderIntegrationTest extends ScalaLspTestBase:
 
   def testSignatureParameterCount(): Unit =
     val uri = configureScalaFile(
-      """object Main:
+      """object Main {
         |  def add(a: Int, b: Int): Int = a + b
         |  val result = add(
+        |}
         |""".stripMargin
     )
     val help = provider.getSignatureHelp(uri, positionAt(2, 19))
@@ -40,9 +42,10 @@ class SignatureHelpProviderIntegrationTest extends ScalaLspTestBase:
 
   def testActiveParameterAtFirstArg(): Unit =
     val uri = configureScalaFile(
-      """object Main:
+      """object Main {
         |  def add(a: Int, b: Int): Int = a + b
         |  val result = add(
+        |}
         |""".stripMargin
     )
     val help = provider.getSignatureHelp(uri, positionAt(2, 19))
@@ -51,9 +54,10 @@ class SignatureHelpProviderIntegrationTest extends ScalaLspTestBase:
 
   def testActiveParameterAtSecondArg(): Unit =
     val uri = configureScalaFile(
-      """object Main:
+      """object Main {
         |  def add(a: Int, b: Int): Int = a + b
         |  val result = add(1,
+        |}
         |""".stripMargin
     )
     val help = provider.getSignatureHelp(uri, positionAt(2, 22))
@@ -62,8 +66,9 @@ class SignatureHelpProviderIntegrationTest extends ScalaLspTestBase:
 
   def testSignatureHelpOutsideMethodCall(): Unit =
     val uri = configureScalaFile(
-      """object Main:
+      """object Main {
         |  val x = 42
+        |}
         |""".stripMargin
     )
     val help = provider.getSignatureHelp(uri, positionAt(1, 12))
@@ -73,11 +78,12 @@ class SignatureHelpProviderIntegrationTest extends ScalaLspTestBase:
 
   def testSignatureHelpOverloadedMethod(): Unit =
     val uri = configureScalaFile(
-      """object Main:
+      """object Main {
         |  def process(x: Int): String = x.toString
         |  def process(x: String): String = x
         |  def process(x: Int, y: Int): String = (x + y).toString
         |  val result = process(
+        |}
         |""".stripMargin
     )
     val help = provider.getSignatureHelp(uri, positionAt(4, 23))
@@ -86,9 +92,10 @@ class SignatureHelpProviderIntegrationTest extends ScalaLspTestBase:
 
   def testSignatureIncludesReturnType(): Unit =
     val uri = configureScalaFile(
-      """object Main:
+      """object Main {
         |  def add(a: Int, b: Int): Int = a + b
         |  val result = add(
+        |}
         |""".stripMargin
     )
     val help = provider.getSignatureHelp(uri, positionAt(2, 19))
@@ -102,9 +109,10 @@ class SignatureHelpProviderIntegrationTest extends ScalaLspTestBase:
 
   def testSignatureParameterInfoLabels(): Unit =
     val uri = configureScalaFile(
-      """object Main:
+      """object Main {
         |  def add(a: Int, b: Int): Int = a + b
         |  val result = add(
+        |}
         |""".stripMargin
     )
     val help = provider.getSignatureHelp(uri, positionAt(2, 19))
@@ -122,9 +130,10 @@ class SignatureHelpProviderIntegrationTest extends ScalaLspTestBase:
 
   def testImplicitClauseInLabel(): Unit =
     val uri = configureScalaFile(
-      """object Main:
+      """object Main {
         |  def sorted[A](list: List[A])(implicit ord: Ordering[A]): List[A] = list.sorted
         |  val result = sorted(
+        |}
         |""".stripMargin
     )
     val help = provider.getSignatureHelp(uri, positionAt(2, 22))
@@ -138,10 +147,11 @@ class SignatureHelpProviderIntegrationTest extends ScalaLspTestBase:
 
   def testSignatureIncludesDocumentation(): Unit =
     val uri = configureScalaFile(
-      """object Main:
+      """object Main {
         |  /** Adds two integers together. */
         |  def add(a: Int, b: Int): Int = a + b
         |  val result = add(
+        |}
         |""".stripMargin
     )
     val help = provider.getSignatureHelp(uri, positionAt(3, 19))

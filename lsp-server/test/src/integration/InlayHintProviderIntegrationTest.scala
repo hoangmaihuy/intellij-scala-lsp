@@ -20,52 +20,56 @@ class InlayHintProviderIntegrationTest extends ScalaLspTestBase:
 
   def testTypeHintForInferredVal(): Unit =
     val uri = configureScalaFile(
-      """object Main:
+      """object Main {
         |  val x = 42
+        |}
         |""".stripMargin
     )
     val hints = getHints(uri, fullRange)
     assertNotNull("Should return a list of hints", hints)
     val typeHints = hints.filter(_.getKind == InlayHintKind.Type)
     val intHint = typeHints.find(h => labelOf(h).contains("Int"))
+    // Type resolution requires full project indexing; in light test mode, verify structure only
     if intHint.isDefined then
       assertEquals("Type hint should be on line 1", 1, intHint.get.getPosition.getLine)
-    // If no hints produced, the light test framework didn't resolve — that's acceptable
 
   def testTypeHintValueAfterIdentifier(): Unit =
     val uri = configureScalaFile(
-      """object Main:
+      """object Main {
         |  val x = 42
+        |}
         |""".stripMargin
     )
     val hints = getHints(uri, fullRange)
     assertNotNull("Should return a list of hints", hints)
     val typeHints = hints.filter(_.getKind == InlayHintKind.Type)
     val intHint = typeHints.find(h => labelOf(h).contains("Int"))
+    // Type resolution requires full project indexing; in light test mode, verify structure only
     if intHint.isDefined then
       // "val x" — 'x' is at char 6; end offset of identifier is char 7
       assertTrue("Type hint should be after 'x' (char >= 7)", intHint.get.getPosition.getCharacter >= 7)
-    // If no hints produced, the light test framework didn't resolve — that's acceptable
 
   def testTypeHintLabelStartsWithColon(): Unit =
     val uri = configureScalaFile(
-      """object Main:
+      """object Main {
         |  val x = 42
+        |}
         |""".stripMargin
     )
     val hints = getHints(uri, fullRange)
     assertNotNull("Should return a list of hints", hints)
     val typeHints = hints.filter(_.getKind == InlayHintKind.Type)
     val intHint = typeHints.find(h => labelOf(h).contains("Int"))
+    // Type resolution requires full project indexing; in light test mode, verify structure only
     if intHint.isDefined then
       val label = labelOf(intHint.get)
       assertTrue(s"Type hint label should start with ': ', got: $label", label.startsWith(": "))
-    // If no hints produced, the light test framework didn't resolve — that's acceptable
 
   def testNoTypeHintWhenExplicit(): Unit =
     val uri = configureScalaFile(
-      """object Main:
+      """object Main {
         |  val x: Int = 42
+        |}
         |""".stripMargin
     )
     val hints = getHints(uri, fullRange)
@@ -78,44 +82,43 @@ class InlayHintProviderIntegrationTest extends ScalaLspTestBase:
 
   def testParameterNameHints(): Unit =
     val uri = configureScalaFile(
-      """object Main:
+      """object Main {
         |  def greet(name: String, age: Int): Unit = ()
         |  greet("Alice", 30)
+        |}
         |""".stripMargin
     )
     val hints = getHints(uri, fullRange)
     assertNotNull("Should return a list of hints", hints)
     val paramHints = hints.filter(_.getKind == InlayHintKind.Parameter)
     val labels = paramHints.map(labelOf)
-    if labels.nonEmpty then
-      assertTrue(
-        s"Parameter hints should contain 'name' or 'age', labels found: $labels",
-        labels.exists(_.contains("name")) || labels.exists(_.contains("age"))
-      )
-    // If no param hints produced, the light test framework didn't resolve — that's acceptable
+    assertTrue(
+      s"Parameter hints should contain 'name' or 'age', labels found: $labels",
+      labels.exists(_.contains("name")) || labels.exists(_.contains("age"))
+    )
 
   def testParameterNameHintsOnCorrectLine(): Unit =
     val uri = configureScalaFile(
-      """object Main:
+      """object Main {
         |  def greet(name: String, age: Int): Unit = ()
         |  greet("Alice", 30)
+        |}
         |""".stripMargin
     )
     val hints = getHints(uri, fullRange)
     assertNotNull("Should return a list of hints", hints)
     val paramHints = hints.filter(h => h.getKind == InlayHintKind.Parameter && h.getPosition.getLine == 2)
     val labels = paramHints.map(labelOf)
-    if labels.nonEmpty then
-      assertTrue(
-        s"Parameter name hints on line 2 should contain 'name' or 'age', labels: $labels",
-        labels.exists(_.contains("name")) || labels.exists(_.contains("age"))
-      )
-    // If no param hints on line 2, the light test framework didn't resolve — that's acceptable
+    assertTrue(
+      s"Parameter name hints on line 2 should contain 'name' or 'age', labels: $labels",
+      labels.exists(_.contains("name")) || labels.exists(_.contains("age"))
+    )
 
   def testInferredReturnType(): Unit =
     val uri = configureScalaFile(
-      """object Main:
+      """object Main {
         |  def foo = "hello"
+        |}
         |""".stripMargin
     )
     val hints = getHints(uri, fullRange)
@@ -128,10 +131,11 @@ class InlayHintProviderIntegrationTest extends ScalaLspTestBase:
 
   def testImplicitParameterHint(): Unit =
     val uri = configureScalaFile(
-      """object Main:
+      """object Main {
         |  implicit val n: Int = 42
         |  def foo(implicit x: Int): Int = x
         |  val result = foo
+        |}
         |""".stripMargin
     )
     val hints = getHints(uri, fullRange)
@@ -161,24 +165,26 @@ class InlayHintProviderIntegrationTest extends ScalaLspTestBase:
 
   def testTypeHintForInferredVar(): Unit =
     val uri = configureScalaFile(
-      """object Main:
+      """object Main {
         |  var count = 0
+        |}
         |""".stripMargin
     )
     val hints = getHints(uri, fullRange)
     assertNotNull("Should return a list of hints", hints)
     val typeHints = hints.filter(_.getKind == InlayHintKind.Type)
     val intHint = typeHints.find(h => labelOf(h).contains("Int"))
+    // Type resolution requires full project indexing; in light test mode, verify structure only
     if intHint.isDefined then
       val label = labelOf(intHint.get)
       assertTrue(s"Type hint label should start with ': ', got: $label", label.startsWith(": "))
-    // If no hints produced, the light test framework didn't resolve — that's acceptable
 
   def testComplexExpressionProducesHints(): Unit =
     val uri = configureScalaFile(
-      """object Main:
+      """object Main {
         |  val xs = List(1, 2, 3)
         |  val ys = xs.map(_ + 1).filter(_ > 2)
+        |}
         |""".stripMargin
     )
     val hints = getHints(uri, fullRange)
