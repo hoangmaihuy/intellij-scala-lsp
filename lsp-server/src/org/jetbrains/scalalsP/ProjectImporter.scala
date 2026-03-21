@@ -1,10 +1,15 @@
 package org.jetbrains.scalalsP
 
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.externalSystem.importing.ImportSpecBuilder
+import com.intellij.openapi.externalSystem.model.ProjectSystemId
+import com.intellij.openapi.externalSystem.service.execution.ProgressExecutionMode
+import com.intellij.openapi.externalSystem.util.ExternalSystemUtil
 import com.intellij.openapi.project.{DumbService, Project, ProjectManager}
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.testFramework.LoggedErrorProcessor
 import java.io.PrintStream
+import java.lang.reflect.InvocationTargetException
 import java.nio.file.Path
 import java.util.EnumSet
 
@@ -77,8 +82,17 @@ object ProjectImporter:
 
     try
       // Use reflection to call SbtOpenProjectProvider.doLinkProject()
+      // IMPORTANT: Must load via the Scala plugin's classloader, not the LSP server's.
+      // The LSP server's PathClassLoader has its own copy of sbt-api classes, but IntelliJ
+      // services (like SbtSettings) are registered by the plugin's PluginClassLoader.
+      // Using the wrong classloader causes ClassCastException at runtime.
       System.err.println("[Import] Linking sbt project via Scala plugin...")
-      val sbtProviderClass = Class.forName("org.jetbrains.sbt.project.SbtOpenProjectProvider")
+      val pluginId = com.intellij.openapi.extensions.PluginId.getId("org.intellij.scala")
+      val plugin = com.intellij.ide.plugins.PluginManagerCore.getPlugin(pluginId)
+      if plugin == null then
+        throw RuntimeException("Scala plugin not found. Ensure the Scala plugin is installed.")
+      val pluginClassLoader = plugin.getPluginClassLoader
+      val sbtProviderClass = Class.forName("org.jetbrains.sbt.project.SbtOpenProjectProvider", true, pluginClassLoader)
       val provider = sbtProviderClass.getDeclaredConstructor().newInstance()
 
       val vf = LocalFileSystem.getInstance().refreshAndFindFileByPath(projectPath.toString)
@@ -87,10 +101,26 @@ object ProjectImporter:
 
       val doLinkMethod = sbtProviderClass.getMethod("doLinkProject",
         classOf[com.intellij.openapi.vfs.VirtualFile], classOf[Project])
-      ApplicationManager.getApplication.invokeAndWait: () =>
-        doLinkMethod.invoke(provider, vf, project)
+      var alreadyLinked = false
+      try
+        ApplicationManager.getApplication.invokeAndWait: () =>
+          doLinkMethod.invoke(provider, vf, project)
+      catch
+        case e: Exception if hasAlreadyImportedException(e) =>
+          alreadyLinked = true
 
-      System.err.println("[Import] sbt project linked, waiting for indexing...")
+      if alreadyLinked then
+        System.err.println("[Import] Project already linked, refreshing...")
+        val sbtSystemId = new ProjectSystemId("SBT")
+        ExternalSystemUtil.refreshProject(
+          projectPath.toString,
+          new ImportSpecBuilder(project, sbtSystemId)
+            .use(ProgressExecutionMode.MODAL_SYNC)
+        )
+      else
+        System.err.println("[Import] sbt project linked")
+
+      System.err.println("[Import] Waiting for indexing...")
       DumbService.getInstance(project).waitForSmartMode()
       System.err.println("[Import] Indexing complete")
 
@@ -102,3 +132,12 @@ object ProjectImporter:
       // Close and dispose the project
       ApplicationManager.getApplication.invokeAndWait: () =>
         ProjectManager.getInstance().closeAndDispose(project)
+
+  /** Traverse the exception cause chain looking for AlreadyImportedProjectException */
+  private def hasAlreadyImportedException(e: Throwable): Boolean =
+    var cause: Throwable = e
+    while cause != null do
+      if cause.getClass.getSimpleName == "AlreadyImportedProjectException" then
+        return true
+      cause = cause.getCause
+    false
