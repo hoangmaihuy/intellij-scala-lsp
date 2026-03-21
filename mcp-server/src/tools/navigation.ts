@@ -25,7 +25,7 @@ export function registerNavigationTools(
     async ({ symbolName }) => {
       const symbols = await symbolResolver.resolve(symbolName);
       if (symbols.length === 0) {
-        return { content: [{ type: 'text' as const, text: `No symbol found matching '${symbolName}'` }] };
+        return { content: [{ type: 'text' as const, text: `No symbol found matching '${symbolName}'. If the symbol is from an external library, use the _at variant (e.g. definition_at) with a file position where the symbol is referenced.` }] };
       }
 
       const results: string[] = [];
@@ -77,7 +77,7 @@ export function registerNavigationTools(
     async ({ symbolName }) => {
       const symbols = await symbolResolver.resolve(symbolName);
       if (symbols.length === 0) {
-        return { content: [{ type: 'text' as const, text: `No symbol found matching '${symbolName}'` }] };
+        return { content: [{ type: 'text' as const, text: `No symbol found matching '${symbolName}'. If the symbol is from an external library, use the _at variant (e.g. definition_at) with a file position where the symbol is referenced.` }] };
       }
 
       const allRefs: string[] = [];
@@ -138,7 +138,7 @@ export function registerNavigationTools(
     async ({ symbolName }) => {
       const symbols = await symbolResolver.resolve(symbolName);
       if (symbols.length === 0) {
-        return { content: [{ type: 'text' as const, text: `No symbol found matching '${symbolName}'` }] };
+        return { content: [{ type: 'text' as const, text: `No symbol found matching '${symbolName}'. If the symbol is from an external library, use the _at variant (e.g. definition_at) with a file position where the symbol is referenced.` }] };
       }
 
       const allImpls: string[] = [];
@@ -179,7 +179,7 @@ export function registerNavigationTools(
     async ({ symbolName }) => {
       const symbols = await symbolResolver.resolve(symbolName);
       if (symbols.length === 0) {
-        return { content: [{ type: 'text' as const, text: `No symbol found matching '${symbolName}'` }] };
+        return { content: [{ type: 'text' as const, text: `No symbol found matching '${symbolName}'. If the symbol is from an external library, use the _at variant (e.g. definition_at) with a file position where the symbol is referenced.` }] };
       }
       const results: string[] = [];
       for (const sym of symbols) {
