@@ -64,9 +64,12 @@ class ScalaLspServer(
       capabilities.setFoldingRangeProvider(true)
       capabilities.setSelectionRangeProvider(true)
       capabilities.setCallHierarchyProvider(true)
+      capabilities.setDocumentHighlightProvider(true)
 
-      // Inlay hints
-      capabilities.setInlayHintProvider(true)
+      // Inlay hints with resolve support
+      val inlayHintOptions = InlayHintRegistrationOptions()
+      inlayHintOptions.setResolveProvider(true)
+      capabilities.setInlayHintProvider(inlayHintOptions)
 
       // Signature help with trigger characters
       val signatureHelpOptions = SignatureHelpOptions(java.util.List.of("(", ","))
@@ -85,9 +88,14 @@ class ScalaLspServer(
       // Type hierarchy
       capabilities.setTypeHierarchyProvider(true)
 
+      // Code lens with resolve support
+      val codeLensOptions = CodeLensOptions()
+      codeLensOptions.setResolveProvider(true)
+      capabilities.setCodeLensProvider(codeLensOptions)
+
       // Execute commands
       val executeCommandOptions = ExecuteCommandOptions(
-        java.util.List.of("scala.organizeImports", "scala.reformat")
+        java.util.List.of("scala.organizeImports", "scala.reformat", "scala.gotoLocation")
       )
       capabilities.setExecuteCommandProvider(executeCommandOptions)
 
@@ -101,6 +109,7 @@ class ScalaLspServer(
           CodeActionKind.RefactorInline
         )
       )
+      codeActionOptions.setResolveProvider(true)
       capabilities.setCodeActionProvider(codeActionOptions)
 
       // Semantic tokens
@@ -116,11 +125,22 @@ class ScalaLspServer(
       capabilities.setDocumentFormattingProvider(true)
       capabilities.setDocumentRangeFormattingProvider(true)
 
-      // Workspace folders
+      // On-type formatting: newline triggers indentation, quote triggers triple-quote close, brace triggers block reformat
+      val onTypeOptions = DocumentOnTypeFormattingOptions("\n")
+      onTypeOptions.setMoreTriggerCharacter(java.util.List.of("\"", "}"))
+      capabilities.setDocumentOnTypeFormattingProvider(onTypeOptions)
+
+      // Workspace folders + file operations (willRenameFiles)
       val workspaceFolderOptions = WorkspaceFoldersOptions()
       workspaceFolderOptions.setSupported(true)
       workspaceFolderOptions.setChangeNotifications(true)
+      val willRenamePattern = FileOperationPattern("**/*.scala")
+      val willRenameFilter = FileOperationFilter(willRenamePattern)
+      val willRenameOptions = FileOperationOptions(java.util.List.of(willRenameFilter))
+      val fileOpsCapabilities = FileOperationsServerCapabilities()
+      fileOpsCapabilities.setWillRename(willRenameOptions)
       val workspaceCapabilities = WorkspaceServerCapabilities(workspaceFolderOptions)
+      workspaceCapabilities.setFileOperations(fileOpsCapabilities)
       capabilities.setWorkspace(workspaceCapabilities)
 
       // Open initial workspace folders (beyond the root)

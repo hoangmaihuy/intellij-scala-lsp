@@ -5,7 +5,6 @@ import com.intellij.psi.{PsiClass, PsiElement, PsiNamedElement}
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.search.searches.DefinitionsScopedSearch
 import org.eclipse.lsp4j.{Position, SymbolKind, TypeHierarchyItem}
-import org.jetbrains.plugins.scala.lang.psi.api.toplevel.typedef.{ScClass, ScObject, ScTrait}
 
 import scala.jdk.CollectionConverters.*
 
@@ -63,26 +62,61 @@ class TypeHierarchyProvider(projectManager: IntellijProjectManager):
           current = current.getParent
         Option(current)
 
-  private def isTypeElement(element: PsiElement): Boolean = element match
-    case _: ScClass | _: ScTrait | _: ScObject | _: PsiClass => true
-    case _ => false
+  private def isTypeElement(element: PsiElement): Boolean =
+    ScalaTypes.isClass(element) || ScalaTypes.isTrait(element) ||
+      ScalaTypes.isObject(element) || element.isInstanceOf[PsiClass]
 
   private def getSupertypes(element: PsiElement): Seq[PsiElement] =
     val syntheticTypes = Set("java.lang.Object", "scala.Any", "scala.AnyRef")
-    element match
-      case psiClass: com.intellij.psi.PsiClass =>
+    val caseClassSynthetics = Set("scala.Product", "scala.Serializable", "java.io.Serializable")
+
+    val isCaseClass = ScalaTypes.isClass(element) && ScalaTypes.isCase(element)
+
+    def fallbackToGetSupers(el: PsiElement): Seq[PsiElement] = el match
+      case psiClass: PsiClass =>
         psiClass.getSupers
           .filter: sup =>
             val qn = Option(sup.getQualifiedName)
-            !qn.exists(syntheticTypes.contains)
+            !qn.exists(syntheticTypes.contains) &&
+              !(isCaseClass && qn.exists(caseClassSynthetics.contains))
           .toSeq
       case _ => Seq.empty
+
+    if ScalaTypes.isTemplateDefinition(element) then
+      // Try signature-based parent resolution first for more accurate results
+      val signatureParents: Option[Seq[PsiElement]] =
+        try
+          for
+            eb <- ScalaTypes.invokeMethod(element, "extendsBlock").map(_.asInstanceOf[PsiElement])
+            tpRaw <- { try { val r = eb.getClass.getMethod("templateParents").invoke(eb); r match { case opt: Option[?] => opt; case other => Option(other) } } catch { case _: Exception => None } }
+          yield
+            try
+              val teRaw = tpRaw.getClass.getMethod("typeElements").invoke(tpRaw)
+              teRaw.asInstanceOf[scala.collection.Seq[?]].flatMap: te =>
+                val tePsi = te.asInstanceOf[PsiElement]
+                Option(tePsi.getReference).flatMap(r => Option(r.resolve()))
+              .toSeq
+            catch case _: Exception => Seq.empty
+        catch case _: Exception => None
+
+      signatureParents match
+        case Some(parents) if parents.nonEmpty =>
+          parents.filter: parent =>
+            val qn = parent match
+              case pc: PsiClass => Option(pc.getQualifiedName)
+              case _ => None
+            !qn.exists(syntheticTypes.contains) &&
+              !(isCaseClass && qn.exists(caseClassSynthetics.contains))
+        case _ => fallbackToGetSupers(element)
+    else fallbackToGetSupers(element)
 
   private def toTypeHierarchyItem(element: PsiElement): Option[TypeHierarchyItem] =
     element match
       case named: PsiNamedElement =>
         val name = Option(named.getName).getOrElse("<anonymous>")
-        for
+        val kind = getSymbolKind(element)
+        // Try direct document access first (project sources)
+        val directResult = for
           file <- Option(element.getContainingFile)
           vf <- Option(file.getVirtualFile)
           document <- Option(FileDocumentManager.getInstance().getDocument(vf))
@@ -90,11 +124,18 @@ class TypeHierarchyProvider(projectManager: IntellijProjectManager):
           val uri = PsiUtils.vfToUri(vf)
           val range = PsiUtils.elementToRange(document, element)
           val selectionRange = PsiUtils.nameElementToRange(document, element)
-          val kind = getSymbolKind(element)
           val item = TypeHierarchyItem(name, kind, uri, range, selectionRange)
           // Encode location for later resolution (same pattern as CallHierarchyProvider)
           item.setData(s"${uri}#${selectionRange.getStart.getLine}:${selectionRange.getStart.getCharacter}")
           item
+        // Fall back to PsiUtils.elementToLocation for library types (JAR source caching)
+        directResult.orElse:
+          PsiUtils.elementToLocation(element).map: location =>
+            val uri = location.getUri
+            val range = location.getRange
+            val item = TypeHierarchyItem(name, kind, uri, range, range)
+            item.setData(s"${uri}#${range.getStart.getLine}:${range.getStart.getCharacter}")
+            item
       case _ => None
 
   private def findElementFromItem(item: TypeHierarchyItem): Option[PsiElement] =
@@ -113,7 +154,7 @@ class TypeHierarchyProvider(projectManager: IntellijProjectManager):
 
     result.flatMap(Option(_))
 
-  private def getSymbolKind(element: PsiElement): SymbolKind = element match
-    case _: ScTrait  => SymbolKind.Interface
-    case _: ScObject => SymbolKind.Module
-    case _           => SymbolKind.Class
+  private def getSymbolKind(element: PsiElement): SymbolKind =
+    if ScalaTypes.isTrait(element) then SymbolKind.Interface
+    else if ScalaTypes.isObject(element) then SymbolKind.Module
+    else SymbolKind.Class

@@ -6,9 +6,6 @@ import com.intellij.psi.*
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.util.indexing.FindSymbolParameters
 import org.eclipse.lsp4j.{DocumentSymbol, SymbolInformation, Location as LspLocation}
-import org.jetbrains.plugins.scala.lang.psi.api.statements.*
-import org.jetbrains.plugins.scala.lang.psi.api.toplevel.ScPackaging
-import org.jetbrains.plugins.scala.lang.psi.api.toplevel.typedef.*
 
 import scala.jdk.CollectionConverters.*
 
@@ -59,10 +56,10 @@ class SymbolProvider(projectManager: IntellijProjectManager):
   private def isSignificantElement(element: PsiNamedElement): Boolean =
     val name = element.getName
     if name == null || name.isEmpty then return false
-    element match
-      case _: ScTypeDefinition | _: ScFunction | _: ScValue | _: ScVariable |
-           _: ScTypeAlias | _: ScPackaging | _: PsiClass | _: PsiMethod => true
-      case _ => false
+    ScalaTypes.isTypeDefinition(element) || ScalaTypes.isFunction(element) ||
+    ScalaTypes.isValue(element) || ScalaTypes.isVariable(element) ||
+    ScalaTypes.isTypeAlias(element) || ScalaTypes.isPackaging(element) ||
+    element.isInstanceOf[PsiClass] || element.isInstanceOf[PsiMethod]
 
   // --- workspace/symbol ---
 

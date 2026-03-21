@@ -3,11 +3,9 @@ package org.jetbrains.scalalsP.intellij
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.psi.{PsiElement, PsiFile, PsiMethod, PsiNamedElement, PsiReference}
 import com.intellij.psi.search.GlobalSearchScope
-import com.intellij.psi.search.searches.ReferencesSearch
+import com.intellij.psi.search.searches.{DefinitionsScopedSearch, ReferencesSearch}
 import com.intellij.psi.util.PsiTreeUtil
 import org.eclipse.lsp4j.*
-import org.jetbrains.plugins.scala.lang.psi.api.statements.{ScFunction, ScPatternDefinition, ScVariableDefinition}
-import org.jetbrains.plugins.scala.lang.psi.api.toplevel.typedef.{ScClass, ScObject, ScTrait}
 
 import scala.jdk.CollectionConverters.*
 
@@ -41,21 +39,61 @@ class CallHierarchyProvider(projectManager: IntellijProjectManager):
           val project = projectManager.getProject
           val scope = GlobalSearchScope.projectScope(project)
 
-          // Find all references to this element
-          val refs = ReferencesSearch.search(element, scope, false).findAll().asScala
+          // Expand search to include super methods and implementations (for trait/abstract methods)
+          val relatedMethods = scala.collection.mutable.LinkedHashSet[PsiElement]()
+          relatedMethods += element
+          element match
+            case method: PsiMethod =>
+              method.findSuperMethods().foreach(relatedMethods += _)
+              try DefinitionsScopedSearch.search(method, scope).findAll().asScala.foreach(relatedMethods += _)
+              catch case _: Exception => ()
+            case _ => ()
 
-          // Group references by their enclosing function/method
+          // Also include synthetic methods for case classes (apply, copy, unapply)
+          element match
+            case method: PsiMethod =>
+              Option(method.getContainingClass).foreach: containingClass =>
+                if ScalaTypes.isClass(containingClass) && ScalaTypes.isCase(containingClass) then
+                  ScalaTypes.getCompanionModule(containingClass).foreach: companion =>
+                    try
+                      ScalaTypes.invokeMethod(companion.asInstanceOf[PsiElement], "allMethods") match
+                        case Some(result) =>
+                          result.asInstanceOf[scala.collection.Seq[?]].foreach: methodSig =>
+                            try
+                              val m = methodSig.getClass.getMethod("method").invoke(methodSig).asInstanceOf[PsiMethod]
+                              if Set("apply", "copy", "unapply").contains(m.getName) then
+                                relatedMethods += m
+                            catch case _: Exception => ()
+                        case None => ()
+                    catch case _: Exception => ()
+            case _ => ()
+
+          // Group references by their enclosing function/method, cycle prevention via visited set
           val callerMap = scala.collection.mutable.LinkedHashMap[PsiElement, scala.collection.mutable.ArrayBuffer[Range]]()
+          val visitedCallers = scala.collection.mutable.HashSet[PsiElement]()
 
-          for ref <- refs do
-            val refElement = ref.getElement
-            findEnclosingCallable(refElement).foreach: caller =>
-              val ranges = callerMap.getOrElseUpdate(caller, scala.collection.mutable.ArrayBuffer())
-              // The fromRange is where the call occurs within the caller
-              val refDoc = Option(refElement.getContainingFile).flatMap(f => Option(f.getVirtualFile))
-                .flatMap(vf => Option(FileDocumentManager.getInstance().getDocument(vf)))
-              refDoc.foreach: doc =>
-                ranges += PsiUtils.elementToRange(doc, refElement)
+          // Search references to ALL related methods, not just the target
+          for relatedMethod <- relatedMethods do
+            val refs = ReferencesSearch.search(relatedMethod, scope, false).findAll().asScala
+            for ref <- refs do
+              val refElement = ref.getElement
+              findEnclosingCallable(refElement).foreach: caller =>
+                // Cycle prevention: skip if caller is already processed
+                if !visitedCallers.contains(caller) then
+                  visitedCallers += caller
+                  val ranges = callerMap.getOrElseUpdate(caller, scala.collection.mutable.ArrayBuffer())
+                  // The fromRange is where the call occurs within the caller
+                  val refDoc = Option(refElement.getContainingFile).flatMap(f => Option(f.getVirtualFile))
+                    .flatMap(vf => Option(FileDocumentManager.getInstance().getDocument(vf)))
+                  refDoc.foreach: doc =>
+                    ranges += PsiUtils.elementToRange(doc, refElement)
+                else
+                  // Caller already visited but add additional ranges
+                  val ranges = callerMap.getOrElseUpdate(caller, scala.collection.mutable.ArrayBuffer())
+                  val refDoc = Option(refElement.getContainingFile).flatMap(f => Option(f.getVirtualFile))
+                    .flatMap(vf => Option(FileDocumentManager.getInstance().getDocument(vf)))
+                  refDoc.foreach: doc =>
+                    ranges += PsiUtils.elementToRange(doc, refElement)
 
           callerMap.flatMap: (caller, ranges) =>
             toCallHierarchyItem(caller).map: callerItem =>
@@ -146,10 +184,10 @@ class CallHierarchyProvider(projectManager: IntellijProjectManager):
       current = current.getParent
     None
 
-  private def isCallable(element: PsiElement): Boolean = element match
-    case _: ScFunction | _: ScPatternDefinition | _: ScVariableDefinition |
-         _: PsiMethod | _: ScClass | _: ScObject | _: ScTrait => true
-    case _ => false
+  private def isCallable(element: PsiElement): Boolean =
+    ScalaTypes.isFunction(element) || ScalaTypes.isPatternDefinition(element) ||
+      ScalaTypes.isVariableDefinition(element) || element.isInstanceOf[PsiMethod] ||
+      ScalaTypes.isClass(element) || ScalaTypes.isObject(element) || ScalaTypes.isTrait(element)
 
   private def collectOutgoingRefs(
     element: PsiElement,

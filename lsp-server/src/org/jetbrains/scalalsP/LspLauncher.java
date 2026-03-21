@@ -141,6 +141,7 @@ public final class LspLauncher {
         @Override public CompletableFuture<java.util.List<? extends DocumentHighlight>> documentHighlight(DocumentHighlightParams params) { return delegate.documentHighlight(params); }
         @Override public CompletableFuture<java.util.List<Either<SymbolInformation, DocumentSymbol>>> documentSymbol(DocumentSymbolParams params) { return delegate.documentSymbol(params); }
         @Override public CompletableFuture<java.util.List<Either<Command, CodeAction>>> codeAction(CodeActionParams params) { return delegate.codeAction(params); }
+        @Override public CompletableFuture<CodeAction> resolveCodeAction(CodeAction params) { return delegate.resolveCodeAction(params); }
         @Override public CompletableFuture<java.util.List<FoldingRange>> foldingRange(FoldingRangeRequestParams params) { return delegate.foldingRange(params); }
         @Override public CompletableFuture<java.util.List<SelectionRange>> selectionRange(SelectionRangeParams params) { return delegate.selectionRange(params); }
         @Override public CompletableFuture<java.util.List<InlayHint>> inlayHint(InlayHintParams params) { return delegate.inlayHint(params); }
@@ -159,6 +160,9 @@ public final class LspLauncher {
         @Override public CompletableFuture<java.util.List<DocumentLink>> documentLink(DocumentLinkParams params) { return delegate.documentLink(params); }
         @Override public CompletableFuture<SemanticTokens> semanticTokensFull(SemanticTokensParams params) { return delegate.semanticTokensFull(params); }
         @Override public CompletableFuture<SemanticTokens> semanticTokensRange(SemanticTokensRangeParams params) { return delegate.semanticTokensRange(params); }
+        @Override public CompletableFuture<java.util.List<? extends CodeLens>> codeLens(CodeLensParams params) { return delegate.codeLens(params); }
+        @Override public CompletableFuture<CodeLens> resolveCodeLens(CodeLens params) { return delegate.resolveCodeLens(params); }
+        @Override public CompletableFuture<java.util.List<? extends TextEdit>> onTypeFormatting(DocumentOnTypeFormattingParams params) { return delegate.onTypeFormatting(params); }
         @Override public void didOpen(DidOpenTextDocumentParams params) { delegate.didOpen(params); }
         @Override public void didChange(DidChangeTextDocumentParams params) { delegate.didChange(params); }
         @Override public void didClose(DidCloseTextDocumentParams params) { delegate.didClose(params); }
@@ -177,6 +181,7 @@ public final class LspLauncher {
 
         @Override public CompletableFuture<Object> executeCommand(ExecuteCommandParams params) { return delegate.executeCommand(params); }
         @Override public CompletableFuture<Either<java.util.List<? extends SymbolInformation>, java.util.List<? extends WorkspaceSymbol>>> symbol(WorkspaceSymbolParams params) { return delegate.symbol(params); }
+        @Override public CompletableFuture<WorkspaceEdit> willRenameFiles(RenameFilesParams params) { return delegate.willRenameFiles(params); }
         @Override public void didChangeConfiguration(DidChangeConfigurationParams params) { delegate.didChangeConfiguration(params); }
         @Override public void didChangeWatchedFiles(DidChangeWatchedFilesParams params) { delegate.didChangeWatchedFiles(params); }
     }

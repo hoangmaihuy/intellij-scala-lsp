@@ -1,9 +1,9 @@
 package org.jetbrains.scalalsP.intellij
 
+import com.intellij.lang.LanguageDocumentation
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.psi.{PsiElement, PsiMethod, PsiNamedElement}
-import org.eclipse.lsp4j.{ParameterInformation, Position, SignatureHelp, SignatureInformation}
-import org.jetbrains.plugins.scala.lang.psi.api.statements.ScFunction
+import org.eclipse.lsp4j.{MarkupContent, MarkupKind, ParameterInformation, Position, SignatureHelp, SignatureInformation}
 
 import scala.jdk.CollectionConverters.*
 
@@ -111,33 +111,73 @@ class SignatureHelpProvider(projectManager: IntellijProjectManager):
 
   private def extractSingleSignature(element: PsiElement): Option[SignatureInformation] =
     // Try ScFunction reflection first
-    tryScFunction(element)
+    val sigOpt = tryScFunction(element)
       .orElse(tryPsiMethod(element))
       .orElse(tryNavigationItem(element))
 
-  /** Try to extract signature from Scala plugin's ScFunction using direct types. */
-  private def tryScFunction(element: PsiElement): Option[SignatureInformation] =
-    element match
-      case fn: ScFunction =>
-        try
-          val name = fn.name
-          val clauses = fn.effectiveParameterClauses
-          val params = if clauses.nonEmpty then
-            clauses.head.parameters.map: param =>
-              val pName = param.name
-              val pType = param.typeElement.map(_.getText).getOrElse("Any")
-              (pName, pType)
-            .toList
-          else List.empty
+    sigOpt.map: sig =>
+      // Attach ScalaDoc documentation if available
+      try
+        val docProvider = LanguageDocumentation.INSTANCE.forLanguage(element.getLanguage)
+        if docProvider != null then
+          val docText = docProvider.generateDoc(element, null)
+          if docText != null && docText.nonEmpty then
+            sig.setDocumentation(MarkupContent(MarkupKind.MARKDOWN, HoverProvider.htmlToMarkdown(docText)))
+      catch
+        case _: Exception => () // ignore documentation errors
+      sig
 
-          val paramStr = params.map(p => s"${p._1}: ${p._2}").mkString(", ")
-          val label = s"$name($paramStr)"
-          val sig = SignatureInformation(label)
-          sig.setParameters(params.map((pName, pType) => ParameterInformation(s"$pName: $pType")).asJava)
-          Some(sig)
-        catch
-          case _: Exception => None
-      case _ => None
+  /** Try to extract signature from Scala plugin's ScFunction using reflection. */
+  private def tryScFunction(element: PsiElement): Option[SignatureInformation] =
+    if !ScalaTypes.isFunction(element) then return None
+    try
+      val name = element.asInstanceOf[PsiNamedElement].getName
+      val clausesRaw = ScalaTypes.invokeMethod(element, "effectiveParameterClauses")
+        .getOrElse(return None)
+      val clauses = clausesRaw.asInstanceOf[scala.collection.Seq[?]]
+
+      // Collect all parameters across all clauses for ParameterInformation
+      val allParams = scala.collection.mutable.ListBuffer.empty[(String, String)]
+
+      // Build label from all parameter clauses
+      val clauseStrings = clauses.map: clause =>
+        val clauseParamsRaw = clause.getClass.getMethod("parameters").invoke(clause)
+        val clauseParams = clauseParamsRaw.asInstanceOf[scala.collection.Seq[?]].map: param =>
+          val pName = param.asInstanceOf[PsiNamedElement].getName
+          val pTypeOpt = try
+            param.getClass.getMethod("typeElement").invoke(param) match
+              case opt: Option[?] => opt.map(te => te.asInstanceOf[PsiElement].getText)
+              case _ => None
+          catch case _: Exception => None
+          val pType = pTypeOpt.getOrElse("Any")
+          allParams += ((pName, pType))
+          s"$pName: $pType"
+        .toList
+        val paramsStr = clauseParams.mkString(", ")
+
+        // Check if this clause is implicit or using
+        val hasImplicit = try clause.getClass.getMethod("hasImplicitKeyword").invoke(clause).asInstanceOf[Boolean]
+          catch case _: Exception => false
+        val hasUsing = try clause.getClass.getMethod("hasUsingKeyword").invoke(clause).asInstanceOf[Boolean]
+          catch case _: Exception => false
+
+        if hasImplicit then s"(implicit $paramsStr)"
+        else if hasUsing then s"(using $paramsStr)"
+        else s"($paramsStr)"
+      .toList
+
+      val returnTypeStr = try
+        ScalaTypes.invokeMethod(element, "returnTypeElement") match
+          case Some(rte) => rte.asInstanceOf[PsiElement].getText
+          case None => "Unit"
+      catch case _: Exception => "Unit"
+      val label = s"$name${clauseStrings.mkString}: $returnTypeStr"
+
+      val sig = SignatureInformation(label)
+      sig.setParameters(allParams.map((pName, pType) => ParameterInformation(s"$pName: $pType")).asJava)
+      Some(sig)
+    catch
+      case _: Exception => None
 
   /** Try to extract signature from a standard Java PsiMethod. */
   private def tryPsiMethod(element: PsiElement): Option[SignatureInformation] =
@@ -150,7 +190,8 @@ class SignatureHelpProvider(projectManager: IntellijProjectManager):
           val pType = Option(p.getType).map(_.getPresentableText).getOrElse("Any")
           (pName, pType)
         val paramStr = paramInfos.map(p => s"${p._1}: ${p._2}").mkString(", ")
-        val label = s"$name($paramStr)"
+        val returnTypeStr = Option(method.getReturnType).map(_.getPresentableText).getOrElse("Unit")
+        val label = s"$name($paramStr): $returnTypeStr"
         val sig = SignatureInformation(label)
         sig.setParameters(paramInfos.map: (pName, pType) =>
           ParameterInformation(s"$pName: $pType")

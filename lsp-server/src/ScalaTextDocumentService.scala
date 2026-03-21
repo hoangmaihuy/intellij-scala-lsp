@@ -33,8 +33,11 @@ class ScalaTextDocumentService(projectManager: IntellijProjectManager) extends T
   private val typeHierarchyProvider = TypeHierarchyProvider(projectManager)
   private val signatureHelpProvider = SignatureHelpProvider(projectManager)
   private val formattingProvider = FormattingProvider(projectManager)
+  private val onTypeFormattingProvider = OnTypeFormattingProvider(projectManager)
   private val documentLinkProvider = DocumentLinkProvider(projectManager)
   private val semanticTokensProvider = SemanticTokensProvider(projectManager)
+  private val documentHighlightProvider = DocumentHighlightProvider(projectManager)
+  private val codeLensProvider = CodeLensProvider(projectManager, List(SuperMethodCodeLens()))
 
   def connect(client: LanguageClient): Unit =
     this.client = client
@@ -146,6 +149,10 @@ class ScalaTextDocumentService(projectManager: IntellijProjectManager) extends T
         params.getRange
       ).asJava
 
+  override def resolveInlayHint(hint: InlayHint): CompletableFuture[InlayHint] =
+    CompletableFuture.supplyAsync: () =>
+      inlayHintProvider.resolveInlayHint(hint)
+
   // --- Completion ---
 
   override def completion(params: CompletionParams): CompletableFuture[LspEither[util.List[CompletionItem], CompletionList]] =
@@ -178,6 +185,10 @@ class ScalaTextDocumentService(projectManager: IntellijProjectManager) extends T
         params.getRange,
         params.getContext
       ).map(ca => LspEither.forRight[Command, CodeAction](ca)).asJava
+
+  override def resolveCodeAction(unresolved: CodeAction): CompletableFuture[CodeAction] =
+    CompletableFuture.supplyAsync: () =>
+      codeActionProvider.resolveCodeAction(unresolved)
 
   // --- Rename ---
 
@@ -228,6 +239,14 @@ class ScalaTextDocumentService(projectManager: IntellijProjectManager) extends T
         params.getRange
       ).asJava
 
+  override def onTypeFormatting(params: DocumentOnTypeFormattingParams): CompletableFuture[util.List[? <: TextEdit]] =
+    CompletableFuture.supplyAsync: () =>
+      onTypeFormattingProvider.onTypeFormatting(
+        params.getTextDocument.getUri,
+        params.getPosition,
+        params.getCh
+      ).asJava
+
   // --- Document Links ---
 
   override def documentLink(params: DocumentLinkParams): CompletableFuture[util.List[DocumentLink]] =
@@ -246,3 +265,22 @@ class ScalaTextDocumentService(projectManager: IntellijProjectManager) extends T
         params.getTextDocument.getUri,
         params.getRange
       )
+
+  // --- Document Highlights ---
+
+  override def documentHighlight(params: DocumentHighlightParams): CompletableFuture[util.List[? <: DocumentHighlight]] =
+    CompletableFuture.supplyAsync: () =>
+      documentHighlightProvider.getDocumentHighlights(
+        params.getTextDocument.getUri,
+        params.getPosition
+      ).asJava
+
+  // --- Code Lens ---
+
+  override def codeLens(params: CodeLensParams): CompletableFuture[util.List[? <: CodeLens]] =
+    CompletableFuture.supplyAsync: () =>
+      codeLensProvider.getCodeLenses(params.getTextDocument.getUri).asJava
+
+  override def resolveCodeLens(codeLens: CodeLens): CompletableFuture[CodeLens] =
+    CompletableFuture.supplyAsync: () =>
+      codeLensProvider.resolveCodeLens(codeLens)

@@ -7,7 +7,7 @@ import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.psi.codeStyle.CodeStyleManager
 import org.eclipse.lsp4j.*
 import org.eclipse.lsp4j.services.{LanguageClient, WorkspaceService}
-import org.jetbrains.scalalsP.intellij.{IntellijProjectManager, PsiUtils, SymbolProvider}
+import org.jetbrains.scalalsP.intellij.{IntellijProjectManager, PsiUtils, ScalaTypes, SymbolProvider}
 
 import java.util
 import java.util.concurrent.CompletableFuture
@@ -39,6 +39,16 @@ class ScalaWorkspaceService(projectManager: IntellijProjectManager) extends Work
       case "scala.reformat" =>
         executeOnFile(args): psiFile =>
           CodeStyleManager.getInstance(projectManager.getProject).reformat(psiFile)
+      case "scala.gotoLocation" =>
+        if client != null && args != null && args.size() >= 3 then
+          val targetUri = args.get(0).toString.replaceAll("\"", "")
+          val targetLine = args.get(1).toString.replaceAll("\"", "").toInt
+          val targetChar = args.get(2).toString.replaceAll("\"", "").toInt
+          val showParams = ShowDocumentParams(targetUri)
+          showParams.setSelection(Range(Position(targetLine, targetChar), Position(targetLine, targetChar)))
+          showParams.setTakeFocus(true)
+          client.showDocument(showParams).get()
+        null
       case _ =>
         System.err.println(s"[WorkspaceService] Unknown command: $command")
         null
@@ -115,6 +125,65 @@ class ScalaWorkspaceService(projectManager: IntellijProjectManager) extends Work
         System.err.println(s"[WorkspaceService] Removing workspace folder: $path")
         projectManager.closeProject(path)
 
-  override def didChangeConfiguration(params: DidChangeConfigurationParams): Unit = ()
+  override def willRenameFiles(params: RenameFilesParams): CompletableFuture[WorkspaceEdit] =
+    CompletableFuture.supplyAsync: () =>
+      try
+        val allDocChanges = new java.util.ArrayList[org.eclipse.lsp4j.jsonrpc.messages.Either[TextDocumentEdit, ResourceOperation]]()
 
-  override def didChangeWatchedFiles(params: DidChangeWatchedFilesParams): Unit = ()
+        params.getFiles.asScala.foreach: fileRename =>
+          val oldUri = fileRename.getOldUri
+          val newUri = fileRename.getNewUri
+
+          // Only process Scala file renames
+          if oldUri.endsWith(".scala") then
+            val oldFileName = oldUri.substring(oldUri.lastIndexOf('/') + 1).stripSuffix(".scala")
+            val newFileName = newUri.substring(newUri.lastIndexOf('/') + 1).stripSuffix(".scala")
+
+            // Find top-level type definitions matching old filename and generate rename edits
+            val edits = projectManager.smartReadAction: () =>
+              (for
+                psiFile <- projectManager.findPsiFile(oldUri)
+                vf <- projectManager.findVirtualFile(oldUri)
+                document <- Option(FileDocumentManager.getInstance().getDocument(vf))
+              yield
+                import com.intellij.psi.PsiNameIdentifierOwner
+                psiFile.getChildren.collect:
+                  case elem: PsiNameIdentifierOwner if ScalaTypes.isTypeDefinition(elem) && elem.getName == oldFileName => elem
+                .flatMap: td =>
+                  Option(td.getNameIdentifier).map: nameId =>
+                    val start = PsiUtils.offsetToPosition(document, nameId.getTextRange.getStartOffset)
+                    val end = PsiUtils.offsetToPosition(document, nameId.getTextRange.getEndOffset)
+                    TextEdit(Range(start, end), newFileName)
+                .toSeq
+              ).getOrElse(Seq.empty)
+
+            if edits.nonEmpty then
+              val versionedId = VersionedTextDocumentIdentifier(oldUri, null)
+              val docEdit = TextDocumentEdit(versionedId, edits.asJava)
+              allDocChanges.add(org.eclipse.lsp4j.jsonrpc.messages.Either.forLeft(docEdit))
+
+        if allDocChanges.isEmpty then WorkspaceEdit()
+        else WorkspaceEdit(allDocChanges)
+      catch
+        case e: Exception =>
+          System.err.println(s"[WorkspaceService] willRenameFiles error: ${e.getMessage}")
+          WorkspaceEdit()
+
+  override def didChangeConfiguration(params: DidChangeConfigurationParams): Unit =
+    System.err.println(s"[WorkspaceService] Configuration changed: ${params.getSettings}")
+
+  override def didChangeWatchedFiles(params: DidChangeWatchedFilesParams): Unit =
+    if params.getChanges == null || params.getChanges.isEmpty then return
+    // Collect changed virtual files and trigger async VFS refresh so IntelliJ picks up external changes
+    val changedFiles = params.getChanges.asScala.flatMap: change =>
+      val uri = change.getUri
+      projectManager.findVirtualFile(uri)
+    .toArray
+
+    if changedFiles.nonEmpty then
+      com.intellij.openapi.vfs.VfsUtil.markDirtyAndRefresh(
+        /* async= */ true,
+        /* recursive= */ false,
+        /* reloadChildren= */ false,
+        changedFiles*
+      )
