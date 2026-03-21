@@ -36,9 +36,10 @@ export function registerNavigationTools(
         } as DefinitionParams);
 
         const defLocations = Array.isArray(defResult) ? defResult : defResult ? [defResult] : [];
+        // If textDocument/definition returns empty, we're already at the definition
+        // (workspace/symbol gave us the declaration location). Use it directly.
         if (defLocations.length === 0) {
-          results.push(`${sym.name}: definition not found`);
-          continue;
+          defLocations.push(sym.location);
         }
 
         for (const defLoc of defLocations) {
