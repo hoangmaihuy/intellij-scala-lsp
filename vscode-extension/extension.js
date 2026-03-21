@@ -1,7 +1,5 @@
 const { LanguageClient, TransportKind } = require("vscode-languageclient/node");
 const vscode = require("vscode");
-const path = require("path");
-const fs = require("fs");
 
 let client;
 let outputChannel;
@@ -16,33 +14,6 @@ function setStatus(icon, text, tooltip) {
   statusBarItem.text = `$(${icon}) ${text}`;
   statusBarItem.tooltip = tooltip || text;
   statusBarItem.show();
-}
-
-function findProjectRoot(extPath) {
-  let dir = fs.realpathSync(extPath);
-  for (let i = 0; i < 5; i++) {
-    const candidate = path.join(dir, "launcher", "launch-lsp.sh");
-    if (fs.existsSync(candidate)) return dir;
-    dir = path.dirname(dir);
-  }
-  return null;
-}
-
-function findIntellijSdk() {
-  const cacheDir = path.join(
-    process.env.HOME || process.env.USERPROFILE || "",
-    ".intellij-scala-lspPluginIC",
-    "sdk"
-  );
-  if (fs.existsSync(cacheDir)) {
-    const versions = fs.readdirSync(cacheDir).filter(f =>
-      fs.statSync(path.join(cacheDir, f)).isDirectory()
-    ).sort().reverse();
-    if (versions.length > 0) {
-      return path.join(cacheDir, versions[0]);
-    }
-  }
-  return null;
 }
 
 function shortUri(uri) {
@@ -134,39 +105,15 @@ function activate(context) {
   setStatus("sync~spin", "Scala LSP: Starting", "IntelliJ Scala LSP — starting server");
 
   const config = vscode.workspace.getConfiguration("intellijScalaLsp");
-  const extPath = context.extensionPath;
-  const projectRoot = findProjectRoot(extPath);
 
-  const launcher = config.get("launcher") ||
-    (projectRoot ? path.join(projectRoot, "launcher", "launch-lsp.sh") : "");
-  const intellijHome = config.get("intellijHome") || findIntellijSdk() || "";
+  // Use configured launcher, or fall back to 'intellij-scala-lsp' in PATH
+  const launcher = config.get("launcher") || "intellij-scala-lsp";
 
-  log(`Extension path: ${extPath}`);
-  log(`Project root: ${projectRoot || "(not found)"}`);
-  log(`Launcher: ${launcher || "(not set)"}`);
-  log(`IntelliJ SDK: ${intellijHome || "(not set)"}`);
-
-  if (!launcher || !fs.existsSync(launcher)) {
-    const msg = `Launcher not found: ${launcher || "(empty)"}. Set intellijScalaLsp.launcher in settings.`;
-    log(`ERROR: ${msg}`);
-    setStatus("error", "Scala LSP: Error", msg);
-    vscode.window.showErrorMessage(`IntelliJ Scala LSP: ${msg}`);
-    return;
-  }
-
-  if (!intellijHome) {
-    log("WARNING: IntelliJ SDK not detected. Server may fail to start.");
-  }
+  log(`Launcher: ${launcher}`);
 
   const serverOptions = {
-    command: "bash",
-    args: [launcher],
-    options: {
-      env: {
-        ...process.env,
-        INTELLIJ_HOME: intellijHome,
-      },
-    },
+    command: launcher,
+    args: [],
     transport: TransportKind.stdio,
   };
 
