@@ -3,13 +3,6 @@ package org.jetbrains.scalalsP.intellij
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.psi.{PsiClass, PsiElement, PsiFile, PsiMethod, PsiNamedElement, PsiPolyVariantReference}
 import org.eclipse.lsp4j.*
-import org.jetbrains.plugins.scala.lang.psi.api.base.{ScAnnotationsHolder, ScFieldId, ScReference, ScStableCodeReference}
-import org.jetbrains.plugins.scala.lang.psi.api.base.patterns.ScBindingPattern
-import org.jetbrains.plugins.scala.lang.psi.api.expr.ScReferenceExpression
-import org.jetbrains.plugins.scala.lang.psi.api.statements.*
-import org.jetbrains.plugins.scala.lang.psi.api.statements.params.{ScParameter, ScTypeParam}
-import org.jetbrains.plugins.scala.lang.psi.api.toplevel.typedef.*
-import org.jetbrains.plugins.scala.lang.psi.api.toplevel.templates.ScTemplateBody
 
 import java.util.{List as JList}
 import scala.jdk.CollectionConverters.*
@@ -53,79 +46,83 @@ object SemanticTokensProvider:
     name.nonEmpty && !name.head.isLetter && name.head != '_'
 
   /** Classify a resolved PSI element into a semantic token type index. */
-  def classifyElement(element: PsiElement): Option[Int] = element match
-    case _: ScParameter => Some(8)       // parameter (covers ScClassParameter too)
-    case _: ScEnum      => Some(4)       // enum (before ScClass — ScEnum extends ScClass)
-    case _: ScClass     => Some(2)       // class
-    case _: ScTrait     => Some(3)       // interface
-    case _: ScObject    => Some(2)       // class (object)
-    case _: ScTypeAlias => Some(1)       // type
-    case _: ScTypeParam => Some(9)       // typeParameter
-    case _: ScFunction | _: PsiMethod =>
+  def classifyElement(element: PsiElement): Option[Int] =
+    if ScalaTypes.isParameter(element) then Some(8)       // parameter (covers ScClassParameter too)
+    else if ScalaTypes.isEnum(element) then Some(4)       // enum (before ScClass — ScEnum extends ScClass)
+    else if ScalaTypes.isClass(element) then Some(2)      // class
+    else if ScalaTypes.isTrait(element) then Some(3)      // interface
+    else if ScalaTypes.isObject(element) then Some(2)     // class (object)
+    else if ScalaTypes.isTypeAlias(element) then Some(1)  // type
+    else if ScalaTypes.isTypeParam(element) then Some(9)  // typeParameter
+    else if ScalaTypes.isFunction(element) || element.isInstanceOf[PsiMethod] then
       // Check if it's an operator method (symbolic name)
       val methodName = try element.asInstanceOf[PsiNamedElement].getName catch case _: Exception => null
       if methodName != null && isOperatorName(methodName) then Some(14) // operator
       else
         // Synthetic accessors (e.g. case class param getters) should classify as their original element
         val navElement = element.getNavigationElement
-        if navElement != null && (navElement ne element) then navElement match
-          case _: ScParameter      => Some(8) // parameter accessor
-          case _: ScBindingPattern => Some(6) // property accessor
-          case _: ScFieldId        => Some(6) // property accessor
-          case _                   => Some(5) // method
+        if navElement != null && (navElement ne element) then
+          if ScalaTypes.isParameter(navElement) then Some(8)       // parameter accessor
+          else if ScalaTypes.isBindingPattern(navElement) then Some(6) // property accessor
+          else if ScalaTypes.isFieldId(navElement) then Some(6)    // property accessor
+          else Some(5)                                              // method
         else Some(5) // method
-    case bp: ScBindingPattern => classifyBinding(bp)
-    case fi: ScFieldId        => classifyFieldId(fi)
-    case _: PsiClass          => Some(2) // Java class fallback
-    case _ =>
+    else if ScalaTypes.isBindingPattern(element) then classifyBinding(element)
+    else if ScalaTypes.isFieldId(element) then classifyFieldId(element)
+    else if element.isInstanceOf[PsiClass] then Some(2) // Java class fallback
+    else
       System.err.println(s"[SemanticTokens] Unclassified resolved element: ${element.getClass.getName}")
       None
 
   /** Classify a binding pattern as property (class member) or variable (local). */
   private def classifyBinding(element: PsiElement): Option[Int] =
-    element match
-      case bp: ScBindingPattern =>
-        if bp.isClassMember then Some(6)  // property
-        else Some(7)                       // variable (local val/var/pattern)
-      case _ =>
-        element.getParent match
-          case _: ScValue | _: ScPatternDefinition =>
-            if element.getParent.getParent.isInstanceOf[ScTemplateBody] then Some(6) else Some(7)
-          case _: ScVariable =>
-            if element.getParent.getParent.isInstanceOf[ScTemplateBody] then Some(6) else Some(7)
-          case _ => Some(7)
+    if ScalaTypes.isBindingPattern(element) then
+      if ScalaTypes.isClassMember(element) then Some(6)  // property
+      else Some(7)                                        // variable (local val/var/pattern)
+    else
+      val parent = element.getParent
+      if ScalaTypes.isValue(parent) || ScalaTypes.isPatternDefinition(parent) then
+        if ScalaTypes.isTemplateBody(parent.getParent) then Some(6) else Some(7)
+      else if ScalaTypes.isVariable(parent) then
+        if ScalaTypes.isTemplateBody(parent.getParent) then Some(6) else Some(7)
+      else Some(7)
 
   /** Classify a field identifier based on parent context. */
   private def classifyFieldId(element: PsiElement): Option[Int] =
-    element.getParent match
-      case _: ScValue | _: ScPatternDefinition | _: ScVariable =>
-        if element.getParent.getParent.isInstanceOf[ScTemplateBody] then Some(6) // property
-        else Some(7) // variable
-      case _ => Some(7)
+    val parent = element.getParent
+    if ScalaTypes.isValue(parent) || ScalaTypes.isPatternDefinition(parent) || ScalaTypes.isVariable(parent) then
+      if ScalaTypes.isTemplateBody(parent.getParent) then Some(6) // property
+      else Some(7) // variable
+    else Some(7)
 
   /** Get modifier bits for a resolved element */
   def classifyModifiers(element: PsiElement): Int =
-    var mods = element match
-      case _: ScTrait  => 4 // abstract
-      case _: ScObject => 2 // static
-      case _           => 0
+    var mods =
+      if ScalaTypes.isTrait(element) then 4       // abstract
+      else if ScalaTypes.isObject(element) then 2  // static
+      else 0
     // Check for deprecated annotation via ScAnnotationsHolder (Scala) or PsiModifierListOwner (Java)
-    val isDeprecated = element match
-      case holder: ScAnnotationsHolder =>
+    val isDeprecated =
+      if ScalaTypes.isAnnotationsHolder(element) then
         try
           // First try qualified name lookup (works when stdlib is available)
-          val byQName = holder.hasAnnotation("scala.deprecated") || holder.hasAnnotation("java.lang.Deprecated")
+          val byQName = ScalaTypes.hasAnnotation(element, "scala.deprecated") || ScalaTypes.hasAnnotation(element, "java.lang.Deprecated")
           if byQName then true
           else
             // Fallback: check annotation text for "deprecated" (works without stdlib)
-            holder.annotations.exists: ann =>
-              val typeText = ann.typeElement.getText
+            ScalaTypes.getAnnotations(element).exists: ann =>
+              val typeText = try
+                val typeElem = ann.getClass.getMethod("typeElement").invoke(ann)
+                typeElem.asInstanceOf[PsiElement].getText
+              catch case _: Exception => ""
               typeText == "deprecated" || typeText.endsWith(".deprecated") || typeText == "Deprecated"
         catch case _: Exception => false
-      case mod: com.intellij.psi.PsiModifierListOwner =>
-        try mod.hasAnnotation("java.lang.Deprecated")
-        catch case _: Exception => false
-      case _ => false
+      else
+        element match
+          case mod: com.intellij.psi.PsiModifierListOwner =>
+            try mod.hasAnnotation("java.lang.Deprecated")
+            catch case _: Exception => false
+          case _ => false
     if isDeprecated then mods |= 128 // bit 7 = deprecated
     mods
 
@@ -139,6 +136,7 @@ class SemanticTokensProvider(projectManager: IntellijProjectManager):
     catch
       case e: Exception =>
         System.err.println(s"[SemanticTokens] Error computing full tokens: ${e.getMessage}")
+        e.printStackTrace(System.err)
         SemanticTokens(java.util.Collections.emptyList())
 
   def getSemanticTokensRange(uri: String, range: Range): SemanticTokens =
@@ -147,6 +145,7 @@ class SemanticTokensProvider(projectManager: IntellijProjectManager):
     catch
       case e: Exception =>
         System.err.println(s"[SemanticTokens] Error computing range tokens: ${e.getMessage}")
+        e.printStackTrace(System.err)
         SemanticTokens(java.util.Collections.emptyList())
 
   private def computeTokens(uri: String, rangeOpt: Option[Range]): SemanticTokens =
@@ -211,17 +210,20 @@ class SemanticTokensProvider(projectManager: IntellijProjectManager):
           case _ =>
             Option(ref.resolve())
       catch
-        case _: Exception => None
+        case e: Exception =>
+          System.err.println(s"[SemanticTokens] Exception resolving '${element.getText.take(30)}': ${e.getClass.getSimpleName}: ${e.getMessage}")
+          None
 
       resolved match
         case Some(res) =>
-          classifyElement(res).foreach: tokenType =>
-            val modifiers = classifyModifiers(res)
-            val nameRange = getNameRange(element)
-            tokens += ((nameRange._1, nameRange._2, tokenType, modifiers))
-        case None =>
-          val nameRange = getNameRange(element)
-          System.err.println(s"[SemanticTokens] Unresolved reference: ${element.getText.take(50)} at offset ${nameRange._1}")
+          val classified = classifyElement(res)
+          classified match
+            case Some(tokenType) =>
+              val modifiers = classifyModifiers(res)
+              val nameRange = getNameRange(element)
+              tokens += ((nameRange._1, nameRange._2, tokenType, modifiers))
+            case None => ()
+        case None => ()
 
     // Check for keyword tokens (leaf elements with keyword token type)
     if element.getChildren.isEmpty then
@@ -260,50 +262,47 @@ class SemanticTokensProvider(projectManager: IntellijProjectManager):
       collectTokens(child, rangeStart, rangeEnd, tokens)
       child = child.getNextSibling
 
-  private def isIdentifierLike(element: PsiElement): Boolean = element match
-    case _: ScReference | _: ScStableCodeReference | _: ScReferenceExpression => true
-    case _ => false
+  private def isIdentifierLike(element: PsiElement): Boolean =
+    ScalaTypes.isReference(element)
 
-  private def isDeclaration(element: PsiElement): Boolean = element match
-    case _: ScClass | _: ScTrait | _: ScObject | _: ScEnum => true
-    case _: ScFunctionDefinition | _: ScFunctionDeclaration => true
-    case _: ScTypeAlias | _: ScGiven                        => true
-    case _: ScParameter | _: ScBindingPattern               => true
-    case _                                                  => false
+  private def isDeclaration(element: PsiElement): Boolean =
+    ScalaTypes.isClass(element) || ScalaTypes.isTrait(element) || ScalaTypes.isObject(element) || ScalaTypes.isEnum(element) ||
+    ScalaTypes.isFunctionDefinition(element) || ScalaTypes.isFunctionDeclaration(element) ||
+    ScalaTypes.isTypeAlias(element) || ScalaTypes.isGiven(element) ||
+    ScalaTypes.isParameter(element) || ScalaTypes.isBindingPattern(element)
 
-  private def classifyDeclaration(element: PsiElement): Option[(Int, Int)] = element match
-    case _: ScParameter       => Some((8, 0)) // parameter
-    case _: ScEnum            => Some((4, 0)) // enum (before ScClass)
-    case _: ScClass           => Some((2, 0)) // class
-    case _: ScTrait           => Some((3, 4)) // interface + abstract
-    case _: ScObject          => Some((2, 2)) // class + static
-    case f: ScFunction =>
-      val name = try f.getName catch case _: Exception => null
+  private def classifyDeclaration(element: PsiElement): Option[(Int, Int)] =
+    if ScalaTypes.isParameter(element) then Some((8, 0))       // parameter
+    else if ScalaTypes.isEnum(element) then Some((4, 0))       // enum (before ScClass)
+    else if ScalaTypes.isClass(element) then Some((2, 0))      // class
+    else if ScalaTypes.isTrait(element) then Some((3, 4))      // interface + abstract
+    else if ScalaTypes.isObject(element) then Some((2, 2))     // class + static
+    else if ScalaTypes.isFunction(element) then
+      val name = try element.asInstanceOf[PsiNamedElement].getName catch case _: Exception => null
       if name != null && isOperatorName(name) then Some((14, 0)) // operator
       else Some((5, 0)) // method
-    case _: ScTypeAlias       => Some((1, 0)) // type
-    case _: ScGiven           => Some((5, 0)) // method (given)
-    case bp: ScBindingPattern => Some(classifyBindingDeclaration(bp))
-    case _                    => None
+    else if ScalaTypes.isTypeAlias(element) then Some((1, 0))  // type
+    else if ScalaTypes.isGiven(element) then Some((5, 0))      // method (given)
+    else if ScalaTypes.isBindingPattern(element) then Some(classifyBindingDeclaration(element))
+    else None
 
   private def classifyBindingDeclaration(element: PsiElement): (Int, Int) =
-    element match
-      case bp: ScBindingPattern =>
-        val isMember = bp.isClassMember
-        if bp.isVal then
-          if isMember then (6, 8) // property + readonly
-          else (7, 8)             // variable + readonly (local val)
-        else if bp.isVar then
-          if isMember then (6, 0) // property (mutable)
-          else (7, 0)             // variable (local var)
-        else (7, 0)               // pattern/generator, no readonly
-      case _ =>
-        element.getParent match
-          case _: ScValue | _: ScPatternDefinition =>
-            if element.getParent.getParent.isInstanceOf[ScTemplateBody] then (6, 8) else (7, 8)
-          case _: ScVariable =>
-            if element.getParent.getParent.isInstanceOf[ScTemplateBody] then (6, 0) else (7, 0)
-          case _ => (7, 0)
+    if ScalaTypes.isBindingPattern(element) then
+      val isMember = ScalaTypes.isClassMember(element)
+      if ScalaTypes.isVal(element) then
+        if isMember then (6, 8) // property + readonly
+        else (7, 8)             // variable + readonly (local val)
+      else if ScalaTypes.isVar(element) then
+        if isMember then (6, 0) // property (mutable)
+        else (7, 0)             // variable (local var)
+      else (7, 0)               // pattern/generator, no readonly
+    else
+      val parent = element.getParent
+      if ScalaTypes.isValue(parent) || ScalaTypes.isPatternDefinition(parent) then
+        if ScalaTypes.isTemplateBody(parent.getParent) then (6, 8) else (7, 8)
+      else if ScalaTypes.isVariable(parent) then
+        if ScalaTypes.isTemplateBody(parent.getParent) then (6, 0) else (7, 0)
+      else (7, 0)
 
   private def getNameIdentifier(element: PsiElement): Option[(Int, Int)] =
     element match
@@ -321,13 +320,12 @@ class SemanticTokensProvider(projectManager: IntellijProjectManager):
 
   private def getNameRange(element: PsiElement): (Int, Int) =
     // For references, try to get just the name part
-    element match
-      case ref: ScReference =>
-        val nameId = ref.nameId
-        if nameId != null then
+    if ScalaTypes.isReference(element) then
+      ScalaTypes.getNameId(element) match
+        case Some(nameId) =>
           val r = nameId.getTextRange
           if r != null then return (r.getStartOffset, r.getLength)
-      case _ => ()
+        case None => ()
     (element.getTextRange.getStartOffset, element.getTextRange.getLength)
 
   private def isStringToken(elementType: String): Boolean =
