@@ -7,7 +7,7 @@ import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.psi.codeStyle.CodeStyleManager
 import org.eclipse.lsp4j.*
 import org.eclipse.lsp4j.services.{LanguageClient, WorkspaceService}
-import org.jetbrains.scalalsP.intellij.{IntellijProjectManager, PsiUtils, SymbolProvider}
+import org.jetbrains.scalalsP.intellij.{IntellijProjectManager, PsiUtils, ScalaTypes, SymbolProvider}
 
 import java.util
 import java.util.concurrent.CompletableFuture
@@ -146,20 +146,15 @@ class ScalaWorkspaceService(projectManager: IntellijProjectManager) extends Work
                 vf <- projectManager.findVirtualFile(oldUri)
                 document <- Option(FileDocumentManager.getInstance().getDocument(vf))
               yield
-                // Use Class.forName to avoid constant pool reference to ScTypeDefinition
-                // (IntelliJ's plugin classloader isn't ready when this class is first loaded)
-                import com.intellij.psi.{PsiNameIdentifierOwner, PsiNamedElement}
-                val scTypeDefClass = try Class.forName("org.jetbrains.plugins.scala.lang.psi.api.toplevel.typedef.ScTypeDefinition") catch case _: Exception => null
-                if scTypeDefClass != null then
-                  psiFile.getChildren.collect:
-                    case elem: PsiNameIdentifierOwner if scTypeDefClass.isInstance(elem) && elem.getName == oldFileName => elem
-                  .flatMap: td =>
-                    Option(td.getNameIdentifier).map: nameId =>
-                      val start = PsiUtils.offsetToPosition(document, nameId.getTextRange.getStartOffset)
-                      val end = PsiUtils.offsetToPosition(document, nameId.getTextRange.getEndOffset)
-                      TextEdit(Range(start, end), newFileName)
-                  .toSeq
-                else Seq.empty
+                import com.intellij.psi.PsiNameIdentifierOwner
+                psiFile.getChildren.collect:
+                  case elem: PsiNameIdentifierOwner if ScalaTypes.isTypeDefinition(elem) && elem.getName == oldFileName => elem
+                .flatMap: td =>
+                  Option(td.getNameIdentifier).map: nameId =>
+                    val start = PsiUtils.offsetToPosition(document, nameId.getTextRange.getStartOffset)
+                    val end = PsiUtils.offsetToPosition(document, nameId.getTextRange.getEndOffset)
+                    TextEdit(Range(start, end), newFileName)
+                .toSeq
               ).getOrElse(Seq.empty)
 
             if edits.nonEmpty then

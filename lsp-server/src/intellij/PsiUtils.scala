@@ -5,9 +5,6 @@ import com.intellij.openapi.roots.{OrderRootType, ProjectFileIndex}
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.{PsiClass, PsiElement, PsiField, PsiFile, PsiMethod, PsiNameIdentifierOwner, PsiNamedElement}
 import org.eclipse.lsp4j.{Location, Position, Range, SymbolKind}
-import org.jetbrains.plugins.scala.lang.psi.api.statements.*
-import org.jetbrains.plugins.scala.lang.psi.api.toplevel.ScPackaging
-import org.jetbrains.plugins.scala.lang.psi.api.toplevel.typedef.*
 
 import java.nio.file.{Files, Path}
 import scala.jdk.CollectionConverters.*
@@ -216,20 +213,20 @@ object PsiUtils:
 
   /** Determine the LSP SymbolKind for a PSI element.
    * Shared by SymbolProvider, CompletionProvider, and CallHierarchyProvider. */
-  def getSymbolKind(element: PsiElement): SymbolKind = element match
-    case _: ScEnum      => SymbolKind.Enum
-    case _: ScClass     => SymbolKind.Class
-    case _: ScTrait     => SymbolKind.Interface
-    case _: ScObject    => SymbolKind.Module
-    case _: ScFunction  => SymbolKind.Method
-    case _: ScValue | _: ScPatternDefinition => SymbolKind.Variable
-    case _: ScVariable | _: ScVariableDefinition => SymbolKind.Variable
-    case _: ScTypeAlias => SymbolKind.TypeParameter
-    case _: ScPackaging => SymbolKind.Package
-    case _: PsiMethod   => SymbolKind.Method
-    case _: PsiClass    => SymbolKind.Class
-    case _: PsiField    => SymbolKind.Field
-    case _              => SymbolKind.Variable
+  def getSymbolKind(element: PsiElement): SymbolKind =
+    if ScalaTypes.isEnum(element) then SymbolKind.Enum
+    else if ScalaTypes.isClass(element) then SymbolKind.Class
+    else if ScalaTypes.isTrait(element) then SymbolKind.Interface
+    else if ScalaTypes.isObject(element) then SymbolKind.Module
+    else if ScalaTypes.isFunction(element) then SymbolKind.Method
+    else if ScalaTypes.isValue(element) || ScalaTypes.isPatternDefinition(element) then SymbolKind.Variable
+    else if ScalaTypes.isVariable(element) || ScalaTypes.isVariableDefinition(element) then SymbolKind.Variable
+    else if ScalaTypes.isTypeAlias(element) then SymbolKind.TypeParameter
+    else if ScalaTypes.isPackaging(element) then SymbolKind.Package
+    else if element.isInstanceOf[PsiMethod] then SymbolKind.Method
+    else if element.isInstanceOf[PsiClass] then SymbolKind.Class
+    else if element.isInstanceOf[PsiField] then SymbolKind.Field
+    else SymbolKind.Variable
 
   /** Walk up from a leaf element to find the nearest reference or named element.
     * Uses IntelliJ's findReferenceAt first for accurate reference detection,
