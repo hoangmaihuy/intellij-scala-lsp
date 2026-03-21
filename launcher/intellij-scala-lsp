@@ -681,6 +681,7 @@ setup_mcp() {
         const settings = JSON.parse(fs.readFileSync('$settings_file', 'utf-8'));
         if (!settings.mcpServers) settings.mcpServers = {};
         settings.mcpServers['intellij-scala-lsp'] = {
+          type: 'stdio',
           command: 'node',
           args: ['$index_js']
         };
@@ -695,6 +696,7 @@ setup_mcp() {
 {
   "mcpServers": {
     "intellij-scala-lsp": {
+      "type": "stdio",
       "command": "node",
       "args": ["$index_js"]
     }
