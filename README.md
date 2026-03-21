@@ -72,7 +72,7 @@ This project exposes IntelliJ's analysis engine over LSP, bringing its performan
 ## Install
 
 ```bash
-curl -fsSL https://github.com/<owner>/intellij-scala-lsp/releases/latest/download/install.sh | bash
+curl -fsSL https://github.com/hoangmaihuy/intellij-scala-lsp/releases/latest/download/install.sh | bash
 ```
 
 This downloads the launcher, LSP server JARs, and sets up the IntelliJ SDK automatically. If you have IntelliJ installed, it reuses your installation. Otherwise, it downloads IntelliJ Community Edition (~800MB, first run only).

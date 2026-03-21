@@ -8,7 +8,7 @@ LSP_VERSION="dev"
 INTELLIJ_BUILD="253.32098.37"
 INTELLIJ_VERSION="2025.3.4"  # Marketing version for download URLs
 SCALA_PLUGIN_VERSION="2025.3.26"
-GITHUB_REPO="nicholasgasior/intellij-scala-lsp"  # TODO: update to actual repo
+GITHUB_REPO="hoangmaihuy/intellij-scala-lsp"
 
 # --- Paths ---
 CACHE_DIR="${HOME}/.cache/intellij-scala-lsp"

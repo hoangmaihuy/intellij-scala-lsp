@@ -1,9 +1,9 @@
 #!/bin/bash
 # One-line installer for intellij-scala-lsp
-# Usage: curl -fsSL https://github.com/<owner>/intellij-scala-lsp/releases/latest/download/install.sh | bash
+# Usage: curl -fsSL https://github.com/hoangmaihuy/intellij-scala-lsp/releases/latest/download/install.sh | bash
 set -euo pipefail
 
-GITHUB_REPO="nicholasgasior/intellij-scala-lsp"  # TODO: update to actual repo
+GITHUB_REPO="hoangmaihuy/intellij-scala-lsp"
 INSTALL_DIR="${HOME}/.local/bin"
 
 echo "=== Installing intellij-scala-lsp ==="
