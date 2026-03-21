@@ -1,0 +1,50 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Set up sbt
+        uses: sbt/setup-sbt@v1
+
+      - name: Build LSP server JARs
+        run: sbt lsp-server/packageArtifact
+
+      - name: Package artifacts
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          cd lsp-server/target/plugin/intellij-scala-lsp/lib
+          tar czf "$GITHUB_WORKSPACE/intellij-scala-lsp-${VERSION}.tar.gz" *.jar
+          cd "$GITHUB_WORKSPACE"
+
+      - name: Stamp version constants in launcher
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          IJ_BUILD=$(grep 'intellijBuild' build.sbt | grep -o '"[^"]*"' | tr -d '"')
+          sed -i "s/^LSP_VERSION=\"dev\"/LSP_VERSION=\"${VERSION}\"/" launcher/intellij-scala-lsp
+          sed -i "s/^INTELLIJ_BUILD=\"[^\"]*\"/INTELLIJ_BUILD=\"${IJ_BUILD}\"/" launcher/intellij-scala-lsp
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            intellij-scala-lsp-*.tar.gz
+            launcher/intellij-scala-lsp
+            launcher/install.sh
+          generate_release_notes: true
