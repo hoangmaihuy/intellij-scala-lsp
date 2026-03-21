@@ -871,15 +871,18 @@ case "${1:-}" in
     # Detect build tool
     if [ -f "$PROJECT_PATH/build.mill" ] || [ -f "$PROJECT_PATH/build.sc" ]; then
       echo "Detected Mill project at: $PROJECT_PATH"
-      echo "Running: mill mill.idea/ ..."
-      cd "$PROJECT_PATH" && mill mill.idea/
-      MILL_EXIT=$?
-      if [ $MILL_EXIT -eq 0 ]; then
-        echo "Import complete."
-      else
-        echo "ERROR: mill mill.idea/ failed with exit code $MILL_EXIT"
+      if ! command -v mill >/dev/null 2>&1; then
+        echo "ERROR: 'mill' not found on PATH. Install Mill: https://mill-build.org"
+        exit 1
       fi
-      exit $MILL_EXIT
+      echo "Running: mill mill.idea/ ..."
+      if cd "$PROJECT_PATH" && mill mill.idea/; then
+        echo "Import complete."
+        exit 0
+      else
+        echo "ERROR: mill mill.idea/ failed with exit code $?"
+        exit 1
+      fi
     elif [ -f "$PROJECT_PATH/build.sbt" ]; then
       echo "Detected sbt project at: $PROJECT_PATH"
       echo "Importing sbt project..."
