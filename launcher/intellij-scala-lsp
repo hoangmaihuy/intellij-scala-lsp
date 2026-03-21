@@ -320,12 +320,15 @@ assemble_classpath_and_flags() {
   done
 
   # Stripped lsp-server.jar (remove plugin.xml to avoid "jarFiles is not set" assertion)
+  # Use jar from the same JDK as $JAVA (JBR ships jar alongside java)
+  local jar_cmd="$(dirname "$JAVA")/jar"
+  [ -x "$jar_cmd" ] || jar_cmd="jar"
   local stripped_jar="$CACHE_DIR/lsp-server-stripped.jar"
   if [ "$LSP_LIB_DIR/lsp-server.jar" -nt "$stripped_jar" ] 2>/dev/null; then
     local strip_tmp="$CACHE_DIR/strip-tmp"
     rm -rf "$strip_tmp"
     mkdir -p "$strip_tmp"
-    (cd "$strip_tmp" && jar xf "$LSP_LIB_DIR/lsp-server.jar" && rm -f META-INF/plugin.xml && jar cf "$stripped_jar" .)
+    (cd "$strip_tmp" && "$jar_cmd" xf "$LSP_LIB_DIR/lsp-server.jar" && rm -f META-INF/plugin.xml && "$jar_cmd" cf "$stripped_jar" .)
     rm -rf "$strip_tmp"
   fi
 
