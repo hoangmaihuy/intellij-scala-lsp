@@ -9,13 +9,12 @@ import {
   CompletionItem, CompletionList, SignatureHelp,
 } from 'vscode-languageserver-protocol';
 
-let cachedCodeActions: CodeAction[] = [];
-
 export function registerEditingTools(
   mcp: McpServer,
   lsp: LspClient,
   fileManager: FileManager,
 ): void {
+  let cachedCodeActions: CodeAction[] = [];
 
   mcp.tool(
     'rename_symbol',

@@ -85,7 +85,7 @@ function applySingleEdit(lines: string[], edit: TextEdit): string[] {
 
   const prefix = lines[startLine].substring(0, startChar);
   const suffix = lines[endLine].substring(endChar);
-  const newLines = edit.newText.split('\n');
+  const newLines = edit.newText.replace(/\r\n/g, '\n').split('\n');
 
   const result = lines.slice(0, startLine);
 

@@ -1,5 +1,6 @@
 import { LspClient } from './lsp-client.js';
 import { FileManager } from './file-manager.js';
+import { uriToPath } from './utils.js';
 import { logger } from './logger.js';
 import {
   SymbolInformation, Location, SymbolKind,
@@ -34,7 +35,7 @@ export class SymbolResolver {
       const location = info.location;
       if (!location) continue;
 
-      const filePath = decodeURIComponent(location.uri.replace('file://', ''));
+      const filePath = uriToPath(location.uri);
       try {
         await this.fileManager.ensureOpen(filePath);
       } catch (err) {
