@@ -170,6 +170,40 @@ export function registerNavigationTools(
       return { content: [{ type: 'text' as const, text: `Found ${allImpls.length} implementation(s):\n\n${allImpls.join('\n\n')}` }] };
     },
   );
+
+  mcp.tool(
+    'type_definition',
+    'Navigate from a symbol to its type\'s definition (e.g. from a variable to its type\'s class).',
+    { symbolName: z.string().describe('Symbol name') },
+    async ({ symbolName }) => {
+      const symbols = await symbolResolver.resolve(symbolName);
+      if (symbols.length === 0) {
+        return { content: [{ type: 'text' as const, text: `No symbol found matching '${symbolName}'` }] };
+      }
+      const results: string[] = [];
+      for (const sym of symbols) {
+        const typeDef = await lsp.request<Location | Location[]>('textDocument/typeDefinition', {
+          textDocument: { uri: sym.location.uri },
+          position: sym.location.range.start,
+        });
+        const locs = Array.isArray(typeDef) ? typeDef : typeDef ? [typeDef] : [];
+        for (const loc of locs) {
+          const filePath = uriToPath(loc.uri);
+          await fileManager.ensureOpen(filePath);
+          const content = fs.readFileSync(filePath, 'utf-8');
+          const lines = content.split('\n');
+          const startLine = loc.range.start.line;
+          const endLine = Math.min(startLine + 4, lines.length - 1);
+          const snippet = addLineNumbers(lines.slice(startLine, endLine + 1).join('\n'), startLine + 1);
+          results.push(`---\nType of ${sym.name}:\n${filePath}:L${startLine + 1}\n\n${snippet}`);
+        }
+      }
+      if (results.length === 0) {
+        return { content: [{ type: 'text' as const, text: `No type definition found for '${symbolName}'` }] };
+      }
+      return { content: [{ type: 'text' as const, text: results.join('\n\n') }] };
+    },
+  );
 }
 
 function findEnclosingSymbol(symbols: (DocumentSymbol | SymbolInformation)[], pos: Position): Range | null {
