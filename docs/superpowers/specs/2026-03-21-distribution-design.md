@@ -29,7 +29,7 @@ Each release (triggered by `v*` git tags) publishes:
 
 | Artifact | Contents | Size |
 |---|---|---|
-| `intellij-scala-lsp-<version>.tar.gz` | LSP server JARs (lsp-server.jar, lsp4j, gson) | ~1.5MB |
+| `intellij-scala-lsp-<version>.tar.gz` | LSP server JARs (lsp-server.jar, lsp4j, gson, error_prone_annotations, junit, hamcrest — JUnit is a runtime dependency for `TestApplicationManager` bootstrap) | ~2MB |
 | `intellij-scala-lsp` | The smart launcher script | ~20KB |
 | `install.sh` | Thin installer, delegates to launcher | ~2KB |
 
@@ -65,8 +65,45 @@ The IntelliJ SDK and Scala plugin are **not** bundled — they are downloaded on
 
 ### SDK Resolution (in order)
 
-1. **Local IntelliJ detected** — Scan standard install locations (`/Applications/IntelliJ*` on macOS, `/opt/idea-*` on Linux). Symlink `sdk/<build>` to the installation. Find Scala plugin from IntelliJ's plugins or JetBrains config dirs.
-2. **No IntelliJ found** — Download IntelliJ Community ZIP from `download.jetbrains.com`, extract to `sdk/`. Download Scala plugin ZIP from JetBrains marketplace.
+1. **Local IntelliJ detected** — Scan standard install locations (`/Applications/IntelliJ*` on macOS, `/opt/idea-*` on Linux). **Version check**: read `build.txt` from the installation and verify the major version prefix matches the pinned build (e.g., `253.x`). If it matches, symlink `sdk/<build>` to the installation. Find Scala plugin from IntelliJ's plugins or JetBrains config dirs, matching the version pattern for the build prefix (e.g., `253` -> `2025.3.*`).
+2. **Version mismatch or no IntelliJ found** — Download IntelliJ Community ZIP from `download.jetbrains.com`. URL format: `https://download.jetbrains.com/idea/ideaIC-<version>.tar.gz` (Linux) or `.dmg`/`.tar.gz` (macOS). Extract to `sdk/`. Download Scala plugin ZIP from JetBrains marketplace plugin API.
+
+---
+
+## Runtime Classpath Assembly
+
+The classpath is assembled from multiple sources — `product-info.json` alone is not sufficient.
+
+### Entry point
+
+`org.jetbrains.scalalsP.ScalaLspMain`
+
+### Classpath components
+
+1. **IntelliJ platform JARs** — parsed from `sdk/<build>/product-info.json` `launch[0].bootClassPathJarNames`
+2. **Scala plugin JARs** — `sdk/<build>/plugins/scala/lib/scalaCommunity.jar`, `scala-library.jar`, `scala3-library_3.jar`
+3. **Java plugin JARs** — `sdk/<build>/plugins/java/lib/java-impl-frontend.jar`
+4. **LSP server JARs** — all JARs from the `lsp-server/` directory. Note: the `lsp-server.jar` must be **stripped** of `META-INF/plugin.xml` before adding to classpath (to avoid IntelliJ's "jarFiles is not set" fatal assertion when the plugin is discovered from both classpath and `-Dplugin.path`). The launcher creates a `lsp-server-stripped.jar` by copying and removing the `plugin.xml` entry.
+5. **Plugin path** — the original (unstripped) `lsp-server.jar` is passed via `-Dplugin.path=` so IntelliJ loads it as a plugin
+
+### JVM flags
+
+- **From `product-info.json`**: `launch[0].additionalJvmArguments` (includes `--add-opens` flags)
+- **Hardcoded by launcher**:
+  - `-Djava.awt.headless=true`
+  - `-Xlog:cds=off` (suppress CDS warnings)
+  - `-Xmx${LSP_HEAP_SIZE:-2g}`
+  - `-Didea.system.path=~/.cache/intellij-scala-lsp/system`
+  - `-Didea.config.path=~/.cache/intellij-scala-lsp/config`
+  - `-Dplugin.path=<path to unstripped lsp-server.jar>`
+
+### JDK table copying
+
+On first run, the launcher copies `jdk.table.xml` from the user's IntelliJ config directory (if it exists) into the isolated config dir at `~/.cache/intellij-scala-lsp/config/options/`. This allows projects to resolve their configured JDKs without requiring users to reconfigure them.
+
+### Runtime dependency: `socat`
+
+Daemon mode uses `socat` for stdio-to-TCP proxying. The installer checks for `socat` in PATH and prints installation instructions if missing (`brew install socat` on macOS, `apt install socat` on Linux). This is only needed for daemon mode — stdio mode works without it.
 
 ---
 
@@ -86,7 +123,7 @@ Normal run mode:
 
 1. Check version against GitHub Releases API (non-blocking, cached — at most once per 24 hours via `last-update-check` timestamp). If update available, print notice but continue.
 2. Resolve SDK (local IntelliJ symlink or cached download)
-3. Assemble classpath from `product-info.json`
+3. Assemble full classpath (see "Runtime Classpath Assembly" section)
 4. Launch JVM in daemon mode (TCP, using `socat` for stdio-to-TCP proxy) or stdio mode
 
 ### `intellij-scala-lsp --update`
@@ -127,14 +164,21 @@ Steps:
 
 **GitHub Actions workflow** triggered on `v*` tags:
 
-1. `sbt lsp-server/packageArtifact` — build LSP server JARs
+1. `sbt lsp-server/packageArtifact` (existing sbt-idea-plugin task) — build LSP server JARs
 2. Tar JARs into `intellij-scala-lsp-<version>.tar.gz`
 3. Create GitHub Release with all three artifacts
 4. Release description includes IntelliJ SDK build number and Scala plugin version
 
 ### Version Pinning
 
-The launcher script contains constants for the IntelliJ SDK build number and Scala plugin version it was built against. When the launcher self-updates, new constants may trigger an SDK re-download.
+The launcher script contains hardcoded constants:
+- `LSP_VERSION` — the release version (e.g., `0.1.0`), used to download matching JARs from GitHub Releases
+- `INTELLIJ_BUILD` — the IntelliJ SDK build number (e.g., `253.32098.37`)
+- `SCALA_PLUGIN_VERSION` — the Scala plugin version (e.g., `2025.3.1`)
+
+These are substituted by CI during the release build. When the launcher self-updates, new constants may trigger an SDK re-download.
+
+The `install.sh` always fetches the `latest` release from GitHub, which includes the launcher with the correct version constants baked in. So version information flows: `build.sbt` -> CI -> launcher constants -> runtime downloads.
 
 ---
 
@@ -142,11 +186,13 @@ The launcher script contains constants for the IntelliJ SDK build number and Sca
 
 **`sbt lsp-server/runLsp`**:
 
-1. Runs `packageArtifact` to ensure JARs are built
-2. Resolves the SDK from sbt-idea-plugin's cache (`~/.intellij-scala-lspPluginIC/sdk/`)
-3. Parses `product-info.json` for boot classpath and `--add-opens` flags
-4. Forks a JVM with the correct classpath and flags
-5. Passes through arguments: `sbt "lsp-server/runLsp --daemon"`
+Rather than duplicating classpath assembly logic, the sbt task invokes the launcher script in local-development mode:
+
+1. Runs `packageArtifact` (existing sbt-idea-plugin task) to ensure JARs are built
+2. Exec `launcher/intellij-scala-lsp` with any passed-through arguments
+3. The launcher auto-detects it's in the repo and uses local build output
+
+Usage: `sbt "lsp-server/runLsp --daemon"`
 
 ---
 
