@@ -654,7 +654,6 @@ MKJSON
 
 setup_mcp() {
   local mcp_dir="$1"
-  local settings_file="$HOME/.claude/settings.json"
 
   # Build MCP server
   if [ -d "$mcp_dir" ]; then
@@ -671,46 +670,24 @@ setup_mcp() {
     exit 1
   fi
 
-  # Add to Claude Code settings
-  mkdir -p "$(dirname "$settings_file")"
-  if [ -f "$settings_file" ]; then
-    # Check if mcpServers already has our entry
-    if command -v node >/dev/null 2>&1; then
-      node -e "
-        const fs = require('fs');
-        const settings = JSON.parse(fs.readFileSync('$settings_file', 'utf-8'));
-        if (!settings.mcpServers) settings.mcpServers = {};
-        settings.mcpServers['intellij-scala-lsp'] = {
-          type: 'stdio',
-          command: 'node',
-          args: ['$index_js']
-        };
-        fs.writeFileSync('$settings_file', JSON.stringify(settings, null, 2) + '\n');
-      "
-    else
-      echo "ERROR: node not found, cannot update settings.json"
-      exit 1
-    fi
+  # Register with Claude Code via CLI
+  if command -v claude >/dev/null 2>&1; then
+    echo "Registering MCP server with Claude Code..."
+    claude mcp remove intellij-scala-lsp 2>/dev/null || true
+    claude mcp add -s user intellij-scala-lsp -- node "$index_js"
+    echo ""
+    echo "=== MCP server setup complete ==="
+    echo "MCP server: $index_js"
+    echo ""
+    echo "Restart Claude Code for the MCP server to take effect."
+    echo "  Verify: claude mcp list"
+    echo "  Remove: claude mcp remove intellij-scala-lsp"
   else
-    cat > "$settings_file" << MCPJSON
-{
-  "mcpServers": {
-    "intellij-scala-lsp": {
-      "type": "stdio",
-      "command": "node",
-      "args": ["$index_js"]
-    }
-  }
-}
-MCPJSON
+    echo "WARNING: 'claude' CLI not found. Add manually:"
+    echo ""
+    echo "  claude mcp add -s user intellij-scala-lsp -- node $index_js"
+    echo ""
   fi
-
-  echo ""
-  echo "=== MCP server setup complete ==="
-  echo "MCP server: $index_js"
-  echo "Settings:   $settings_file"
-  echo ""
-  echo "Restart Claude Code for the MCP server to take effect."
 }
 
 setup_vscode() {
