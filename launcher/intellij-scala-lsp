@@ -650,6 +650,8 @@ MKJSON
 setup_vscode() {
   local launcher_cmd="$1"
   local ext_dir="$HOME/.vscode/extensions/intellij-scala-lsp"
+  # Remove old symlink from previous setup-vscode.sh if present
+  [ -L "$ext_dir" ] && rm -f "$ext_dir"
   mkdir -p "$ext_dir"
 
   cat > "$ext_dir/package.json" << 'PKGJSON'
