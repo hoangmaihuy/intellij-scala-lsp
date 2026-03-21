@@ -8,6 +8,8 @@ ThisBuild / intellijPlatform := IntelliJPlatform.IdeaCommunity
 
 Global / excludeLintKeys ++= Set(intellijPlugins)
 
+lazy val runLsp = inputKey[Unit]("Build and run the LSP server via the launcher script")
+
 lazy val root = project.in(file("."))
   .aggregate(`lsp-server`)
   .settings(
@@ -97,4 +99,14 @@ lazy val `lsp-server` = project.in(file("lsp-server"))
       "-Djava.awt.headless=true",
     ),
     Test / fork := true,
+
+    // Build and run the LSP server via the launcher script
+    runLsp := {
+      val args = sbt.Def.spaceDelimited("<args>").parsed
+      val _ = packageArtifact.value
+      val launcher = (ThisBuild / baseDirectory).value / "launcher" / "intellij-scala-lsp"
+      val cmd = Seq(launcher.absolutePath) ++ args
+      val exitCode = scala.sys.process.Process(cmd).!
+      if (exitCode != 0) sys.error(s"Launcher exited with code $exitCode")
+    },
   )
