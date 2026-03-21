@@ -442,10 +442,10 @@ do_install() {
   fi
   log "Installation complete!"
   log ""
-  log "Configure your editor:"
-  log "  VS Code:     Set \"intellijScalaLsp.launcher\" to \"intellij-scala-lsp\""
-  log "  Neovim:      cmd = { \"intellij-scala-lsp\" }"
-  log "  Claude Code:  The plugin uses intellij-scala-lsp automatically"
+  log "Set up your editor:"
+  log "  Claude Code:  intellij-scala-lsp --setup-claude-code"
+  log "  VS Code:      intellij-scala-lsp --setup-vscode"
+  log "  Neovim:       cmd = { \"intellij-scala-lsp\" }"
 }
 
 # --- Update ---
@@ -577,6 +577,230 @@ proxy_stdio_to_tcp() {
   exec socat STDIO TCP:localhost:"$port"
 }
 
+# --- Editor Setup ---
+
+setup_claude_code() {
+  local launcher_cmd="$1"
+  local tmp_dir
+  tmp_dir=$(mktemp -d)
+  local plugin_dir="$tmp_dir/intellij-scala-lsp/.claude-plugin"
+  mkdir -p "$plugin_dir" "$tmp_dir/.claude-plugin"
+
+  cat > "$plugin_dir/plugin.json" << PLUGINJSON
+{
+  "name": "intellij-scala-lsp",
+  "description": "Scala code intelligence powered by IntelliJ IDEA's analysis engine",
+  "version": "0.5.0",
+  "lspServers": {
+    "intellij-scala": {
+      "command": "$launcher_cmd",
+      "args": [],
+      "extensionToLanguage": {
+        ".scala": "scala",
+        ".sc": "scala"
+      },
+      "startupTimeout": 300000
+    }
+  }
+}
+PLUGINJSON
+
+  cat > "$tmp_dir/.claude-plugin/marketplace.json" << MKJSON
+{
+  "name": "intellij-scala-lsp",
+  "description": "IntelliJ IDEA Scala LSP server for Claude Code",
+  "plugins": [
+    {
+      "name": "intellij-scala-lsp",
+      "description": "Scala code intelligence powered by IntelliJ IDEA's analysis engine",
+      "version": "0.5.0",
+      "source": "./intellij-scala-lsp",
+      "category": "development",
+      "keywords": ["scala", "lsp", "intellij", "code-intelligence"]
+    }
+  ]
+}
+MKJSON
+
+  if command -v claude >/dev/null 2>&1; then
+    echo "Registering marketplace and installing plugin..."
+    if claude plugin marketplace list 2>/dev/null | grep -q "intellij-scala-lsp"; then
+      claude plugin marketplace update intellij-scala-lsp 2>/dev/null || true
+    else
+      claude plugin marketplace add "$tmp_dir"
+    fi
+    claude plugin install intellij-scala-lsp@intellij-scala-lsp --scope user 2>/dev/null || true
+    echo ""
+    echo "=== Claude Code setup complete ==="
+    echo "Restart Claude Code for the plugin to take effect."
+    echo "  To uninstall: claude plugin uninstall intellij-scala-lsp@intellij-scala-lsp"
+  else
+    echo "WARNING: 'claude' CLI not found. Manual steps:"
+    echo ""
+    echo "  1. Install Claude Code: https://claude.ai/claude-code"
+    echo "  2. Run: claude plugin marketplace add $tmp_dir"
+    echo "  3. Run: claude plugin install intellij-scala-lsp@intellij-scala-lsp --scope user"
+    echo ""
+    echo "Temp files at: $tmp_dir (do not delete until steps above are done)"
+    return
+  fi
+  rm -rf "$tmp_dir"
+}
+
+setup_vscode() {
+  local launcher_cmd="$1"
+  local ext_dir="$HOME/.vscode/extensions/intellij-scala-lsp"
+  mkdir -p "$ext_dir"
+
+  cat > "$ext_dir/package.json" << 'PKGJSON'
+{
+  "name": "intellij-scala-lsp",
+  "displayName": "IntelliJ Scala LSP",
+  "description": "Scala code intelligence powered by IntelliJ IDEA's analysis engine",
+  "version": "0.5.0",
+  "publisher": "intellij-scala-lsp",
+  "engines": { "vscode": "^1.75.0" },
+  "categories": ["Programming Languages"],
+  "activationEvents": ["onLanguage:scala"],
+  "main": "./extension.js",
+  "contributes": {
+    "languages": [{ "id": "scala", "extensions": [".scala", ".sc"] }],
+    "configuration": {
+      "title": "IntelliJ Scala LSP",
+      "properties": {
+        "intellijScalaLsp.launcher": {
+          "type": "string",
+          "default": "",
+          "description": "Path to intellij-scala-lsp launcher (auto-detected from PATH if empty)"
+        }
+      }
+    }
+  },
+  "dependencies": { "vscode-languageclient": "^9.0.1" }
+}
+PKGJSON
+
+  # Write extension.js with the launcher command baked in as default
+  cat > "$ext_dir/extension.js" << EXTJS
+const { LanguageClient, TransportKind } = require("vscode-languageclient/node");
+const vscode = require("vscode");
+
+let client, outputChannel, statusBarItem;
+
+function log(msg) {
+  const ts = new Date().toISOString().replace("T", " ").replace("Z", "");
+  outputChannel.appendLine("[" + ts + "] " + msg);
+}
+
+function setStatus(icon, text, tooltip) {
+  statusBarItem.text = "\$(" + icon + ") " + text;
+  statusBarItem.tooltip = tooltip || text;
+  statusBarItem.show();
+}
+
+function shortUri(uri) {
+  if (!uri) return "";
+  const m = uri.match(/([^/]+)\$/);
+  return m ? m[1] : uri;
+}
+
+function summarizeResult(r) {
+  try {
+    if (r == null) return "null";
+    if (Array.isArray(r)) {
+      if (r.length === 0) return "[]";
+      if (r[0]?.uri) return r.length + " locations [" + shortUri(typeof r[0].uri === "string" ? r[0].uri : String(r[0].uri)) + ":" + (r[0].range?.start?.line ?? "?") + "]";
+      if (r[0]?.label) return r.length + " items";
+      return r.length + " results";
+    }
+    if (r?.contents) return "hover";
+    if (r?.signatures) return r.signatures.length + " signatures";
+    if (r?.changes || r?.documentChanges) return "workspace edit";
+    return typeof r;
+  } catch { return "?"; }
+}
+
+function createLoggingMiddleware() {
+  function wrap(method) {
+    return async function (...args) {
+      const next = args[args.length - 1], params = args[0];
+      const file = params?.textDocument?.uri ? " [" + shortUri(params.textDocument.uri) + "]" : "";
+      const pos = params?.position ? ":" + params.position.line + ":" + params.position.character : "";
+      const start = Date.now();
+      try {
+        const result = await next(...args.slice(0, -1));
+        log(method + file + pos + " -> " + (Date.now() - start) + "ms " + summarizeResult(result));
+        return result;
+      } catch (err) {
+        log(method + file + pos + " -> ERROR " + (Date.now() - start) + "ms: " + (err?.message || err));
+        throw err;
+      }
+    };
+  }
+  return {
+    provideCompletionItem: wrap("textDocument/completion"),
+    provideHover: wrap("textDocument/hover"),
+    provideDefinition: wrap("textDocument/definition"),
+    provideTypeDefinition: wrap("textDocument/typeDefinition"),
+    provideImplementation: wrap("textDocument/implementation"),
+    provideReferences: wrap("textDocument/references"),
+    provideDocumentSymbols: wrap("textDocument/documentSymbol"),
+    provideSignatureHelp: wrap("textDocument/signatureHelp"),
+    provideDocumentFormattingEdits: wrap("textDocument/formatting"),
+    provideRenameEdits: wrap("textDocument/rename"),
+    provideCodeActions: wrap("textDocument/codeAction"),
+  };
+}
+
+function activate(context) {
+  outputChannel = vscode.window.createOutputChannel("IntelliJ Scala LSP");
+  context.subscriptions.push(outputChannel);
+  statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 0);
+  statusBarItem.command = "intellijScalaLsp.showOutput";
+  context.subscriptions.push(statusBarItem);
+  context.subscriptions.push(vscode.commands.registerCommand("intellijScalaLsp.showOutput", () => outputChannel.show()));
+
+  log("Activating IntelliJ Scala LSP extension");
+  setStatus("sync~spin", "Scala LSP: Starting", "IntelliJ Scala LSP — starting server");
+
+  const config = vscode.workspace.getConfiguration("intellijScalaLsp");
+  const launcher = config.get("launcher") || "$launcher_cmd";
+  log("Launcher: " + launcher);
+
+  client = new LanguageClient("intellijScalaLsp", "IntelliJ Scala LSP",
+    { command: launcher, args: [], transport: TransportKind.stdio },
+    { documentSelector: [{ scheme: "file", language: "scala" }, { scheme: "file", pattern: "**/*.scala" }, { scheme: "file", pattern: "**/*.sc" }], outputChannel, middleware: createLoggingMiddleware() }
+  );
+  client.onDidChangeState(({ oldState, newState }) => {
+    const s = { 1: "Stopped", 2: "Starting", 3: "Running" };
+    log("Client state: " + (s[oldState] || oldState) + " -> " + (s[newState] || newState));
+    if (newState === 3) setStatus("sync~spin", "Scala LSP: Indexing", "IntelliJ Scala LSP — indexing project");
+    else if (newState === 1) setStatus("circle-slash", "Scala LSP: Stopped", "IntelliJ Scala LSP — stopped");
+    else setStatus("sync~spin", "Scala LSP: Starting", "IntelliJ Scala LSP — starting");
+  });
+  log("Starting language client");
+  client.start().then(
+    () => { log("Language client started successfully"); client.onNotification("window/logMessage", (p) => { const m = p.message || ""; log("[server] " + m); if (m.includes("Indexing project")) setStatus("sync~spin", "Scala LSP: Indexing", "IntelliJ Scala LSP — indexing project"); else if (m.includes("Indexing complete")) setStatus("check", "Scala LSP", "IntelliJ Scala LSP — ready"); }); },
+    (err) => { log("ERROR: Failed to start: " + err.message); setStatus("error", "Scala LSP: Error", "Failed: " + err.message); vscode.window.showErrorMessage("IntelliJ Scala LSP failed: " + err.message); }
+  );
+  context.subscriptions.push(client);
+}
+
+function deactivate() { if (statusBarItem) statusBarItem.dispose(); if (client) return client.stop(); }
+module.exports = { activate, deactivate };
+EXTJS
+
+  echo "Installing vscode-languageclient..."
+  (cd "$ext_dir" && npm install --silent 2>&1 | tail -3)
+
+  echo ""
+  echo "=== VS Code setup complete ==="
+  echo "Extension installed to: $ext_dir"
+  echo "Reload VS Code: Cmd+Shift+P -> 'Developer: Reload Window'"
+  echo ""
+  echo "  To uninstall: rm -rf $ext_dir"
+}
+
 # --- Main ---
 
 # Handle --version and --help before setting up logging (they should be quiet)
@@ -589,14 +813,44 @@ case "${1:-}" in
     echo "Usage: intellij-scala-lsp [OPTIONS]"
     echo ""
     echo "Options:"
-    echo "  --daemon [projects...]  Start daemon, optionally pre-warm projects"
-    echo "  --stop                  Stop the daemon"
-    echo "  --install               Download LSP JARs and SDK"
-    echo "  --update                Update to latest version"
-    echo "  --version               Print version info"
-    echo "  --help                  Show this help"
+    echo "  --daemon [projects...]    Start daemon, optionally pre-warm projects"
+    echo "  --stop                    Stop the daemon"
+    echo "  --install                 Download LSP JARs and SDK"
+    echo "  --update                  Update to latest version"
+    echo "  --setup-claude-code       Set up Claude Code plugin (installed users)"
+    echo "  --setup-claude-code-dev   Set up Claude Code plugin (local dev)"
+    echo "  --setup-vscode            Set up VS Code extension (installed users)"
+    echo "  --setup-vscode-dev        Set up VS Code extension (local dev)"
+    echo "  --version                 Print version info"
+    echo "  --help                    Show this help"
     echo ""
     echo "Default (no args): proxy stdio to daemon (auto-starts daemon if needed)"
+    exit 0
+    ;;
+  --setup-claude-code)
+    setup_claude_code "intellij-scala-lsp"
+    exit 0
+    ;;
+  --setup-claude-code-dev)
+    if [ "$DEV_MODE" != true ]; then
+      echo "ERROR: --setup-claude-code-dev must be run from the repo directory."
+      echo "Use --setup-claude-code for installed users."
+      exit 1
+    fi
+    setup_claude_code "$SCRIPT_DIR/intellij-scala-lsp"
+    exit 0
+    ;;
+  --setup-vscode)
+    setup_vscode "intellij-scala-lsp"
+    exit 0
+    ;;
+  --setup-vscode-dev)
+    if [ "$DEV_MODE" != true ]; then
+      echo "ERROR: --setup-vscode-dev must be run from the repo directory."
+      echo "Use --setup-vscode for installed users."
+      exit 1
+    fi
+    setup_vscode "$SCRIPT_DIR/intellij-scala-lsp"
     exit 0
     ;;
 esac

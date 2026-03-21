@@ -97,11 +97,16 @@ intellij-scala-lsp --stop
 
 ### Editor Setup
 
-**VS Code:** Install the extension from `vscode-extension/`, or set `"intellijScalaLsp.launcher"` to `"intellij-scala-lsp"`.
+```bash
+# Claude Code
+intellij-scala-lsp --setup-claude-code
 
-**Neovim:** `cmd = { "intellij-scala-lsp" }`
+# VS Code
+intellij-scala-lsp --setup-vscode
 
-**Claude Code:** Install the plugin from `claude-code/`. The daemon starts automatically.
+# Neovim (manual config)
+# cmd = { "intellij-scala-lsp" }
+```
 
 ### Updating
 
@@ -126,6 +131,10 @@ sbt "lsp-server/runLsp --daemon"
 # Or run the launcher directly
 sbt lsp-server/packageArtifact
 ./launcher/intellij-scala-lsp --daemon
+
+# Set up editor for local dev
+./launcher/intellij-scala-lsp --setup-claude-code-dev
+./launcher/intellij-scala-lsp --setup-vscode-dev
 ```
 
 ### Environment Variables
