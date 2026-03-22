@@ -587,6 +587,26 @@ proxy_stdio_to_tcp() {
 
 # --- Editor Setup ---
 
+install_skill() {
+  local mode="$1"  # "mcp" or "lsp"
+  local skill_dir=".claude/skills/scala-code-intelligence"
+  local skill_src
+
+  # Find the skill source file
+  if [ -n "$PROJECT_ROOT" ] && [ -f "$PROJECT_ROOT/skills/scala-code-intelligence/${mode}.md" ]; then
+    skill_src="$PROJECT_ROOT/skills/scala-code-intelligence/${mode}.md"
+  elif [ -f "$INSTALL_DIR/skills/scala-code-intelligence/${mode}.md" ]; then
+    skill_src="$INSTALL_DIR/skills/scala-code-intelligence/${mode}.md"
+  else
+    echo "  (skill file not found, skipping skill installation)"
+    return
+  fi
+
+  mkdir -p "$skill_dir"
+  cp "$skill_src" "$skill_dir/SKILL.md"
+  echo "  Installed Scala code intelligence skill to $skill_dir/SKILL.md"
+}
+
 setup_claude_code() {
   local launcher_cmd="$1"
   local tmp_dir
@@ -638,6 +658,7 @@ MKJSON
       claude plugin marketplace add "$tmp_dir"
     fi
     claude plugin install intellij-scala-lsp@intellij-scala-lsp --scope user 2>/dev/null || true
+    install_skill "lsp"
     echo ""
     echo "=== Claude Code setup complete ==="
     echo "Restart Claude Code for the plugin to take effect."
@@ -678,6 +699,7 @@ setup_mcp() {
     echo "Registering MCP server with Claude Code..."
     claude mcp remove intellij-scala-lsp 2>/dev/null || true
     claude mcp add -s user intellij-scala-lsp -- node "$index_js"
+    install_skill "mcp"
     echo ""
     echo "=== MCP server setup complete ==="
     echo "MCP server: $index_js"
