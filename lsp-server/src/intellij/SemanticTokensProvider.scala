@@ -54,7 +54,7 @@ object SemanticTokensProvider:
     else if ScalaTypes.isObject(element) then Some(2)     // class (object)
     else if ScalaTypes.isTypeAlias(element) then Some(1)  // type
     else if ScalaTypes.isTypeParam(element) then Some(9)  // typeParameter
-    else if ScalaTypes.isFunction(element) || element.isInstanceOf[PsiMethod] then
+    else if ScalaTypes.isFunction(element) || ScalaTypes.isMethod(element) then
       // Check if it's an operator method (symbolic name)
       val methodName = try element.asInstanceOf[PsiNamedElement].getName catch case _: Exception => null
       if methodName != null && isOperatorName(methodName) then Some(14) // operator
@@ -72,7 +72,7 @@ object SemanticTokensProvider:
     else if ScalaTypes.isField(element) then Some(6)     // property (Java/compiled field)
     else if ScalaTypes.isSyntheticClass(element) then Some(2) // synthetic built-in class (Int, String, etc.)
     else if ScalaTypes.isSyntheticFunction(element) then Some(5) // synthetic function
-    else if element.isInstanceOf[PsiClass] then Some(2) // Java class fallback
+    else if ScalaTypes.isClassLike(element) then Some(2) // Java/compiled class fallback
     else if ScalaTypes.isPackaging(element) || ScalaTypes.isPackage(element) then Some(0) // namespace
     else if ScalaTypes.isPrimaryConstructor(element) then Some(5) // method
     else
