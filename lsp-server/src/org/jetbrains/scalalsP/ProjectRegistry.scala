@@ -9,13 +9,19 @@ import scala.jdk.CollectionConverters.*
 
 class ProjectRegistry:
   private val projects = new ConcurrentHashMap[String, Project]()
+  private val CACHE_DIR = s"${System.getProperty("user.home")}/.cache/intellij-scala-lsp"
 
   def getProject(path: String): Option[Project] =
     Option(projects.get(canonicalize(path)))
 
   def openProject(path: String): Project =
     val canonical = canonicalize(path)
-    projects.computeIfAbsent(canonical, _ => doOpenProject(canonical))
+    val project = projects.computeIfAbsent(canonical, _ => doOpenProject(canonical))
+    writeProjectList()
+    project
+
+  /** List all open project paths */
+  def listProjects(): Seq[String] = projects.keys().asScala.toSeq.sorted
 
   /** For testing — register a pre-opened project */
   private[scalalsP] def registerForTesting(path: String, project: Project): Unit =
@@ -33,6 +39,16 @@ class ProjectRegistry:
       catch case e: Exception =>
         System.err.println(s"[ProjectRegistry] Error closing ${project.getName}: ${e.getMessage}")
     projects.clear()
+    writeProjectList()
+
+  /** Persist open project paths to disk so --list-projects can read them */
+  private def writeProjectList(): Unit =
+    try
+      val dir = java.nio.file.Path.of(CACHE_DIR)
+      java.nio.file.Files.createDirectories(dir)
+      val content = projects.keys().asScala.toSeq.sorted.mkString("\n")
+      java.nio.file.Files.writeString(dir.resolve("daemon.projects"), content)
+    catch case _: Exception => ()
 
   private def doOpenProject(projectPath: String): Project =
     System.err.println(s"[ProjectRegistry] Opening project at: $projectPath")

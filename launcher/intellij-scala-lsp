@@ -1102,6 +1102,7 @@ case "${1:-}" in
     echo "Options:"
     echo "  --daemon [projects...]    Start daemon, optionally pre-warm projects"
     echo "  --stop                    Stop the daemon"
+    echo "  --list-projects           List projects open in the daemon"
     echo "  --install                 Download LSP JARs and SDK"
     echo "  --update                  Update to latest version"
     echo "  --setup-claude-code-mcp       Set up Claude Code MCP server (recommended)"
@@ -1235,6 +1236,22 @@ case "${1:-}" in
     assemble_classpath_and_flags
     exec "$JAVA" "${JVM_ARGS[@]}" -cp "$CLASSPATH" \
       org.jetbrains.scalalsP.ScalaLspMain --stop
+    ;;
+  --list-projects)
+    if [ ! -f "$CACHE_DIR/daemon.port" ]; then
+      echo "No daemon running."
+      exit 1
+    fi
+    echo "Daemon running on port $(cat "$CACHE_DIR/daemon.port")"
+    if [ -f "$CACHE_DIR/daemon.projects" ] && [ -s "$CACHE_DIR/daemon.projects" ]; then
+      echo "Open projects:"
+      while IFS= read -r line || [ -n "$line" ]; do
+        [ -n "$line" ] && echo "  $line"
+      done < "$CACHE_DIR/daemon.projects"
+    else
+      echo "No projects open"
+    fi
+    exit 0
     ;;
   --daemon)
     shift
