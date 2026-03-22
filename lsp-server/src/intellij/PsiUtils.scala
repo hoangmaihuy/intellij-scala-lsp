@@ -352,7 +352,10 @@ object PsiUtils:
     try
       import com.intellij.navigation.ChooseByNameContributor
       import com.intellij.util.indexing.FindSymbolParameters
-      val shortName = fqn.split('.').last
+      val rawShortName = fqn.split('.').last
+      // IntelliJ indexes Scala companion objects without the JVM '$' suffix
+      val shortName = rawShortName.stripSuffix("$")
+      val fqnWithout$ = fqn.stripSuffix("$")
       val contributors =
         ChooseByNameContributor.CLASS_EP_NAME.getExtensionList.asScala ++
         ChooseByNameContributor.SYMBOL_EP_NAME.getExtensionList.asScala
@@ -371,7 +374,7 @@ object PsiUtils:
                     case psi: PsiElement =>
                       // Use reflection to get qualifiedName — works across classloaders
                       val qualName = getQualifiedName(psi)
-                      if qualName.nonEmpty && (qualName.get == fqn || qualName.get == fqn.stripSuffix("$")) then
+                      if qualName.nonEmpty && (qualName.get == fqn || qualName.get == fqnWithout$) then
                         result = Some(psi)
                     case _ => ()
                 result.isEmpty
