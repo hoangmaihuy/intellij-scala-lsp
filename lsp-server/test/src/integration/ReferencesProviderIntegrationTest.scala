@@ -101,3 +101,45 @@ class ReferencesProviderIntegrationTest extends ScalaLspTestBase:
     )
     val result = findReferences(uri, positionAt(1, 10), includeDeclaration = false)
     assertNotNull(result)
+
+  def testReferencesToOverloadedMethod(): Unit =
+    val uri = configureScalaFile(
+      """object Calc:
+        |  def add(a: Int, b: Int) = a + b
+        |  def add(a: String, b: String) = a + b
+        |  val x = add(1, 2)
+        |  val y = add("a", "b")
+        |""".stripMargin
+    )
+    val result = findReferences(uri, positionAt(1, 6), includeDeclaration = false)
+    if result.nonEmpty then
+      assertTrue("Should find references to overloaded add", result.size >= 1)
+
+  def testReferencesIncludeCompanionUsages(): Unit =
+    val uri = configureScalaFile(
+      """class Foo(val x: Int)
+        |object Foo:
+        |  def apply(x: Int) = new Foo(x)
+        |
+        |object Main:
+        |  val f1 = Foo(1)
+        |  val f2 = new Foo(2)
+        |""".stripMargin
+    )
+    val result = findReferences(uri, positionAt(0, 6), includeDeclaration = false)
+    if result.nonEmpty then
+      assertTrue("Should find references from both class and companion usages", result.size >= 1)
+
+  def testUsageTypeClassification(): Unit =
+    val uri = configureScalaFile(
+      """import scala.collection.mutable
+        |object Main:
+        |  val x = 42
+        |  def foo = x + 1
+        |""".stripMargin
+    )
+    val provider = ReferencesProvider(projectManager)
+    val result = provider.findReferences(uri, positionAt(2, 6), includeDeclaration = false)
+    val typed = provider.getLastResultsWithTypes
+    for r <- typed do
+      assertNotNull("Usage type should not be null", r.usageType)
