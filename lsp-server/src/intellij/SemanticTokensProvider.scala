@@ -70,9 +70,9 @@ object SemanticTokensProvider:
     else if ScalaTypes.isBindingPattern(element) then classifyBinding(element)
     else if ScalaTypes.isFieldId(element) then classifyFieldId(element)
     else if element.isInstanceOf[PsiClass] then Some(2) // Java class fallback
-    else if element.getClass.getName.contains("ScPackageImpl") then Some(0)  // namespace
-    else if element.getClass.getName.contains("PrimaryConstructor") then Some(5) // method
-    else None // silently skip unclassified elements
+    else if ScalaTypes.isPackaging(element) || element.isInstanceOf[com.intellij.psi.PsiPackage] then Some(0) // namespace
+    else if ScalaTypes.isPrimaryConstructor(element) then Some(5) // method
+    else None
 
   /** Classify a binding pattern as property (class member) or variable (local). */
   private def classifyBinding(element: PsiElement): Option[Int] =
