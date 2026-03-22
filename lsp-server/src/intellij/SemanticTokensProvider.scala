@@ -67,6 +67,7 @@ object SemanticTokensProvider:
           else if ScalaTypes.isFieldId(navElement) then Some(6)    // property accessor
           else Some(5)                                              // method
         else Some(5) // method
+    else if ScalaTypes.isNamedTupleComponent(element) then Some(6) // property (named tuple label)
     else if ScalaTypes.isBindingPattern(element) then classifyBinding(element)
     else if ScalaTypes.isFieldId(element) then classifyFieldId(element)
     else if ScalaTypes.isField(element) then Some(6)     // property (Java/compiled field)

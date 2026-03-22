@@ -127,6 +127,9 @@ object ScalaTypes:
   def isFieldId(e: PsiElement): Boolean =
     isInstanceOfScala(e, "org.jetbrains.plugins.scala.lang.psi.api.base.ScFieldId")
 
+  def isNamedTupleComponent(e: PsiElement): Boolean =
+    isInstanceOfScala(e, "org.jetbrains.plugins.scala.lang.psi.api.base.ScNamedTupleComponent")
+
   // --- References ---
 
   def isReference(e: PsiElement): Boolean =
