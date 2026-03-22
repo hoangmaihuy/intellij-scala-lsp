@@ -186,8 +186,9 @@ class IntellijProjectManager(registry: Option[ProjectRegistry] = None, daemonMod
         Option(com.intellij.openapi.vfs.VirtualFileManager.getInstance().findFileByUrl(vfsUrl))
       else
         val path = uriToPath(uri)
-        // Try local filesystem first, then VirtualFileManager as fallback
+        // Try local filesystem first, refresh if not found (handles newly cached external sources)
         Option(LocalFileSystem.getInstance().findFileByPath(path))
+          .orElse(Option(LocalFileSystem.getInstance().refreshAndFindFileByPath(path)))
           .orElse(Option(com.intellij.openapi.vfs.VirtualFileManager.getInstance().findFileByUrl(uri)))
 
   def findPsiFile(uri: String): Option[PsiFile] =

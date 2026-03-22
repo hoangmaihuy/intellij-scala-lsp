@@ -29,3 +29,12 @@ jobs:
 
       - name: Package artifact
         run: sbt lsp-server/packageArtifact
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: MCP server — install and type-check
+        working-directory: mcp-server
+        run: npm install && npx tsc --noEmit

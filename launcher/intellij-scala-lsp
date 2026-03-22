@@ -677,6 +677,16 @@ CLAUDEMD
   echo "  Added code intelligence instructions to $claude_md"
 }
 
+build_lsp_server() {
+  if [ "$DEV_MODE" = true ] && [ -n "$PROJECT_ROOT" ]; then
+    echo "Building LSP server..."
+    (cd "$PROJECT_ROOT" && sbt "lsp-server/packageArtifact") || {
+      echo "ERROR: sbt build failed"
+      exit 1
+    }
+  fi
+}
+
 setup_claude_code() {
   local launcher_cmd="$1"
   local tmp_dir
@@ -1130,6 +1140,7 @@ case "${1:-}" in
       echo "Use --setup-claude-code-mcp for installed users."
       exit 1
     fi
+    build_lsp_server
     setup_mcp "$PROJECT_ROOT/mcp-server"
     exit 0
     ;;
@@ -1143,6 +1154,7 @@ case "${1:-}" in
       echo "Use --setup-claude-code-lsp for installed users."
       exit 1
     fi
+    build_lsp_server
     setup_claude_code "$SCRIPT_DIR/intellij-scala-lsp"
     exit 0
     ;;
@@ -1156,6 +1168,7 @@ case "${1:-}" in
       echo "Use --setup-vscode for installed users."
       exit 1
     fi
+    build_lsp_server
     setup_vscode "$SCRIPT_DIR/intellij-scala-lsp"
     exit 0
     ;;
@@ -1232,10 +1245,35 @@ case "${1:-}" in
     do_update
     ;;
   --stop)
-    resolve_sdk
-    assemble_classpath_and_flags
-    exec "$JAVA" "${JVM_ARGS[@]}" -cp "$CLASSPATH" \
-      org.jetbrains.scalalsP.ScalaLspMain --stop
+    pid=""
+    if [ -f "$CACHE_DIR/daemon.pid" ]; then
+      pid=$(cat "$CACHE_DIR/daemon.pid")
+    fi
+    # Fallback: find orphaned daemon via jps if pid file is missing or stale
+    if [ -z "$pid" ] || ! kill -0 "$pid" 2>/dev/null; then
+      pid=$(jps 2>/dev/null | grep ScalaLspMain | awk '{print $1}' | head -1)
+    fi
+    if [ -z "$pid" ]; then
+      echo "[ScalaLsp] No daemon running."
+      rm -f "$CACHE_DIR/daemon.pid" "$CACHE_DIR/daemon.port" "$CACHE_DIR/daemon.projects"
+      exit 0
+    fi
+    echo "[ScalaLsp] Stopping daemon (pid $pid)..."
+    kill "$pid" 2>/dev/null || true
+    # Wait up to 10 seconds for process to die
+    for i in $(seq 1 20); do
+      kill -0 "$pid" 2>/dev/null || break
+      sleep 0.5
+    done
+    if kill -0 "$pid" 2>/dev/null; then
+      echo "[ScalaLsp] Force killing daemon..."
+      kill -9 "$pid" 2>/dev/null || true
+      sleep 1
+    fi
+    # Clean up all state files and stale index locks
+    rm -f "$CACHE_DIR/daemon.pid" "$CACHE_DIR/daemon.port" "$CACHE_DIR/daemon.projects"
+    find "$CACHE_DIR/system/index" -name "*.lock" -delete 2>/dev/null || true
+    echo "[ScalaLsp] Daemon stopped."
     ;;
   --list-projects)
     if [ ! -f "$CACHE_DIR/daemon.port" ]; then

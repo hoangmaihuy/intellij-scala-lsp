@@ -16,14 +16,19 @@ async function resolveTargets(
   args: { symbolName?: string; filePath?: string; line?: number; column?: number },
   symbolResolver: SymbolResolver,
   fileManager: FileManager,
-): Promise<{ uri: string; position: Position; label: string }[]> {
+): Promise<{ uri: string; position: Position; label: string; matchQuality?: string }[]> {
   if (args.filePath && args.line !== undefined && args.column !== undefined) {
     const uri = await fileManager.ensureOpen(args.filePath);
     return [{ uri, position: toPosition(args.line, args.column), label: `${args.filePath}:${args.line}:${args.column}` }];
   }
   if (args.symbolName) {
     const symbols = await symbolResolver.resolve(args.symbolName);
-    return symbols.map(s => ({ uri: s.location.uri, position: s.location.range.start, label: s.name }));
+    const hasExact = symbols.some(s => s.matchQuality === 'exact' || s.matchQuality === 'companion');
+    // If exact matches exist, drop suffix matches to avoid processing irrelevant symbols
+    const filtered = hasExact
+      ? symbols.filter(s => s.matchQuality === 'exact' || s.matchQuality === 'companion')
+      : symbols;
+    return filtered.map(s => ({ uri: s.location.uri, position: s.location.range.start, label: s.name, matchQuality: s.matchQuality }));
   }
   return [];
 }
@@ -52,8 +57,23 @@ export function registerNavigationTools(
         return { content: [{ type: 'text' as const, text: `No symbol found matching '${args.symbolName}'. Try with filePath+line+column instead to resolve from a usage site.` }] };
       }
 
+      // resolveTargets already filters: exact matches only when available
+      let effectiveTargets = targets;
       const results: string[] = [];
-      for (const target of targets) {
+
+      if (args.symbolName && effectiveTargets.every(t => t.matchQuality === 'suffix')) {
+        results.push(`Note: No exact match for '${args.symbolName}'. Showing suffix matches. Use filePath+line+column from a usage site for external/library symbols.`);
+      }
+
+      // Cap at 3 full results; list the rest as summaries
+      const MAX_FULL = 3;
+      if (effectiveTargets.length > MAX_FULL) {
+        const extras = effectiveTargets.slice(MAX_FULL);
+        effectiveTargets = effectiveTargets.slice(0, MAX_FULL);
+        results.push(`Showing ${MAX_FULL} of ${MAX_FULL + extras.length} matches. Other matches:\n${extras.map(t => `  - ${t.label}`).join('\n')}`);
+      }
+
+      for (const target of effectiveTargets) {
         const defResult = await lsp.request<Location | Location[]>('textDocument/definition', {
           textDocument: { uri: target.uri },
           position: target.position,

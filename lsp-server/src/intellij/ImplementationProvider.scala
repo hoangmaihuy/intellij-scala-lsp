@@ -20,14 +20,21 @@ class ImplementationProvider(projectManager: IntellijProjectManager):
         document <- Option(FileDocumentManager.getInstance().getDocument(vf))
       yield
         val offset = PsiUtils.positionToOffset(document, position)
-        findImplementationsAtOffset(psiFile, offset)
+        findImplementationsAtOffset(psiFile, offset, uri)
 
       result.getOrElse(Seq.empty)
 
-  private def findImplementationsAtOffset(psiFile: com.intellij.psi.PsiFile, offset: Int): Seq[Location] =
+  private def findImplementationsAtOffset(psiFile: com.intellij.psi.PsiFile, offset: Int, uri: String = ""): Seq[Location] =
     val targetElement = PsiUtils.resolveToDeclaration(psiFile, offset)
 
-    targetElement match
+    // For cached source files, map to real library element
+    val effectiveTarget = targetElement.flatMap: target =>
+      if PsiUtils.isCachedSourceFile(uri) then
+        PsiUtils.resolveLibraryElement(target).orElse(Some(target))
+      else
+        Some(target)
+
+    effectiveTarget match
       case Some(target) =>
         val project = projectManager.getProject
         val scope = GlobalSearchScope.allScope(project)
