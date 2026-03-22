@@ -556,8 +556,6 @@ wait_for_port_file() {
 
 start_daemon_background() {
   log "Starting daemon in background..."
-  # Clean stale locks only — preserve indexes for fast restart
-  find "$CACHE_DIR/system" -name "*.lock" -delete 2>/dev/null || true
   "$JAVA" "${JVM_ARGS[@]}" -cp "$CLASSPATH" \
     org.jetbrains.scalalsP.ScalaLspMain --daemon "$@" \
     >> "$LSP_LOG" 2>&1 &
@@ -1277,11 +1275,11 @@ case "${1:-}" in
     if kill -0 "$pid" 2>/dev/null; then
       echo "[ScalaLsp] Force killing daemon..."
       kill -9 "$pid" 2>/dev/null || true
+      sleep 1
     fi
-    # Wait for OS to release memory-mapped files, then clean up
-    sleep 2
+    # Clean up all state files and stale index locks
     rm -f "$CACHE_DIR/daemon.pid" "$CACHE_DIR/daemon.port" "$CACHE_DIR/daemon.projects"
-    find "$CACHE_DIR/system" -name "*.lock" -delete 2>/dev/null || true
+    find "$CACHE_DIR/system/index" -name "*.lock" -delete 2>/dev/null || true
     echo "[ScalaLsp] Daemon stopped."
     ;;
   --list-projects)
@@ -1305,8 +1303,6 @@ case "${1:-}" in
     resolve_sdk
     assemble_classpath_and_flags
     check_for_updates
-    # Clean stale locks only — preserve indexes for fast restart
-    find "$CACHE_DIR/system" -name "*.lock" -delete 2>/dev/null || true
     exec "$JAVA" "${JVM_ARGS[@]}" -cp "$CLASSPATH" \
       org.jetbrains.scalalsP.ScalaLspMain --daemon "$@"
     ;;
