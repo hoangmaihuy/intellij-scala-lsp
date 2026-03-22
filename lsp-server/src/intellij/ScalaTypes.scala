@@ -94,6 +94,19 @@ object ScalaTypes:
   def isPackaging(e: PsiElement): Boolean =
     isInstanceOfScala(e, "org.jetbrains.plugins.scala.lang.psi.api.toplevel.ScPackaging")
 
+  def isPackage(e: PsiElement): Boolean =
+    isInstanceOfScala(e, "org.jetbrains.plugins.scala.lang.psi.impl.ScPackageImpl") ||
+    isInstanceOfAny(e, "com.intellij.psi.PsiPackage")
+
+  def isSyntheticClass(e: PsiElement): Boolean =
+    isInstanceOfScala(e, "org.jetbrains.plugins.scala.lang.psi.impl.toplevel.synthetic.ScSyntheticClass")
+
+  def isSyntheticFunction(e: PsiElement): Boolean =
+    isInstanceOfScala(e, "org.jetbrains.plugins.scala.lang.psi.impl.toplevel.synthetic.ScSyntheticFunction")
+
+  def isField(e: PsiElement): Boolean =
+    isInstanceOfAny(e, "com.intellij.psi.PsiField")
+
   // --- Params and patterns ---
 
   def isParameter(e: PsiElement): Boolean =
