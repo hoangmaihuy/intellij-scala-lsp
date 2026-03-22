@@ -41,10 +41,10 @@ export class FileManager {
           textDocument: { uri, version: existing.version } as VersionedTextDocumentIdentifier,
           contentChanges: [{ text: content }],
         });
-        this.client.notify('workspace/didChangeWatchedFiles', {
-          changes: [{ uri, type: FileChangeType.Changed }],
+        this.client.notify('textDocument/didSave', {
+          textDocument: { uri } as TextDocumentIdentifier,
         });
-        logger.debug(`File changed on disk, sent didChange: ${filePath}`);
+        logger.debug(`File changed on disk, sent didChange+didSave: ${filePath}`);
       }
       return uri;
     }

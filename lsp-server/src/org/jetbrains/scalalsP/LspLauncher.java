@@ -108,6 +108,11 @@ public final class LspLauncher {
         }
 
         @Override
+        public void setTrace(SetTraceParams params) {
+            // Ignore $/setTrace notifications — not needed in headless mode
+        }
+
+        @Override
         public TextDocumentService getTextDocumentService() {
             // Return a Java wrapper around the Scala TextDocumentService
             return new JavaTextDocumentService(delegate.getTextDocumentService());

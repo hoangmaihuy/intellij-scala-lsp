@@ -19,9 +19,11 @@ class ScalaLspServer(
   def this(projectPath: String, pm: IntellijProjectManager) = this(projectPath, pm, false)
 
   import scala.compiletime.uninitialized
+  import org.jetbrains.scalalsP.intellij.DiagnosticsProvider
   private var client: LanguageClient = uninitialized
-  private val textDocumentService = ScalaTextDocumentService(projectManager)
-  private val workspaceService = ScalaWorkspaceService(projectManager)
+  private val diagnosticsProvider = DiagnosticsProvider(projectManager)
+  private val textDocumentService = ScalaTextDocumentService(projectManager, diagnosticsProvider)
+  private val workspaceService = ScalaWorkspaceService(projectManager, diagnosticsProvider)
 
   def connect(client: LanguageClient): Unit =
     this.client = client
@@ -95,7 +97,7 @@ class ScalaLspServer(
 
       // Execute commands
       val executeCommandOptions = ExecuteCommandOptions(
-        java.util.List.of("scala.organizeImports", "scala.reformat", "scala.gotoLocation")
+        java.util.List.of("scala.organizeImports", "scala.reformat", "scala.gotoLocation", "scala.pullDiagnostics")
       )
       capabilities.setExecuteCommandProvider(executeCommandOptions)
 

@@ -3,13 +3,14 @@ package org.jetbrains.scalalsP.integration
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import org.eclipse.lsp4j.*
 import org.jetbrains.scalalsP.ScalaWorkspaceService
+import org.jetbrains.scalalsP.intellij.DiagnosticsProvider
 import org.junit.Assert.*
 
 import java.util.concurrent.TimeUnit
 
 class ExecuteCommandIntegrationTest extends ScalaLspTestBase:
 
-  private def workspaceService = ScalaWorkspaceService(projectManager)
+  private def workspaceService = ScalaWorkspaceService(projectManager, DiagnosticsProvider(projectManager))
 
   def testOrganizeImports(): Unit =
     val uri = configureScalaFile(
