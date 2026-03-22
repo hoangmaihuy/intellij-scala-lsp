@@ -203,6 +203,10 @@ class ScalaLspServer(
     end.setMessage("Indexing complete")
     client.notifyProgress(ProgressParams(LspEither.forLeft(token), LspEither.forLeft(end)))
 
+  override def setTrace(params: org.eclipse.lsp4j.SetTraceParams): Unit =
+    // VS Code sends $/setTrace — ignore it (lsp4j default throws UnsupportedOperationException)
+    ()
+
   override def shutdown(): CompletableFuture[AnyRef] =
     CompletableFuture.supplyAsync: () =>
       System.err.println("[ScalaLsp] Shutting down...")
