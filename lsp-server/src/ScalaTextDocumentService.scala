@@ -42,6 +42,10 @@ class ScalaTextDocumentService(projectManager: IntellijProjectManager, val diagn
     this.client = client
     diagnosticsProvider.connect(client)
 
+  /** Get the last references result with usage types (for executeCommand access). */
+  def getLastReferencesWithTypes: Seq[ReferenceResult] =
+    referencesProvider.getLastResultsWithTypes
+
   def registerDaemonListener(): Unit =
     diagnosticsProvider.registerDaemonListener()
 

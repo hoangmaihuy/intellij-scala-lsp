@@ -14,7 +14,7 @@ import java.util.concurrent.CompletableFuture
 import scala.jdk.CollectionConverters.*
 
 // Handles workspace LSP requests.
-class ScalaWorkspaceService(projectManager: IntellijProjectManager, diagnosticsProvider: DiagnosticsProvider) extends WorkspaceService:
+class ScalaWorkspaceService(projectManager: IntellijProjectManager, diagnosticsProvider: DiagnosticsProvider, textDocumentService: ScalaTextDocumentService) extends WorkspaceService:
 
   import scala.compiletime.uninitialized
   private var client: LanguageClient = uninitialized
@@ -57,6 +57,27 @@ class ScalaWorkspaceService(projectManager: IntellijProjectManager, diagnosticsP
           showParams.setTakeFocus(true)
           client.showDocument(showParams).get()
         null
+      case "scala.referencesWithTypes" =>
+        import com.google.gson.{JsonArray, JsonObject}
+        val arr = new JsonArray()
+        for r <- textDocumentService.getLastReferencesWithTypes do
+          val obj = new JsonObject()
+          val locObj = new JsonObject()
+          locObj.addProperty("uri", r.location.getUri)
+          val rangeObj = new JsonObject()
+          val startObj = new JsonObject()
+          startObj.addProperty("line", r.location.getRange.getStart.getLine)
+          startObj.addProperty("character", r.location.getRange.getStart.getCharacter)
+          val endObj = new JsonObject()
+          endObj.addProperty("line", r.location.getRange.getEnd.getLine)
+          endObj.addProperty("character", r.location.getRange.getEnd.getCharacter)
+          rangeObj.add("start", startObj)
+          rangeObj.add("end", endObj)
+          locObj.add("range", rangeObj)
+          obj.add("location", locObj)
+          obj.addProperty("usageType", r.usageType)
+          arr.add(obj)
+        return CompletableFuture.completedFuture(arr)
       case _ =>
         System.err.println(s"[WorkspaceService] Unknown command: $command")
         null
