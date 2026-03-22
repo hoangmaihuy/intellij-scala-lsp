@@ -587,75 +587,6 @@ proxy_stdio_to_tcp() {
 
 # --- Editor Setup ---
 
-install_claude_md() {
-  local mode="$1"  # "mcp" or "lsp"
-  local claude_md="$HOME/.claude/CLAUDE.md"
-  local marker="<!-- intellij-scala-lsp -->"
-
-  # Remove existing intellij-scala-lsp section if present
-  if [ -f "$claude_md" ] && grep -q "$marker" "$claude_md"; then
-    # Remove from marker to end-marker
-    sed -i.bak "/$marker/,/<!-- \/intellij-scala-lsp -->/d" "$claude_md"
-    rm -f "${claude_md}.bak"
-  fi
-
-  # Create ~/.claude if it doesn't exist
-  mkdir -p "$(dirname "$claude_md")"
-
-  if [ "$mode" = "mcp" ]; then
-    cat >> "$claude_md" << 'CLAUDEMD'
-<!-- intellij-scala-lsp -->
-### Scala Code Intelligence
-
-Use intellij-scala-lsp MCP tools instead of Grep/Glob/Read for Scala code navigation.
-They understand Scala's type system, implicits, and cross-file references.
-
-| Instead of | Use MCP tool | Why |
-|---|---|---|
-| Grep for class/method | `definition` with symbolName | Returns full source code, resolves through implicits |
-| Grep for usages | `references` with symbolName | Finds all references including type-level usages |
-| Grep for subclasses | `implementations` with symbolName | Finds all trait/class implementations |
-| Read file + scan | `hover` with symbolName | Type signature, docs, supertypes, subtypes in one call |
-| Grep across project | `workspace_symbols` with query | Fast fuzzy search across all project symbols |
-| Read file for outline | `document_symbols` with filePath | Structured symbol tree with kinds and line ranges |
-
-For navigation, pass `symbolName` (e.g. `"MyClass"`, `"MyClass.myMethod"`) — no need to know file paths.
-Use `filePath+line+column` when navigating from a specific usage site or for external/library symbols.
-
-After editing Scala code, call `diagnostics` to check for type errors before moving on.
-Before renaming, call `references` to see all affected call sites.
-Use `organize_imports` after adding/removing imports. Call `format` after significant changes.
-
-Use Grep/Glob only for text/pattern searches (comments, strings, config values) or non-Scala files.
-<!-- /intellij-scala-lsp -->
-CLAUDEMD
-  else
-    cat >> "$claude_md" << 'CLAUDEMD'
-<!-- intellij-scala-lsp -->
-### Scala Code Intelligence
-
-Use LSP operations instead of Grep/Glob/Read for Scala code navigation.
-They understand Scala's type system, implicits, and cross-file references.
-
-| Instead of | Use LSP operation |
-|---|---|
-| Grep for class/method | `goToDefinition` / `goToImplementation` |
-| Grep for usages | `findReferences` |
-| Read file + scan | `hover` for type info |
-| Grep across project | `workspaceSymbol` |
-| Read file for outline | `documentSymbol` |
-
-Check LSP diagnostics after every edit — fix type errors immediately.
-Use `findReferences` before renaming or changing function signatures.
-
-Use Grep/Glob only for text/pattern searches (comments, strings, config values) or non-Scala files.
-<!-- /intellij-scala-lsp -->
-CLAUDEMD
-  fi
-
-  echo "Installed Scala code intelligence instructions to $claude_md"
-}
-
 setup_claude_code() {
   local launcher_cmd="$1"
   local tmp_dir
@@ -707,7 +638,6 @@ MKJSON
       claude plugin marketplace add "$tmp_dir"
     fi
     claude plugin install intellij-scala-lsp@intellij-scala-lsp --scope user 2>/dev/null || true
-    install_claude_md "lsp"
     echo ""
     echo "=== Claude Code setup complete ==="
     echo "Restart Claude Code for the plugin to take effect."
@@ -748,7 +678,6 @@ setup_mcp() {
     echo "Registering MCP server with Claude Code..."
     claude mcp remove intellij-scala-lsp 2>/dev/null || true
     claude mcp add -s user intellij-scala-lsp -- node "$index_js"
-    install_claude_md "mcp"
     echo ""
     echo "=== MCP server setup complete ==="
     echo "MCP server: $index_js"
