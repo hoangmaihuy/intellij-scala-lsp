@@ -128,8 +128,14 @@ export function registerNavigationTools(
         return { content: [{ type: 'text' as const, text: `No symbol found matching '${args.symbolName}'. Try with filePath+line+column instead.` }] };
       }
 
+      // For symbolName queries, skip companion objects — the class search covers both
+      const dedupedTargets = args.symbolName
+        ? targets.filter(t => t.matchQuality !== 'companion')
+        : targets;
+      const effectiveTargets = dedupedTargets.length > 0 ? dedupedTargets : targets;
+
       const allRefs: string[] = [];
-      for (const target of targets) {
+      for (const target of effectiveTargets) {
         const refs = await lsp.request<Location[]>('textDocument/references', {
           textDocument: { uri: target.uri },
           position: target.position,
