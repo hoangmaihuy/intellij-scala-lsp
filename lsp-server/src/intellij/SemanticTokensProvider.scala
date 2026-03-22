@@ -69,8 +69,11 @@ object SemanticTokensProvider:
         else Some(5) // method
     else if ScalaTypes.isBindingPattern(element) then classifyBinding(element)
     else if ScalaTypes.isFieldId(element) then classifyFieldId(element)
+    else if ScalaTypes.isField(element) then Some(6)     // property (Java/compiled field)
+    else if ScalaTypes.isSyntheticClass(element) then Some(2) // synthetic built-in class (Int, String, etc.)
+    else if ScalaTypes.isSyntheticFunction(element) then Some(5) // synthetic function
     else if element.isInstanceOf[PsiClass] then Some(2) // Java class fallback
-    else if ScalaTypes.isPackaging(element) || element.isInstanceOf[com.intellij.psi.PsiPackage] then Some(0) // namespace
+    else if ScalaTypes.isPackaging(element) || ScalaTypes.isPackage(element) then Some(0) // namespace
     else if ScalaTypes.isPrimaryConstructor(element) then Some(5) // method
     else
       System.err.println(s"[SemanticTokens] Unclassified resolved element: ${element.getClass.getName}")
