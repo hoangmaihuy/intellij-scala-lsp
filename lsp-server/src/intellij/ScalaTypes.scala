@@ -107,6 +107,12 @@ object ScalaTypes:
   def isField(e: PsiElement): Boolean =
     isInstanceOfAny(e, "com.intellij.psi.PsiField")
 
+  def isMethod(e: PsiElement): Boolean =
+    isInstanceOfAny(e, "com.intellij.psi.PsiMethod")
+
+  def isClassLike(e: PsiElement): Boolean =
+    isInstanceOfAny(e, "com.intellij.psi.PsiClass")
+
   // --- Params and patterns ---
 
   def isParameter(e: PsiElement): Boolean =
