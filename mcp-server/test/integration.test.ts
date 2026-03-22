@@ -5,10 +5,6 @@
  *   1. Compile fixture: cd mcp-server/test/fixtures && sbt compile
  *   2. Import: intellij-scala-lsp --import mcp-server/test/fixtures
  *   3. Start daemon: intellij-scala-lsp --daemon mcp-server/test/fixtures
- *
- * Note: workspace/symbol may not index Scala 3 sources in small sbt projects.
- * Tests that depend on symbol-name resolution are marked with filePath+line+column
- * fallback to ensure they pass regardless of indexing state.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { setupTestEnvironment, teardownTestEnvironment, FIXTURES, FIXTURE_DIR } from './setup.js';
@@ -41,49 +37,59 @@ describe('tool registration', () => {
 });
 
 // ── Definition ───────────────────────────────────────────────────────
-// Circle.scala:
-//   1: package example
-//   2: (blank)
-//   3: case class Circle(radius: Double) extends Shape:
-//   4:   override def area: Double = math.Pi * radius * radius
-//   5:   override def perimeter: Double = 2 * math.Pi * radius
 
 describe('definition', () => {
-  it('should return source via filePath+line+column', async () => {
-    // In Circle.scala line 4, col 31: "math" — go to definition
+  it('should return full source by symbol name', async () => {
+    const result = await tools.callTool('definition', { symbolName: 'Circle' });
+    expect(result).toContain('case class Circle');
+    expect(result).toContain('radius: Double');
+    expect(result).toContain('Circle.scala');
+  });
+
+  it('should return source for a trait', async () => {
+    const result = await tools.callTool('definition', { symbolName: 'Shape' });
+    expect(result).toContain('trait Shape');
+    expect(result).toContain('Shape.scala');
+  });
+
+  it('should include line numbers', async () => {
+    const result = await tools.callTool('definition', { symbolName: 'Circle' });
+    expect(result).toMatch(/\d+\|/);
+  });
+
+  it('should work with filePath+line+column', async () => {
+    // Circle.scala line 3 col 43: "Shape" in "extends Shape:"
     const result = await tools.callTool('definition', {
       filePath: FIXTURES.circle,
-      line: 4,
-      column: 31,
+      line: 3,
+      column: 43,
     });
-    // Should return something (either definition or not found)
-    expect(result).toBeDefined();
-    expect(result.length).toBeGreaterThan(0);
+    expect(result).toContain('Shape');
+    expect(result).toContain('Shape.scala');
   });
 
-  it('should return error for non-existent symbol name', async () => {
+  it('should return error for non-existent symbol', async () => {
     const result = await tools.callTool('definition', { symbolName: 'NonExistentClass' });
     expect(result).toContain('No symbol found');
-  });
-
-  it('should return error with no args', async () => {
-    const result = await tools.callTool('definition', {});
-    // Empty targets
-    expect(result).toBeDefined();
   });
 });
 
 // ── References ───────────────────────────────────────────────────────
 
 describe('references', () => {
-  it('should find references via filePath+line+column', async () => {
-    // Shape.scala line 5: "def area: Double" — find references to area
+  it('should find usages by symbol name', async () => {
+    const result = await tools.callTool('references', { symbolName: 'Circle' });
+    expect(result).toMatch(/\d+\|/);
+    expect(result).toContain('.scala');
+  });
+
+  it('should find references by position', async () => {
+    // Shape.scala line 5 col 7: "area" method
     const result = await tools.callTool('references', {
       filePath: FIXTURES.shape,
       line: 5,
-      column: 7, // on "area"
+      column: 7,
     });
-    // area is overridden in Circle and Rectangle
     expect(result).toContain('.scala');
   });
 });
@@ -91,50 +97,64 @@ describe('references', () => {
 // ── Implementations ──────────────────────────────────────────────────
 
 describe('implementations', () => {
-  it('should find implementations via position', async () => {
-    // Shape.scala line 4: "trait Shape" — find implementations
+  it('should find implementations by symbol name', async () => {
+    const result = await tools.callTool('implementations', { symbolName: 'Shape' });
+    expect(result).toContain('Circle');
+    expect(result).toContain('Rectangle');
+  });
+
+  it('should return full source for implementations', async () => {
+    const result = await tools.callTool('implementations', { symbolName: 'Shape' });
+    expect(result).toContain('override def area');
+  });
+
+  it('should work by position', async () => {
+    // Shape.scala line 4 col 7: "Shape" trait name
     const result = await tools.callTool('implementations', {
       filePath: FIXTURES.shape,
       line: 4,
-      column: 7, // on "Shape"
+      column: 7,
     });
-    // Circle and Rectangle extend Shape
-    expect(result).toMatch(/Circle|Rectangle|implementation/i);
+    expect(result).toMatch(/Circle|Rectangle/);
   });
 });
 
 // ── Hover ────────────────────────────────────────────────────────────
 
 describe('hover', () => {
-  it('should return type info by position', async () => {
-    // Circle.scala line 3: "case class Circle(radius: Double)"
-    const result = await tools.callTool('hover', {
-      filePath: FIXTURES.circle,
-      line: 3,
-      column: 14, // on "Circle"
-    });
+  it('should return type info by symbol name', async () => {
+    const result = await tools.callTool('hover', { symbolName: 'Circle' });
     expect(result).toContain('Circle');
-    expect(result).toContain('example');
   });
 
-  it('should return method type info', async () => {
-    // Circle.scala line 4: "override def area: Double"
+  it('should return type info by position', async () => {
+    // Circle.scala line 4 col 17: "area" method
     const result = await tools.callTool('hover', {
       filePath: FIXTURES.circle,
       line: 4,
-      column: 17, // on "area"
+      column: 17,
     });
     expect(result).toContain('Double');
   });
 
   it('should include supertypes via position', async () => {
+    // Position on "Circle" class name — type hierarchy works better at class definition site
     const result = await tools.callTool('hover', {
       filePath: FIXTURES.circle,
       line: 3,
       column: 14, // on "Circle"
     });
-    // Hover enrichment includes supertypes
-    expect(result).toMatch(/Supertypes|Shape|extends/i);
+    expect(result).toMatch(/Supertypes.*Shape|extends.*Shape/);
+  });
+
+  it('should include subtypes via position', async () => {
+    // Position on "Shape" trait name
+    const result = await tools.callTool('hover', {
+      filePath: FIXTURES.shape,
+      line: 4,
+      column: 7, // on "Shape"
+    });
+    expect(result).toMatch(/Subtypes.*Circle|Subtypes.*Rectangle/);
   });
 
   it('should return error when no args', async () => {
@@ -172,16 +192,20 @@ describe('document_symbols', () => {
 // ── Workspace Symbols ────────────────────────────────────────────────
 
 describe('workspace_symbols', () => {
+  it('should find symbols across the project', async () => {
+    const result = await tools.callTool('workspace_symbols', { query: 'Shape' });
+    expect(result).toContain('Shape');
+    expect(result).toMatch(/trait|class|object/);
+  });
+
+  it('should find methods', async () => {
+    const result = await tools.callTool('workspace_symbols', { query: 'totalArea' });
+    expect(result).toContain('totalArea');
+  });
+
   it('should return message for no matches', async () => {
     const result = await tools.callTool('workspace_symbols', { query: 'zzzzNonExistent' });
     expect(result).toContain('No symbols found');
-  });
-
-  it('should handle valid query', async () => {
-    // May or may not find results depending on indexing state
-    const result = await tools.callTool('workspace_symbols', { query: 'Shape' });
-    expect(result).toBeDefined();
-    expect(result.length).toBeGreaterThan(0);
   });
 });
 
