@@ -7,7 +7,6 @@ import { registerNavigationTools } from './navigation.js';
 import { registerDisplayTools } from './display.js';
 import { registerEditingTools } from './editing.js';
 import { registerWorkspaceTools } from './workspace.js';
-import { registerHierarchyTools } from './hierarchy.js';
 import { registerFormattingTools } from './formatting.js';
 
 export function registerTools(
@@ -21,6 +20,5 @@ export function registerTools(
   registerDisplayTools(mcp, lsp, fileManager, diagnostics, symbolResolver);
   registerEditingTools(mcp, lsp, fileManager);
   registerWorkspaceTools(mcp, lsp);
-  registerHierarchyTools(mcp, lsp, fileManager, symbolResolver);
   registerFormattingTools(mcp, lsp, fileManager);
 }
