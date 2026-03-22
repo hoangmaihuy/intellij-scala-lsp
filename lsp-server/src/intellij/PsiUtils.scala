@@ -107,25 +107,30 @@ object PsiUtils:
     None
 
   private def elementToLocationDirect(effectiveElement: PsiElement): Option[Location] =
-    for
-      file <- Option(effectiveElement.getContainingFile)
-      vf <- Option(file.getVirtualFile)
-      location <- {
-        val vfPath = vf.getPath
-        if vfPath.contains("!/") then
-          // JAR-internal files: cache source, compute range with Document fallback
-          val cachedUri = cacheJarEntry(file, vf)
-          val range = Option(com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().getDocument(vf))
-            .map(doc => elementToRange(doc, effectiveElement))
-            .getOrElse(offsetToRange(file.getText, effectiveElement.getTextRange.getStartOffset, effectiveElement.getTextRange.getEndOffset))
-          Some(Location(cachedUri, range))
-        else
-          // Local files: Document required
-          Option(com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().getDocument(vf))
-            .map: document =>
-              Location(vfToUri(vf), elementToRange(document, effectiveElement))
-      }
-    yield location
+    try
+      for
+        file <- Option(effectiveElement.getContainingFile)
+        vf <- Option(file.getVirtualFile)
+        location <- {
+          val vfPath = vf.getPath
+          if vfPath.contains("!/") then
+            // JAR-internal files: cache source, compute range with Document fallback
+            val cachedUri = cacheJarEntry(file, vf)
+            val range = Option(com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().getDocument(vf))
+              .map(doc => elementToRange(doc, effectiveElement))
+              .getOrElse(offsetToRange(file.getText, effectiveElement.getTextRange.getStartOffset, effectiveElement.getTextRange.getEndOffset))
+            Some(Location(cachedUri, range))
+          else
+            // Local files: Document required
+            Option(com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().getDocument(vf))
+              .map: document =>
+                Location(vfToUri(vf), elementToRange(document, effectiveElement))
+        }
+      yield location
+    catch
+      case e: Exception =>
+        System.err.println(s"[PsiUtils] Skipping element due to stale index: ${e.getMessage}")
+        None
 
   /** Resolve a JAR-internal file to a cached file:// URI.
     * First tries to find the original source from attached source JARs (like IntelliJ does),

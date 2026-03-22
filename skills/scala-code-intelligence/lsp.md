@@ -7,7 +7,7 @@ description: >
   over Grep/Glob/Read for Scala code navigation — they understand Scala's type system,
   implicits, and cross-file references. Use this skill whenever you encounter .scala
   files, even if the user doesn't explicitly mention code intelligence.
-user-invocable: false
+user-invocable: true
 ---
 
 # Scala Code Intelligence (LSP)

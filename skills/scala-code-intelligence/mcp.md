@@ -2,12 +2,12 @@
 name: scala-code-intelligence
 description: >
   Scala code intelligence powered by IntelliJ. Use when working with Scala code —
-  reading, navigating, editing, refactoring, finding definitions, references,
+  reading, navigating, editing, refactoring, finding definitions, references, usages,
   implementations, or exploring codebase structure. ALWAYS prefer these MCP tools
   over Grep/Glob/Read for Scala code navigation — they understand Scala's type system,
   implicits, and cross-file references. Use this skill whenever you encounter .scala
   files, even if the user doesn't explicitly mention code intelligence.
-user-invocable: false
+user-invocable: true
 ---
 
 # Scala Code Intelligence (MCP)
@@ -21,7 +21,7 @@ that text search cannot see. A grep for `process` might find 200 string matches;
 
 **Use MCP tools** whenever you need to understand Scala code structure:
 - "Where is X defined?" → `definition`
-- "Who calls X?" / "Where is X used?" → `references`
+- "Who calls X?" / "Where is X used?" / "Find X usages" → `references`
 - "What classes implement trait X?" → `implementations`
 - "What type is X?" / "What does X extend?" → `hover`
 - "What symbols exist matching X?" → `workspace_symbols`
