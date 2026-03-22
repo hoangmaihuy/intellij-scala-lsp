@@ -1,24 +1,22 @@
 package org.jetbrains.scalalsP.intellij
 
 import com.intellij.codeInsight.daemon.DaemonCodeAnalyzer
-import com.intellij.codeInsight.daemon.impl.{DaemonCodeAnalyzerImpl, HighlightInfo}
+import com.intellij.codeInsight.daemon.impl.{DaemonCodeAnalyzerImpl, DaemonProgressIndicator, HighlightInfo, HighlightingSession, HighlightingSessionImpl}
+import com.intellij.codeInsight.multiverse.CodeInsightContexts
 import com.intellij.lang.annotation.HighlightSeverity
 import com.intellij.openapi.fileEditor.{FileDocumentManager, FileEditor, TextEditor}
-import com.intellij.openapi.project.Project
+import com.intellij.openapi.progress.ProgressManager
+import com.intellij.openapi.util.{Computable, ProperTextRange}
 import org.eclipse.lsp4j.*
 import org.eclipse.lsp4j.services.LanguageClient
 
 import java.util.Collection as JCollection
 import scala.jdk.CollectionConverters.*
 
-// Implements textDocument/publishDiagnostics by extracting IntelliJ's highlighting results.
-// Subscribes to DaemonCodeAnalyzer.DAEMON_EVENT_TOPIC to push diagnostics when analysis completes,
-// instead of using a crude timer delay.
 class DiagnosticsProvider(projectManager: IntellijProjectManager):
 
   import scala.compiletime.uninitialized
   private var client: LanguageClient = uninitialized
-  // Track open files to know which URIs to publish diagnostics for
   private val openFiles = scala.collection.concurrent.TrieMap[String, Boolean]()
 
   def connect(client: LanguageClient): Unit =
@@ -31,7 +29,6 @@ class DiagnosticsProvider(projectManager: IntellijProjectManager):
       new DaemonCodeAnalyzer.DaemonListener:
         override def daemonFinished(fileEditors: JCollection[? <: FileEditor]): Unit =
           if client == null then return
-          // Publish diagnostics for each file that was just analyzed
           fileEditors.asScala.foreach:
             case textEditor: TextEditor =>
               val vf = textEditor.getFile
@@ -47,16 +44,70 @@ class DiagnosticsProvider(projectManager: IntellijProjectManager):
 
   def trackClose(uri: String): Unit =
     openFiles.remove(uri)
-    // Clear diagnostics for closed file
     if client != null then
       client.publishDiagnostics(new PublishDiagnosticsParams(uri, java.util.Collections.emptyList()))
 
   def publishDiagnostics(uri: String): Unit =
     if client == null then return
-
     val diagnostics = collectDiagnostics(uri)
     val params = new PublishDiagnosticsParams(uri, diagnostics.asJava)
     client.publishDiagnostics(params)
+
+  /** Run analysis passes directly and collect diagnostics on demand.
+    * Uses DaemonCodeAnalyzerImpl.runMainPasses() — same approach as
+    * intellij-community's MCP server (AnalysisToolset.get_file_problems).
+    * Must NOT run on EDT — runMainPasses requires a background thread. */
+  def runAnalysisAndCollect(uri: String): Seq[Diagnostic] =
+    import com.intellij.openapi.application.ReadAction
+    // Resolve file references under read action
+    val resolved = ReadAction.compute[Option[(com.intellij.psi.PsiFile, com.intellij.openapi.editor.Document)], RuntimeException]: () =>
+      for
+        vf <- projectManager.findVirtualFile(uri)
+        psiFile <- projectManager.findPsiFile(uri)
+        document <- Option(FileDocumentManager.getInstance().getDocument(vf))
+      yield (psiFile, document)
+
+    resolved match
+      case None =>
+        System.err.println(s"[DiagnosticsProvider] Could not resolve file for $uri")
+        Seq.empty
+      case Some((psiFile, document)) =>
+        System.err.println(s"[DiagnosticsProvider] Analyzing $uri (${document.getTextLength} chars)")
+        val project = projectManager.getProject
+        val daemonIndicator = new DaemonProgressIndicator()
+        val range = new ProperTextRange(0, document.getTextLength)
+        val codeAnalyzer = DaemonCodeAnalyzer.getInstance(project).asInstanceOf[DaemonCodeAnalyzerImpl]
+
+        try
+          // Container for results from inside the callback
+          val results = new java.util.ArrayList[Diagnostic]()
+          ProgressManager.getInstance().runProcess(
+            (() =>
+              HighlightingSessionImpl.runInsideHighlightingSession(
+                psiFile,
+                CodeInsightContexts.defaultContext(),
+                null, // editorColorsScheme
+                range,
+                false, // canChangeDocument
+                // runMainPasses MUST be called inside this callback while the session is active
+                new java.util.function.Consumer[HighlightingSession]:
+                  override def accept(session: HighlightingSession): Unit =
+                    session.asInstanceOf[HighlightingSessionImpl].setMinimumSeverity(HighlightSeverity.WARNING)
+                    val highlightInfos = codeAnalyzer.runMainPasses(psiFile, document, daemonIndicator)
+                    highlightInfos.asScala
+                      .filter(h => h.getDescription != null && h.getDescription.nonEmpty)
+                      .filter(h => h.getSeverity.compareTo(HighlightSeverity.WARNING) >= 0)
+                      .foreach(h => results.add(toDiagnostic(document, h)))
+              )
+            ): Runnable,
+            daemonIndicator
+          )
+          System.err.println(s"[DiagnosticsProvider] runMainPasses found ${results.size()} diagnostics")
+          results.asScala.toSeq
+        catch
+          case e: Exception =>
+            System.err.println(s"[DiagnosticsProvider] runMainPasses failed: ${e.getMessage}")
+            Seq.empty
 
   def collectDiagnostics(uri: String): Seq[Diagnostic] =
     projectManager.smartReadAction: () =>
@@ -65,7 +116,6 @@ class DiagnosticsProvider(projectManager: IntellijProjectManager):
         document <- Option(FileDocumentManager.getInstance().getDocument(vf))
       yield
         val project = projectManager.getProject
-
         val highlights = DaemonCodeAnalyzerImpl.getHighlights(
           document,
           HighlightSeverity.WARNING,

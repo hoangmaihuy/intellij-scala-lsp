@@ -6,7 +6,6 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { LspClient } from './lsp-client.js';
 import { FileManager } from './file-manager.js';
-import { DiagnosticsCache } from './diagnostics-cache.js';
 import { SymbolResolver } from './symbol-resolver.js';
 import { applyWorkspaceEdit } from './workspace-edit.js';
 import { registerTools } from './tools/register.js';
@@ -81,8 +80,6 @@ async function main(): Promise<void> {
   await lsp.connect(port);
 
   const fileManager = new FileManager(lsp);
-  const diagnostics = new DiagnosticsCache(lsp);
-
   lsp.onRequest('workspace/applyEdit', async (params: unknown) => {
     const p = params as { edit: WorkspaceEdit };
     const modifiedUris = applyWorkspaceEdit(p.edit);
@@ -111,7 +108,7 @@ async function main(): Promise<void> {
     version: '0.1.0',
   });
 
-  registerTools(mcp, lsp, fileManager, diagnostics, symbolResolver);
+  registerTools(mcp, lsp, fileManager, symbolResolver);
 
   const transport = new StdioServerTransport();
   await mcp.connect(transport);

@@ -10,7 +10,7 @@ import java.util.concurrent.CompletableFuture
 import scala.jdk.CollectionConverters.*
 
 // Handles all textDocument LSP requests by delegating to IntelliJ-backed providers.
-class ScalaTextDocumentService(projectManager: IntellijProjectManager) extends TextDocumentService:
+class ScalaTextDocumentService(projectManager: IntellijProjectManager, val diagnosticsProvider: DiagnosticsProvider) extends TextDocumentService:
 
   import scala.compiletime.uninitialized
   private var client: LanguageClient = uninitialized
@@ -22,7 +22,6 @@ class ScalaTextDocumentService(projectManager: IntellijProjectManager) extends T
   private val symbolProvider = SymbolProvider(projectManager)
   private val typeDefinitionProvider = TypeDefinitionProvider(projectManager)
   private val implementationProvider = ImplementationProvider(projectManager)
-  private val diagnosticsProvider = DiagnosticsProvider(projectManager)
   private val foldingRangeProvider = FoldingRangeProvider(projectManager)
   private val selectionRangeProvider = SelectionRangeProvider(projectManager)
   private val callHierarchyProvider = CallHierarchyProvider(projectManager)
@@ -274,6 +273,8 @@ class ScalaTextDocumentService(projectManager: IntellijProjectManager) extends T
         params.getTextDocument.getUri,
         params.getPosition
       ).asJava
+
+  // --- Code Lens ---
 
   // --- Code Lens ---
 

@@ -3,7 +3,7 @@ package org.jetbrains.scalalsP.integration
 import org.eclipse.lsp4j.*
 import org.eclipse.lsp4j.jsonrpc.messages.{Either as LspEither}
 import org.jetbrains.scalalsP.{ScalaTextDocumentService, ScalaWorkspaceService, TestLanguageClient}
-import org.jetbrains.scalalsP.intellij.IntellijProjectManager
+import org.jetbrains.scalalsP.intellij.{DiagnosticsProvider, IntellijProjectManager}
 import org.junit.Assert.*
 
 import java.util.concurrent.TimeUnit
@@ -14,12 +14,12 @@ import scala.jdk.CollectionConverters.*
 class LspProtocolIntegrationTest extends ScalaLspTestBase:
 
   private def textDocService: ScalaTextDocumentService =
-    val svc = ScalaTextDocumentService(projectManager)
+    val svc = ScalaTextDocumentService(projectManager, DiagnosticsProvider(projectManager))
     svc.connect(TestLanguageClient())
     svc
 
   private def workspaceService: ScalaWorkspaceService =
-    ScalaWorkspaceService(projectManager)
+    ScalaWorkspaceService(projectManager, DiagnosticsProvider(projectManager))
 
   private def definitionParams(uri: String, line: Int, char: Int): DefinitionParams =
     val params = DefinitionParams()
@@ -180,7 +180,7 @@ class LspProtocolIntegrationTest extends ScalaLspTestBase:
       override def publishDiagnostics(params: PublishDiagnosticsParams): Unit =
         received += params
 
-    val svc = ScalaTextDocumentService(projectManager)
+    val svc = ScalaTextDocumentService(projectManager, DiagnosticsProvider(projectManager))
     svc.connect(client)
 
     myFixture.doHighlighting()

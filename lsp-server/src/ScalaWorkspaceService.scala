@@ -7,14 +7,14 @@ import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.psi.codeStyle.CodeStyleManager
 import org.eclipse.lsp4j.*
 import org.eclipse.lsp4j.services.{LanguageClient, WorkspaceService}
-import org.jetbrains.scalalsP.intellij.{IntellijProjectManager, PsiUtils, ScalaTypes, SymbolProvider}
+import org.jetbrains.scalalsP.intellij.{DiagnosticsProvider, IntellijProjectManager, PsiUtils, ScalaTypes, SymbolProvider}
 
 import java.util
 import java.util.concurrent.CompletableFuture
 import scala.jdk.CollectionConverters.*
 
 // Handles workspace LSP requests.
-class ScalaWorkspaceService(projectManager: IntellijProjectManager) extends WorkspaceService:
+class ScalaWorkspaceService(projectManager: IntellijProjectManager, diagnosticsProvider: DiagnosticsProvider) extends WorkspaceService:
 
   import scala.compiletime.uninitialized
   private var client: LanguageClient = uninitialized
@@ -39,6 +39,14 @@ class ScalaWorkspaceService(projectManager: IntellijProjectManager) extends Work
       case "scala.reformat" =>
         executeOnFile(args): psiFile =>
           CodeStyleManager.getInstance(projectManager.getProject).reformat(psiFile)
+      case "scala.pullDiagnostics" =>
+        if args != null && !args.isEmpty then
+          val uri = args.get(0) match
+            case s: String => s
+            case gson: com.google.gson.JsonPrimitive => gson.getAsString
+            case other => other.toString.replaceAll("\"", "")
+          return CompletableFuture.supplyAsync(() => diagnosticsProvider.runAnalysisAndCollect(uri).asJava)
+        null
       case "scala.gotoLocation" =>
         if client != null && args != null && args.size() >= 3 then
           val targetUri = args.get(0).toString.replaceAll("\"", "")

@@ -2,12 +2,12 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { LspClient } from '../lsp-client.js';
 import { FileManager } from '../file-manager.js';
-import { DiagnosticsCache } from '../diagnostics-cache.js';
 import { SymbolResolver } from '../symbol-resolver.js';
 import { uriToPath, toPosition } from '../utils.js';
 import {
   HoverParams, Hover, DocumentSymbolParams, DocumentSymbol, SymbolInformation, SymbolKind,
   Location, TypeHierarchyItem, TypeHierarchyPrepareParams,
+  Diagnostic, ExecuteCommandParams,
 } from 'vscode-languageserver-protocol';
 import * as fs from 'fs';
 
@@ -15,7 +15,6 @@ export function registerDisplayTools(
   mcp: McpServer,
   lsp: LspClient,
   fileManager: FileManager,
-  diagnostics: DiagnosticsCache,
   symbolResolver: SymbolResolver,
 ): void {
 
@@ -127,7 +126,10 @@ export function registerDisplayTools(
     },
     async ({ filePath }) => {
       const uri = await fileManager.ensureOpen(filePath);
-      const diags = await diagnostics.waitFor(uri, 5000);
+      const diags = await lsp.request<Diagnostic[]>('workspace/executeCommand', {
+        command: 'scala.pullDiagnostics',
+        arguments: [uri],
+      } as ExecuteCommandParams) || [];
 
       if (diags.length === 0) {
         return { content: [{ type: 'text' as const, text: `No diagnostics for ${filePath}` }] };
