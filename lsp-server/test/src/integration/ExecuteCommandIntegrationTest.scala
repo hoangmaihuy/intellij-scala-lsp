@@ -2,7 +2,7 @@ package org.jetbrains.scalalsP.integration
 
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import org.eclipse.lsp4j.*
-import org.jetbrains.scalalsP.ScalaWorkspaceService
+import org.jetbrains.scalalsP.{ScalaTextDocumentService, ScalaWorkspaceService}
 import org.jetbrains.scalalsP.intellij.DiagnosticsProvider
 import org.junit.Assert.*
 
@@ -10,7 +10,10 @@ import java.util.concurrent.TimeUnit
 
 class ExecuteCommandIntegrationTest extends ScalaLspTestBase:
 
-  private def workspaceService = ScalaWorkspaceService(projectManager, DiagnosticsProvider(projectManager))
+  private def workspaceService =
+    val diag = DiagnosticsProvider(projectManager)
+    val tds = ScalaTextDocumentService(projectManager, diag)
+    ScalaWorkspaceService(projectManager, diag, tds)
 
   def testOrganizeImports(): Unit =
     val uri = configureScalaFile(
