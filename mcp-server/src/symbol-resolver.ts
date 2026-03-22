@@ -61,6 +61,14 @@ export class SymbolResolver {
     // Scala companion object: "Foo$" matches query "Foo"
     if (symbolName === query + '$') return true;
 
+    // Suffix match for types: "SupportingDocsTableL" matches query "TableL"
+    // This handles the common case where users search by class name suffix
+    if (kind === SymbolKind.Class || kind === SymbolKind.Interface ||
+        kind === SymbolKind.Enum || kind === SymbolKind.Struct ||
+        kind === SymbolKind.Object) {
+      if (symbolName.endsWith(query) || symbolName.endsWith(query + '$')) return true;
+    }
+
     // Qualified name: "Container.method"
     if (query.includes('.')) {
       const parts = query.split('.');
