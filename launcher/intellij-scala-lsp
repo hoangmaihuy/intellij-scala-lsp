@@ -1265,21 +1265,27 @@ case "${1:-}" in
       rm -f "$CACHE_DIR/daemon.pid" "$CACHE_DIR/daemon.port" "$CACHE_DIR/daemon.projects"
       exit 0
     fi
-    echo "[ScalaLsp] Stopping daemon (pid $pid)..."
-    kill "$pid" 2>/dev/null || true
-    # Wait up to 10 seconds for process to die
+    # Kill ALL ScalaLspMain processes (VS Code/MCP may spawn multiple)
+    all_pids=$(jps 2>/dev/null | grep ScalaLspMain | awk '{print $1}')
+    if [ -z "$all_pids" ]; then
+      all_pids="$pid"
+    fi
+    echo "[ScalaLsp] Stopping daemon(s): $all_pids"
+    echo "$all_pids" | xargs kill 2>/dev/null || true
+    # Wait up to 10 seconds for all to die
     for i in $(seq 1 20); do
-      kill -0 "$pid" 2>/dev/null || break
+      remaining=$(jps 2>/dev/null | grep ScalaLspMain | awk '{print $1}')
+      [ -z "$remaining" ] && break
       sleep 0.5
     done
-    if kill -0 "$pid" 2>/dev/null; then
-      echo "[ScalaLsp] Force killing daemon..."
-      kill -9 "$pid" 2>/dev/null || true
+    remaining=$(jps 2>/dev/null | grep ScalaLspMain | awk '{print $1}')
+    if [ -n "$remaining" ]; then
+      echo "[ScalaLsp] Force killing: $remaining"
+      echo "$remaining" | xargs kill -9 2>/dev/null || true
       sleep 1
     fi
-    # Clean up all state files and stale index locks
+    # Clean up state files
     rm -f "$CACHE_DIR/daemon.pid" "$CACHE_DIR/daemon.port" "$CACHE_DIR/daemon.projects"
-    find "$CACHE_DIR/system/index" -name "*.lock" -delete 2>/dev/null || true
     echo "[ScalaLsp] Daemon stopped."
     ;;
   --list-projects)
