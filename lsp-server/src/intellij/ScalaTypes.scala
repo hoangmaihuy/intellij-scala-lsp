@@ -91,6 +91,18 @@ object ScalaTypes:
   def isGiven(e: PsiElement): Boolean =
     isInstanceOfScala(e, "org.jetbrains.plugins.scala.lang.psi.api.statements.ScGiven")
 
+  def isGivenDefinition(e: PsiElement): Boolean =
+    isInstanceOfScala(e, "org.jetbrains.plugins.scala.lang.psi.api.toplevel.typedef.ScGivenDefinition")
+
+  def isEnumCase(e: PsiElement): Boolean =
+    isInstanceOfScala(e, "org.jetbrains.plugins.scala.lang.psi.api.toplevel.typedef.ScEnumCase")
+
+  def isExtension(e: PsiElement): Boolean =
+    isInstanceOfScala(e, "org.jetbrains.plugins.scala.lang.psi.api.statements.ScExtension")
+
+  def isMacroDefinition(e: PsiElement): Boolean =
+    isInstanceOfScala(e, "org.jetbrains.plugins.scala.lang.psi.api.statements.ScMacroDefinition")
+
   def isPackaging(e: PsiElement): Boolean =
     isInstanceOfScala(e, "org.jetbrains.plugins.scala.lang.psi.api.toplevel.ScPackaging")
 

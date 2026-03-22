@@ -9,35 +9,73 @@ import scala.jdk.CollectionConverters.*
 
 object SemanticTokensProvider:
 
+  // Token types aligned with Metals for consistent Scala highlighting across LSP servers
   val tokenTypes: JList[String] = JList.of(
-    "keyword",       // 0
-    "type",          // 1
-    "class",         // 2
-    "interface",     // 3
-    "enum",          // 4
-    "method",        // 5
-    "property",      // 6
-    "variable",      // 7
-    "parameter",     // 8
-    "typeParameter", // 9
-    "string",        // 10
-    "number",        // 11
-    "comment",       // 12
-    "function",      // 13
-    "operator",      // 14
-    "regexp"         // 15 (for escape sequences in strings)
+    "namespace",     // 0  — packages
+    "type",          // 1  — type aliases
+    "class",         // 2  — classes, objects
+    "enum",          // 3  — enum declarations
+    "interface",     // 4  — traits
+    "struct",        // 5  — (unused, kept for Metals compat)
+    "typeParameter", // 6  — type parameters
+    "parameter",     // 7  — method/function parameters
+    "variable",      // 8  — val, var, given instances
+    "property",      // 9  — class member vals/vars
+    "enumMember",    // 10 — enum cases
+    "event",         // 11 — (unused, kept for Metals compat)
+    "function",      // 12 — local defs
+    "method",        // 13 — class methods
+    "macro",         // 14 — (unused, kept for Metals compat)
+    "keyword",       // 15 — keywords
+    "modifier",      // 16 — (unused, kept for Metals compat)
+    "comment",       // 17 — comments
+    "string",        // 18 — string literals
+    "number",        // 19 — numeric literals
+    "regexp",        // 20 — escape sequences in strings
+    "operator",      // 21 — symbolic operators
+    "decorator"      // 22 — (unused, kept for Metals compat)
   )
 
   val tokenModifiers: JList[String] = JList.of(
     "declaration",   // bit 0
-    "static",        // bit 1
-    "abstract",      // bit 2
-    "readonly",      // bit 3
-    "modification",  // bit 4
-    "documentation", // bit 5
-    "lazy",          // bit 6
-    "deprecated"     // bit 7
+    "definition",    // bit 1
+    "readonly",      // bit 2
+    "static",        // bit 3
+    "deprecated",    // bit 4
+    "abstract",      // bit 5
+    "async",         // bit 6 (unused)
+    "modification",  // bit 7 (unused)
+    "documentation", // bit 8 (unused)
+    "defaultLibrary" // bit 9 (unused)
   )
+
+  // Token type constants (matching indices above)
+  private val TNamespace   = 0
+  private val TType        = 1
+  private val TClass       = 2
+  private val TEnum        = 3
+  private val TInterface   = 4
+  private val TTypeParam   = 6
+  private val TParameter   = 7
+  private val TVariable    = 8
+  private val TProperty    = 9
+  private val TEnumMember  = 10
+  private val TFunction    = 12
+  private val TMethod      = 13
+  private val TKeyword     = 15
+  private val TComment     = 17
+  private val TString      = 18
+  private val TNumber      = 19
+  private val TRegexp      = 20
+  private val TOperator    = 21
+
+  // Modifier bit constants (matching indices above)
+  private val MDeclaration = 1       // bit 0
+  private val MDefinition  = 1 << 1  // bit 1
+  private val MReadonly    = 1 << 2  // bit 2
+  private val MStatic      = 1 << 3  // bit 3
+  private val MDeprecated  = 1 << 4  // bit 4
+  private val MAbstract    = 1 << 5  // bit 5
 
   val legend: SemanticTokensLegend = SemanticTokensLegend(tokenTypes, tokenModifiers)
 
@@ -45,77 +83,108 @@ object SemanticTokensProvider:
   private def isOperatorName(name: String): Boolean =
     name.nonEmpty && !name.head.isLetter && name.head != '_'
 
-  /** Classify a resolved PSI element into a semantic token type index. */
+  /** Classify a resolved PSI element into a semantic token type index (Metals-compatible).
+    *
+    * Handles all Scala plugin PSI types:
+    *   ScParameter, ScClassParameter          → parameter
+    *   ScEnumCase (ScEnumClassCase/Singleton) → enumMember
+    *   ScEnum                                 → enum
+    *   ScClass                                → class (or enumMember for enum cases)
+    *   ScTrait                                → interface
+    *   ScObject                               → class + static
+    *   ScGivenDefinition                      → class (structural given is a type def)
+    *   ScGivenAlias, ScGiven                  → variable (given alias is a value)
+    *   ScTypeAlias                            → type
+    *   ScTypeParam                            → typeParameter
+    *   ScExtension                            → method
+    *   ScMacroDefinition                      → method (Metals maps macros to method)
+    *   ScFunction, ScFunctionDefinition/Decl  → method / function / operator
+    *   PsiMethod (Java)                       → method
+    *   ScNamedTupleComponent                  → property
+    *   ScBindingPattern                       → variable / property
+    *   ScFieldId                              → variable / property
+    *   PsiField (Java)                        → property
+    *   ScSyntheticClass                       → class
+    *   ScSyntheticFunction                    → method
+    *   PsiClass (Java)                        → class
+    *   ScPackaging, PsiPackage                → namespace
+    *   ScPrimaryConstructor                   → method
+    */
   def classifyElement(element: PsiElement): Option[Int] =
-    if ScalaTypes.isParameter(element) then Some(8)       // parameter (covers ScClassParameter too)
-    else if ScalaTypes.isEnum(element) then Some(4)       // enum (before ScClass — ScEnum extends ScClass)
-    else if ScalaTypes.isClass(element) then Some(2)      // class
-    else if ScalaTypes.isTrait(element) then Some(3)      // interface
-    else if ScalaTypes.isObject(element) then Some(2)     // class (object)
-    else if ScalaTypes.isTypeAlias(element) then Some(1)  // type
-    else if ScalaTypes.isTypeParam(element) then Some(9)  // typeParameter
+    if ScalaTypes.isParameter(element) then Some(TParameter)
+    else if ScalaTypes.isEnumCase(element) then Some(TEnumMember) // before isClass/isObject
+    else if ScalaTypes.isEnum(element) then Some(TEnum)
+    else if ScalaTypes.isGivenDefinition(element) then Some(TClass) // structural given is a type def
+    else if ScalaTypes.isClass(element) then Some(TClass)
+    else if ScalaTypes.isTrait(element) then Some(TInterface)
+    else if ScalaTypes.isObject(element) then Some(TClass) // gets static modifier via classifyModifiers
+    else if ScalaTypes.isTypeAlias(element) then Some(TType)
+    else if ScalaTypes.isTypeParam(element) then Some(TTypeParam)
+    else if ScalaTypes.isExtension(element) then Some(TMethod) // extension block → method
+    else if ScalaTypes.isGiven(element) then Some(TVariable) // given alias is a value
     else if ScalaTypes.isFunction(element) || ScalaTypes.isMethod(element) then
-      // Check if it's an operator method (symbolic name)
       val methodName = try element.asInstanceOf[PsiNamedElement].getName catch case _: Exception => null
-      if methodName != null && isOperatorName(methodName) then Some(14) // operator
+      if methodName != null && isOperatorName(methodName) then Some(TOperator)
       else
-        // Synthetic accessors (e.g. case class param getters) should classify as their original element
+        // Synthetic accessors → classify as their original element
         val navElement = element.getNavigationElement
         if navElement != null && (navElement ne element) then
-          if ScalaTypes.isParameter(navElement) then Some(8)       // parameter accessor
-          else if ScalaTypes.isBindingPattern(navElement) then Some(6) // property accessor
-          else if ScalaTypes.isFieldId(navElement) then Some(6)    // property accessor
-          else Some(5)                                              // method
-        else Some(5) // method
-    else if ScalaTypes.isNamedTupleComponent(element) then Some(6) // property (named tuple label)
+          if ScalaTypes.isParameter(navElement) then Some(TParameter)
+          else if ScalaTypes.isBindingPattern(navElement) then Some(TProperty)
+          else if ScalaTypes.isFieldId(navElement) then Some(TProperty)
+          else Some(classifyMethodOrFunction(element))
+        else Some(classifyMethodOrFunction(element))
+    else if ScalaTypes.isNamedTupleComponent(element) then Some(TProperty)
     else if ScalaTypes.isBindingPattern(element) then classifyBinding(element)
     else if ScalaTypes.isFieldId(element) then classifyFieldId(element)
-    else if ScalaTypes.isField(element) then Some(6)     // property (Java/compiled field)
-    else if ScalaTypes.isSyntheticClass(element) then Some(2) // synthetic built-in class (Int, String, etc.)
-    else if ScalaTypes.isSyntheticFunction(element) then Some(5) // synthetic function
-    else if ScalaTypes.isClassLike(element) then Some(2) // Java/compiled class fallback
-    else if ScalaTypes.isPackaging(element) || ScalaTypes.isPackage(element) then Some(0) // namespace
-    else if ScalaTypes.isPrimaryConstructor(element) then Some(5) // method
+    else if ScalaTypes.isField(element) then Some(TProperty)
+    else if ScalaTypes.isSyntheticClass(element) then Some(TClass)
+    else if ScalaTypes.isSyntheticFunction(element) then Some(TMethod)
+    else if ScalaTypes.isClassLike(element) then Some(TClass) // Java class fallback
+    else if ScalaTypes.isPackaging(element) || ScalaTypes.isPackage(element) then Some(TNamespace)
+    else if ScalaTypes.isPrimaryConstructor(element) then Some(TMethod)
     else
       System.err.println(s"[SemanticTokens] Unclassified resolved element: ${element.getClass.getName}")
       None
 
+  /** Distinguish local functions from class methods. */
+  private def classifyMethodOrFunction(element: PsiElement): Int =
+    val parent = element.getParent
+    if parent != null && ScalaTypes.isTemplateBody(parent) then TMethod
+    else TFunction
+
   /** Classify a binding pattern as property (class member) or variable (local). */
   private def classifyBinding(element: PsiElement): Option[Int] =
     if ScalaTypes.isBindingPattern(element) then
-      if ScalaTypes.isClassMember(element) then Some(6)  // property
-      else Some(7)                                        // variable (local val/var/pattern)
+      if ScalaTypes.isClassMember(element) then Some(TProperty)
+      else Some(TVariable)
     else
       val parent = element.getParent
       if ScalaTypes.isValue(parent) || ScalaTypes.isPatternDefinition(parent) then
-        if ScalaTypes.isTemplateBody(parent.getParent) then Some(6) else Some(7)
+        if ScalaTypes.isTemplateBody(parent.getParent) then Some(TProperty) else Some(TVariable)
       else if ScalaTypes.isVariable(parent) then
-        if ScalaTypes.isTemplateBody(parent.getParent) then Some(6) else Some(7)
-      else Some(7)
+        if ScalaTypes.isTemplateBody(parent.getParent) then Some(TProperty) else Some(TVariable)
+      else Some(TVariable)
 
   /** Classify a field identifier based on parent context. */
   private def classifyFieldId(element: PsiElement): Option[Int] =
     val parent = element.getParent
     if ScalaTypes.isValue(parent) || ScalaTypes.isPatternDefinition(parent) || ScalaTypes.isVariable(parent) then
-      if ScalaTypes.isTemplateBody(parent.getParent) then Some(6) // property
-      else Some(7) // variable
-    else Some(7)
+      if ScalaTypes.isTemplateBody(parent.getParent) then Some(TProperty) else Some(TVariable)
+    else Some(TVariable)
 
-  /** Get modifier bits for a resolved element */
+  /** Get modifier bits for a resolved element (Metals-compatible bit positions). */
   def classifyModifiers(element: PsiElement): Int =
-    var mods =
-      if ScalaTypes.isTrait(element) then 4       // abstract
-      else if ScalaTypes.isObject(element) then 2  // static
-      else 0
+    var mods = 0
+    if ScalaTypes.isTrait(element) then mods |= MAbstract
+    if ScalaTypes.isObject(element) then mods |= MStatic
     // Check for deprecated annotation via ScAnnotationsHolder (Scala) or PsiModifierListOwner (Java)
     val isDeprecated =
       if ScalaTypes.isAnnotationsHolder(element) then
         try
-          // First try qualified name lookup (works when stdlib is available)
           val byQName = ScalaTypes.hasAnnotation(element, "scala.deprecated") || ScalaTypes.hasAnnotation(element, "java.lang.Deprecated")
           if byQName then true
           else
-            // Fallback: check annotation text for "deprecated" (works without stdlib)
             ScalaTypes.getAnnotations(element).exists: ann =>
               val typeText = try
                 val typeElem = ann.getClass.getMethod("typeElement").invoke(ann)
@@ -129,7 +198,7 @@ object SemanticTokensProvider:
             try mod.hasAnnotation("java.lang.Deprecated")
             catch case _: Exception => false
           case _ => false
-    if isDeprecated then mods |= 128 // bit 7 = deprecated
+    if isDeprecated then mods |= MDeprecated
     mods
 
 class SemanticTokensProvider(projectManager: IntellijProjectManager):
@@ -240,10 +309,8 @@ class SemanticTokensProvider(projectManager: IntellijProjectManager):
         val prevSiblingText = Option(element.getPrevSibling).map(_.getText).getOrElse("")
         val isRawString = prevSiblingText == "raw" || prevSiblingText == "r"
         if isRawString then
-          // Raw strings: emit the whole token as a plain string (no escape highlighting)
-          tokens += ((textRange.getStartOffset, textRange.getLength, 10, 0))
+          tokens += ((textRange.getStartOffset, textRange.getLength, TString, 0))
         else
-          // Split string into segments: non-escape parts (type 10) and escape sequences (type 15)
           val subTokens = splitStringEscapes(textRange.getStartOffset, text)
           tokens ++= subTokens
       else
@@ -251,16 +318,15 @@ class SemanticTokensProvider(projectManager: IntellijProjectManager):
           case Some(tokenType) =>
             tokens += ((textRange.getStartOffset, textRange.getLength, tokenType, 0))
           case None =>
-            // Classify symbolic identifiers as operator (only for actual identifier tokens)
             if (elementType == "identifier" || elementType == "tIDENTIFIER") && isOperatorName(text) then
-              tokens += ((textRange.getStartOffset, textRange.getLength, 14, 0)) // operator
+              tokens += ((textRange.getStartOffset, textRange.getLength, TOperator, 0))
 
     // Check for declarations (definitions that introduce names)
     if isDeclaration(element) then
       classifyDeclaration(element).foreach: (tokenType, baseModifiers) =>
         getNameIdentifier(element).foreach: (offset, length) =>
           val elementModifiers = classifyModifiers(element)
-          tokens += ((offset, length, tokenType, baseModifiers | elementModifiers | 1)) // bit 0 = declaration
+          tokens += ((offset, length, tokenType, baseModifiers | elementModifiers | MDefinition))
 
     // Recurse into children
     var child = element.getFirstChild
@@ -272,23 +338,29 @@ class SemanticTokensProvider(projectManager: IntellijProjectManager):
     ScalaTypes.isReference(element)
 
   private def isDeclaration(element: PsiElement): Boolean =
+    ScalaTypes.isEnumCase(element) ||
     ScalaTypes.isClass(element) || ScalaTypes.isTrait(element) || ScalaTypes.isObject(element) || ScalaTypes.isEnum(element) ||
+    ScalaTypes.isGivenDefinition(element) ||
     ScalaTypes.isFunctionDefinition(element) || ScalaTypes.isFunctionDeclaration(element) ||
+    ScalaTypes.isExtension(element) ||
     ScalaTypes.isTypeAlias(element) || ScalaTypes.isGiven(element) ||
     ScalaTypes.isParameter(element) || ScalaTypes.isBindingPattern(element)
 
   private def classifyDeclaration(element: PsiElement): Option[(Int, Int)] =
-    if ScalaTypes.isParameter(element) then Some((8, 0))       // parameter
-    else if ScalaTypes.isEnum(element) then Some((4, 0))       // enum (before ScClass)
-    else if ScalaTypes.isClass(element) then Some((2, 0))      // class
-    else if ScalaTypes.isTrait(element) then Some((3, 4))      // interface + abstract
-    else if ScalaTypes.isObject(element) then Some((2, 2))     // class + static
+    if ScalaTypes.isParameter(element) then Some((TParameter, MReadonly))
+    else if ScalaTypes.isEnumCase(element) then Some((TEnumMember, 0)) // before isClass/isObject
+    else if ScalaTypes.isEnum(element) then Some((TEnum, 0))
+    else if ScalaTypes.isGivenDefinition(element) then Some((TClass, 0)) // structural given
+    else if ScalaTypes.isClass(element) then Some((TClass, 0))
+    else if ScalaTypes.isTrait(element) then Some((TInterface, MAbstract))
+    else if ScalaTypes.isObject(element) then Some((TClass, MStatic))
+    else if ScalaTypes.isExtension(element) then Some((TMethod, 0))
     else if ScalaTypes.isFunction(element) then
       val name = try element.asInstanceOf[PsiNamedElement].getName catch case _: Exception => null
-      if name != null && isOperatorName(name) then Some((14, 0)) // operator
-      else Some((5, 0)) // method
-    else if ScalaTypes.isTypeAlias(element) then Some((1, 0))  // type
-    else if ScalaTypes.isGiven(element) then Some((5, 0))      // method (given)
+      if name != null && isOperatorName(name) then Some((TOperator, 0))
+      else Some((classifyMethodOrFunction(element), 0))
+    else if ScalaTypes.isTypeAlias(element) then Some((TType, 0))
+    else if ScalaTypes.isGiven(element) then Some((TVariable, MReadonly)) // given alias
     else if ScalaTypes.isBindingPattern(element) then Some(classifyBindingDeclaration(element))
     else None
 
@@ -296,19 +368,19 @@ class SemanticTokensProvider(projectManager: IntellijProjectManager):
     if ScalaTypes.isBindingPattern(element) then
       val isMember = ScalaTypes.isClassMember(element)
       if ScalaTypes.isVal(element) then
-        if isMember then (6, 8) // property + readonly
-        else (7, 8)             // variable + readonly (local val)
+        if isMember then (TProperty, MReadonly)
+        else (TVariable, MReadonly)
       else if ScalaTypes.isVar(element) then
-        if isMember then (6, 0) // property (mutable)
-        else (7, 0)             // variable (local var)
-      else (7, 0)               // pattern/generator, no readonly
+        if isMember then (TProperty, 0)
+        else (TVariable, 0)
+      else (TVariable, 0) // pattern/generator
     else
       val parent = element.getParent
       if ScalaTypes.isValue(parent) || ScalaTypes.isPatternDefinition(parent) then
-        if ScalaTypes.isTemplateBody(parent.getParent) then (6, 8) else (7, 8)
+        if ScalaTypes.isTemplateBody(parent.getParent) then (TProperty, MReadonly) else (TVariable, MReadonly)
       else if ScalaTypes.isVariable(parent) then
-        if ScalaTypes.isTemplateBody(parent.getParent) then (6, 0) else (7, 0)
-      else (7, 0)
+        if ScalaTypes.isTemplateBody(parent.getParent) then (TProperty, 0) else (TVariable, 0)
+      else (TVariable, 0)
 
   private def getNameIdentifier(element: PsiElement): Option[(Int, Int)] =
     element match
@@ -354,14 +426,14 @@ class SemanticTokensProvider(projectManager: IntellijProjectManager):
 
     def flushNonEscape(end: Int): Unit =
       if end > segStart then
-        result += ((startOffset + segStart, end - segStart, 10, 0))
+        result += ((startOffset + segStart, end - segStart, TString, 0))
 
     while pos < text.length do
       if text(pos) == '\\' && pos + 1 < text.length then
         flushNonEscape(pos)
         val escLen = if text(pos + 1) == 'u' && pos + 5 < text.length then 6 // \uXXXX
                      else 2
-        result += ((startOffset + pos, escLen, 15, 0))
+        result += ((startOffset + pos, escLen, TRegexp, 0))
         pos += escLen
         segStart = pos
       else
@@ -406,15 +478,14 @@ class SemanticTokensProvider(projectManager: IntellijProjectManager):
   /** Classify leaf token types (keywords, literals, comments) from element type names */
   private def classifyLeafToken(elementType: String, text: String): Option[Int] =
     if scalaKeywordTexts.contains(elementType) || elementType.contains("KEYWORD") then
-      Some(0) // keyword
-    // "identifier" element type — match Scala 3 soft keywords by text (fallback for old plugin)
+      Some(TKeyword)
     else if (elementType == "identifier" || elementType == "tIDENTIFIER") &&
             scalaKeywordTexts.contains(text) then
-      Some(0) // keyword
+      Some(TKeyword)
     else if elementType == "tINTEGER" || elementType == "tFLOAT" ||
             elementType.contains("integer") || elementType.contains("float") then
-      Some(11) // number
+      Some(TNumber)
     else if elementType.contains("COMMENT") || elementType.contains("comment") ||
             elementType == "DocComment" || elementType == "BlockComment" then
-      Some(12) // comment
+      Some(TComment)
     else None
