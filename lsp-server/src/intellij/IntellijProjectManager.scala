@@ -52,6 +52,9 @@ class IntellijProjectManager(registry: Option[ProjectRegistry] = None, daemonMod
     if p == null then throw IllegalStateException("No project is open")
     p
 
+  def getAllProjects: Seq[Project] =
+    projects.values.toSeq.distinct
+
   def getProjectForUri(uri: String): Project =
     val path = uriToPath(uri)
     projects.find((basePath, _) => path.startsWith(basePath))

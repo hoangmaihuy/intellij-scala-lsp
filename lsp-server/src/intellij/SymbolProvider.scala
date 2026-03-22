@@ -73,27 +73,32 @@ class SymbolProvider(projectManager: IntellijProjectManager):
 
   // Use IntelliJ's GotoClassContributor and GotoSymbolContributor extension points.
   // These support prefix/fuzzy matching via processNames + processElementsWithName.
-  private def searchViaContributors(project: com.intellij.openapi.project.Project, query: String): Seq[SymbolInformation] =
+  private def searchViaContributors(project: com.intellij.openapi.project.Project, query: String, seen: scala.collection.mutable.Set[String] = scala.collection.mutable.Set[String]()): Seq[SymbolInformation] =
     try
       val results = Seq.newBuilder[SymbolInformation]
       val scope = GlobalSearchScope.allScope(project)
-      val lowerQuery = query.toLowerCase
+
+      // For fully qualified names like "io.circe.Json", extract the simple name
+      // for name matching, and use the full query to post-filter by FQN.
+      val lastDot = query.lastIndexOf('.')
+      val (simpleName, fqnPrefix) =
+        if lastDot > 0 then (query.substring(lastDot + 1), Some(query.substring(0, lastDot)))
+        else (query, None)
+      val lowerSimpleName = simpleName.toLowerCase
 
       // Collect from both CLASS and SYMBOL extension points
       val contributors =
         ChooseByNameContributor.CLASS_EP_NAME.getExtensionList.asScala ++
         ChooseByNameContributor.SYMBOL_EP_NAME.getExtensionList.asScala
 
-      val seen = scala.collection.mutable.Set[String]() // dedup by name+location
-
       for contributor <- contributors do
         contributor match
           case ex: ChooseByNameContributorEx =>
-            // Collect names that match the query prefix
+            // Collect names that match the simple name
             val matchingNames = scala.collection.mutable.ArrayBuffer[String]()
             ex.processNames(
               ((name: String) => {
-                if name != null && name.toLowerCase.contains(lowerQuery) then
+                if name != null && name.toLowerCase.contains(lowerSimpleName) then
                   matchingNames += name
                 true
               }): com.intellij.util.Processor[String],
@@ -102,8 +107,8 @@ class SymbolProvider(projectManager: IntellijProjectManager):
             )
 
             // For each matching name, collect the navigation items
-            val params = FindSymbolParameters.wrap(query, project, true)
             for name <- matchingNames.take(100) do // limit to avoid overwhelming results
+              val params = FindSymbolParameters.wrap(name, project, true)
               ex.processElementsWithName(
                 name,
                 ((item: NavigationItem) => {
@@ -111,13 +116,25 @@ class SymbolProvider(projectManager: IntellijProjectManager):
                     case psi: PsiElement =>
                       psi match
                         case named: PsiNamedElement if isSignificantElement(named) =>
-                          PsiUtils.elementToLocation(psi).foreach: loc =>
-                            val key = s"${named.getName}@${loc.getUri}:${loc.getRange.getStart.getLine}"
-                            if !seen.contains(key) then
-                              seen += key
-                              val kind = PsiUtils.getSymbolKind(named)
-                              val containerName = getContainerName(psi)
-                              results += new SymbolInformation(named.getName, kind, loc, containerName)
+                          // If query was FQN, verify the element's FQN matches
+                          val fqnMatch = fqnPrefix match
+                            case Some(prefix) =>
+                              val container = getContainerName(named)
+                              container != null && (
+                                container == prefix ||
+                                container.endsWith("." + prefix) ||
+                                prefix.endsWith("." + container)
+                              )
+                            case None => true
+
+                          if fqnMatch then
+                            PsiUtils.elementToLocation(psi).foreach: loc =>
+                              val key = s"${named.getName}@${loc.getUri}:${loc.getRange.getStart.getLine}"
+                              if !seen.contains(key) then
+                                seen += key
+                                val kind = PsiUtils.getSymbolKind(named)
+                                val containerName = getContainerName(psi)
+                                results += new SymbolInformation(named.getName, kind, loc, containerName)
                         case _ => ()
                     case _ => ()
                   true
@@ -130,17 +147,28 @@ class SymbolProvider(projectManager: IntellijProjectManager):
             try
               val names = legacy.getNames(project, true)
               if names != null then
-                for name <- names if name != null && name.toLowerCase.contains(lowerQuery) do
-                  val items = legacy.getItemsByName(name, query, project, true)
+                for name <- names if name != null && name.toLowerCase.contains(lowerSimpleName) do
+                  val items = legacy.getItemsByName(name, simpleName, project, true)
                   if items != null then
                     for item <- items.take(20) do
                       item match
                         case psi: PsiNamedElement if isSignificantElement(psi) =>
-                          PsiUtils.elementToLocation(psi).foreach: loc =>
-                            val key = s"${psi.getName}@${loc.getUri}:${loc.getRange.getStart.getLine}"
-                            if !seen.contains(key) then
-                              seen += key
-                              results += new SymbolInformation(psi.getName, PsiUtils.getSymbolKind(psi), loc, getContainerName(psi))
+                          val fqnMatch = fqnPrefix match
+                            case Some(prefix) =>
+                              val container = getContainerName(psi)
+                              container != null && (
+                                container == prefix ||
+                                container.endsWith("." + prefix) ||
+                                prefix.endsWith("." + container)
+                              )
+                            case None => true
+
+                          if fqnMatch then
+                            PsiUtils.elementToLocation(psi).foreach: loc =>
+                              val key = s"${psi.getName}@${loc.getUri}:${loc.getRange.getStart.getLine}"
+                              if !seen.contains(key) then
+                                seen += key
+                                results += new SymbolInformation(psi.getName, PsiUtils.getSymbolKind(psi), loc, getContainerName(psi))
                         case _ => ()
             catch
               case _: Exception => ()
@@ -162,11 +190,26 @@ class SymbolProvider(projectManager: IntellijProjectManager):
         Seq.empty
 
   private def getContainerName(element: PsiElement): String =
+    // Try to derive container FQN from the element's own FQN
+    // e.g., for "io.circe.Json", containerName = "io.circe"
+    element match
+      case named: PsiNamedElement =>
+        val name = named.getName
+        PsiUtils.getQualifiedNameOf(named) match
+          case Some(fqn) if fqn.endsWith("." + name) =>
+            return fqn.stripSuffix("." + name)
+          case _ => ()
+      case _ => ()
+
+    // Fallback: walk up the PSI tree for the nearest significant parent
     var parent = element.getParent
     while parent != null do
       parent match
         case named: PsiNamedElement if isSignificantElement(named) =>
-          return named.getName
+          // Try FQN on the parent
+          PsiUtils.getQualifiedNameOf(named) match
+            case Some(fqn) => return fqn
+            case None => return named.getName
         case _ =>
           parent = parent.getParent
     null

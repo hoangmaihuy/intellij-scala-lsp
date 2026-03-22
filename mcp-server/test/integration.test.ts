@@ -214,6 +214,104 @@ describe('workspace_symbols', () => {
   });
 });
 
+// ── External Library Symbols ─────────────────────────────────────
+
+describe('external library: workspace_symbols', () => {
+  it('simple query "Monad" should find cats.Monad', async () => {
+    const result = await tools.callTool('workspace_symbols', { query: 'Monad' });
+    expect(result).toContain('Found');
+    expect(result).not.toContain('No symbols found');
+    // Should contain Monad with cats container
+    expect(result).toMatch(/Monad.*cats|cats.*Monad/);
+  });
+
+  it('simple query "ZIO" should find zio.ZIO', async () => {
+    const result = await tools.callTool('workspace_symbols', { query: 'ZIO' });
+    expect(result).toContain('Found');
+    expect(result).not.toContain('No symbols found');
+    expect(result).toMatch(/ZIO.*zio|zio.*ZIO/);
+  });
+});
+
+describe('external library: definition via symbolName', () => {
+  it('"Monad" should return definition with source code', async () => {
+    const result = await tools.callTool('definition', { symbolName: 'Monad' });
+    expect(result).not.toContain('No symbol found');
+    expect(result).toMatch(/\d+\|/); // has line-numbered source
+    expect(result).toMatch(/Monad/);
+  });
+
+  it('"ZIO" should return definition with source code', async () => {
+    const result = await tools.callTool('definition', { symbolName: 'ZIO' });
+    expect(result).not.toContain('No symbol found');
+    expect(result).toMatch(/\d+\|/);
+    expect(result).toMatch(/ZIO/);
+  });
+
+  it('"cats.Monad" FQN should find Monad from cats', async () => {
+    const result = await tools.callTool('definition', { symbolName: 'cats.Monad' });
+    expect(result).not.toContain('No symbol found');
+    expect(result).toMatch(/Monad/);
+    expect(result).toMatch(/\d+\|/);
+  });
+
+  it('"zio.ZIO" FQN should find ZIO from zio', async () => {
+    const result = await tools.callTool('definition', { symbolName: 'zio.ZIO' });
+    expect(result).not.toContain('No symbol found');
+    expect(result).toMatch(/ZIO/);
+    expect(result).toMatch(/\d+\|/);
+  });
+});
+
+describe('external library: definition via position', () => {
+  it('Monad import should go to cats.Monad definition', async () => {
+    // ExternalDeps.scala line 3: "import cats.Monad"
+    const result = await tools.callTool('definition', {
+      filePath: FIXTURES.externalDeps,
+      line: 3,
+      column: 13,
+    });
+    expect(result).not.toContain('No definition found');
+    expect(result).toMatch(/Monad/);
+    expect(result).toMatch(/\d+\|/);
+  });
+
+  it('ZIO import should go to zio.ZIO definition', async () => {
+    // ExternalDeps.scala line 5: "import zio.{ZIO, Task}"
+    const result = await tools.callTool('definition', {
+      filePath: FIXTURES.externalDeps,
+      line: 5,
+      column: 13,
+    });
+    expect(result).toMatch(/ZIO/);
+    expect(result).toMatch(/\d+\|/);
+  });
+});
+
+describe('external library: references', () => {
+  it('"cats.Monad" FQN should find references in project', async () => {
+    const result = await tools.callTool('references', { symbolName: 'cats.Monad' });
+    expect(result).not.toContain('No symbol found');
+    expect(result).toContain('ExternalDeps.scala');
+  });
+
+  it('"zio.ZIO" FQN should find references in project', async () => {
+    const result = await tools.callTool('references', { symbolName: 'zio.ZIO' });
+    expect(result).not.toContain('No symbol found');
+    expect(result).toContain('ExternalDeps.scala');
+  });
+
+  it('Monad reference by position should find project usages', async () => {
+    const result = await tools.callTool('references', {
+      filePath: FIXTURES.externalDeps,
+      line: 3,
+      column: 13,
+    });
+    expect(result).not.toContain('No references found');
+    expect(result).toContain('ExternalDeps.scala');
+  });
+});
+
 // ── Code Actions ─────────────────────────────────────────────────────
 
 describe('code_actions', () => {
