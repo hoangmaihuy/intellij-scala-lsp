@@ -605,7 +605,7 @@ proxy_stdio_to_tcp() {
 
 install_skill() {
   local mode="$1"  # "mcp" or "lsp"
-  local skill_dir=".claude/skills/scala-code-intelligence"
+  local skill_dir="$HOME/.claude/skills/scala-code-intelligence"
   local skill_src
 
   # Find the skill source file
@@ -622,75 +622,21 @@ install_skill() {
   cp "$skill_src" "$skill_dir/SKILL.md"
   echo "  Installed skill to $skill_dir/SKILL.md"
 
-  # Also append instructions to CLAUDE.md for guaranteed visibility
-  install_claude_md_instructions "$mode"
+  # Clean up legacy CLAUDE.md instructions if present
+  remove_claude_md_instructions
 }
 
-install_claude_md_instructions() {
-  local mode="$1"
+remove_claude_md_instructions() {
   local claude_md="$HOME/.claude/CLAUDE.md"
   local start_marker="<!-- intellij-scala-lsp:start -->"
   local end_marker="<!-- intellij-scala-lsp:end -->"
 
-  mkdir -p "$HOME/.claude"
-
-  # Remove existing section if present (idempotent)
+  # Remove legacy CLAUDE.md section if present
   if [ -f "$claude_md" ] && grep -q "$start_marker" "$claude_md"; then
     sed -i.bak "/$start_marker/,/$end_marker/d" "$claude_md"
     rm -f "${claude_md}.bak"
+    echo "  Removed legacy code intelligence instructions from $claude_md"
   fi
-
-  if [ "$mode" = "mcp" ]; then
-    cat >> "$claude_md" << 'CLAUDEMD'
-
-<!-- intellij-scala-lsp:start -->
-### Code Intelligence
-
-Prefer MCP tools over Grep/Glob/Read for Scala code navigation:
-- `definition` with symbolName to read source code where a symbol is defined
-- `references` with symbolName to find all usages across the codebase
-- `implementations` with symbolName to find trait/class implementations
-- `hover` with symbolName for type info, docs, supertypes, subtypes
-- `workspace_symbols` with query to search symbols across the project
-- `document_symbols` with filePath to list all symbols in a file
-
-Before renaming or changing a function signature, use
-`references` to find all call sites first.
-
-After writing or editing Scala code, check `diagnostics` before
-moving on. Fix any type errors or missing imports immediately.
-Use `organize_imports` after adding new imports or removing code.
-
-Use Grep/Glob only for text/pattern searches (comments,
-strings, config values) where MCP tools don't help.
-<!-- intellij-scala-lsp:end -->
-CLAUDEMD
-  else
-    cat >> "$claude_md" << 'CLAUDEMD'
-
-<!-- intellij-scala-lsp:start -->
-### Code Intelligence
-
-Prefer LSP over Grep/Glob/Read for Scala code navigation:
-- `goToDefinition` / `goToImplementation` to jump to source
-- `findReferences` to see all usages across the codebase
-- `workspaceSymbol` to find where something is defined
-- `documentSymbol` to list all symbols in a file
-- `hover` for type info without reading the file
-
-Before renaming or changing a function signature, use
-`findReferences` to find all call sites first.
-
-After writing or editing Scala code, check LSP diagnostics before
-moving on. Fix any type errors or missing imports immediately.
-
-Use Grep/Glob only for text/pattern searches (comments,
-strings, config values) where LSP doesn't help.
-<!-- intellij-scala-lsp:end -->
-CLAUDEMD
-  fi
-
-  echo "  Added code intelligence instructions to $claude_md"
 }
 
 build_lsp_server() {
