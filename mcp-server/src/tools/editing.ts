@@ -6,7 +6,6 @@ import { toPosition, uriToPath } from '../utils.js';
 import { applyWorkspaceEdit } from '../workspace-edit.js';
 import {
   RenameParams, WorkspaceEdit, CodeActionParams, CodeAction, Command,
-  CompletionItem, CompletionList, SignatureHelp,
 } from 'vscode-languageserver-protocol';
 
 export function registerEditingTools(
@@ -139,56 +138,4 @@ export function registerEditingTools(
     },
   );
 
-  mcp.tool('completion', 'Get code completions at a position in a file.',
-    { filePath: z.string().describe('Absolute path to the file'), line: z.number().describe('Line number (1-indexed)'), column: z.number().describe('Column number (1-indexed)') },
-    async ({ filePath, line, column }) => {
-      const uri = await fileManager.ensureOpen(filePath);
-      const result = await lsp.request<CompletionList | CompletionItem[]>('textDocument/completion', {
-        textDocument: { uri }, position: toPosition(line, column),
-      });
-      const items: CompletionItem[] = Array.isArray(result) ? result : (result as CompletionList)?.items || [];
-      if (items.length === 0) return { content: [{ type: 'text' as const, text: 'No completions available.' }] };
-      const top = items.slice(0, 10);
-      const output: string[] = [`${items.length} completion(s), showing top ${top.length}:\n`];
-      for (const item of top) {
-        let resolved = item;
-        try { resolved = await lsp.request<CompletionItem>('completionItem/resolve', item); } catch { /* use unresolved */ }
-        const detail = resolved.detail ? ` — ${resolved.detail}` : '';
-        const doc = resolved.documentation ? `\n    ${typeof resolved.documentation === 'string' ? resolved.documentation : (resolved.documentation as any).value || ''}` : '';
-        output.push(`  ${resolved.label}${detail}${doc}`);
-      }
-      return { content: [{ type: 'text' as const, text: output.join('\n') }] };
-    },
-  );
-
-  mcp.tool('signature_help', 'Get parameter info for a method call at the current position.',
-    { filePath: z.string().describe('Absolute path to the file'), line: z.number().describe('Line number (1-indexed)'), column: z.number().describe('Column number (1-indexed)') },
-    async ({ filePath, line, column }) => {
-      const uri = await fileManager.ensureOpen(filePath);
-      const result = await lsp.request<SignatureHelp | null>('textDocument/signatureHelp', {
-        textDocument: { uri }, position: toPosition(line, column),
-      });
-      if (!result || !result.signatures || result.signatures.length === 0) {
-        return { content: [{ type: 'text' as const, text: 'No signature help available at this position.' }] };
-      }
-      const output: string[] = [];
-      for (const sig of result.signatures) {
-        output.push(sig.label);
-        if (sig.documentation) {
-          const doc = typeof sig.documentation === 'string' ? sig.documentation : (sig.documentation as any).value || '';
-          if (doc) output.push(`  ${doc}`);
-        }
-        if (sig.parameters) {
-          for (const param of sig.parameters) {
-            const label = typeof param.label === 'string' ? param.label : `[${param.label[0]}-${param.label[1]}]`;
-            const pdoc = param.documentation ? typeof param.documentation === 'string' ? param.documentation : (param.documentation as any).value || '' : '';
-            output.push(`  param: ${label}${pdoc ? ' — ' + pdoc : ''}`);
-          }
-        }
-      }
-      if (result.activeSignature !== undefined) output.push(`\nActive signature: ${result.activeSignature + 1}/${result.signatures.length}`);
-      if (result.activeParameter !== undefined) output.push(`Active parameter: ${result.activeParameter + 1}`);
-      return { content: [{ type: 'text' as const, text: output.join('\n') }] };
-    },
-  );
 }
