@@ -166,10 +166,15 @@ describe('hover', () => {
 // ── Diagnostics ──────────────────────────────────────────────────────
 
 describe('diagnostics', () => {
-  it('should return diagnostics for a file', async () => {
+  it('should report errors for file with type mismatches', async () => {
+    const result = await tools.callTool('diagnostics', { filePath: FIXTURES.errors });
+    expect(result).toMatch(/ERROR/i);
+    expect(result).toContain('diagnostic');
+  });
+
+  it('should report no diagnostics for clean file', async () => {
     const result = await tools.callTool('diagnostics', { filePath: FIXTURES.circle });
-    expect(result).toBeDefined();
-    expect(result.length).toBeGreaterThan(0);
+    expect(result).toMatch(/[Nn]o diagnostics|0 diagnostic/);
   });
 });
 

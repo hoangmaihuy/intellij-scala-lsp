@@ -29,6 +29,7 @@ export const FIXTURES = {
   rectangle: path.join(SRC, 'Rectangle.scala'),
   shapeService: path.join(SRC, 'ShapeService.scala'),
   main: path.join(SRC, 'Main.scala'),
+  errors: path.join(SRC, 'Errors.scala'),
 };
 
 let lsp: LspClient;
