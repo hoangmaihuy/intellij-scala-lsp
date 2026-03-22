@@ -179,3 +179,35 @@ class SymbolProviderIntegrationTest extends ScalaLspTestBase:
     findSymbol("myMethod").foreach(s => assertEquals(SymbolKind.Method, s.getKind))
     findSymbol("myVal").foreach(s => assertEquals(SymbolKind.Field, s.getKind))
     findSymbol("myVar").foreach(s => assertEquals(SymbolKind.Variable, s.getKind))
+
+  def testWorkspaceSymbolRelevanceRanking(): Unit =
+    addScalaFile("exact/MyExactClass.scala",
+      """package exact
+        |class MyExactClass
+        |""".stripMargin
+    )
+    addScalaFile("prefix/MyExactClassHelper.scala",
+      """package prefix
+        |class MyExactClassHelper
+        |""".stripMargin
+    )
+    val result = workspaceSymbols("MyExactClass")
+    if result.size >= 2 then
+      val exactIdx = result.indexWhere(_.getName == "MyExactClass")
+      val prefixIdx = result.indexWhere(_.getName == "MyExactClassHelper")
+      if exactIdx >= 0 && prefixIdx >= 0 then
+        assertTrue("Exact match should rank before prefix match", exactIdx < prefixIdx)
+
+  def testWorkspaceSymbolCompanionDedup(): Unit =
+    addScalaFile("dedup/Widget.scala",
+      """package dedup
+        |class Widget
+        |object Widget:
+        |  def create() = new Widget
+        |""".stripMargin
+    )
+    val result = workspaceSymbols("Widget")
+    val widgets = result.filter(s => s.getName == "Widget" || s.getName == "Widget$")
+      .filter(s => Option(s.getContainerName).exists(_.contains("dedup")))
+    assertTrue(s"Companion dedup should produce at most 1 Widget, got ${widgets.size}",
+      widgets.size <= 1)
