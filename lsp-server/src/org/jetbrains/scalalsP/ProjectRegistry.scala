@@ -39,11 +39,63 @@ class ProjectRegistry:
     val project = ProjectManager.getInstance().loadAndOpenProject(projectPath)
     if project == null then throw RuntimeException(s"Failed to open project at $projectPath")
     System.err.println(s"[ProjectRegistry] Project opened: ${project.getName}")
+    ensureJdkRegistered()
+    refreshExternalProject(project, projectPath)
     registerMissingJdks(project)
     System.err.println(s"[ProjectRegistry] Waiting for indexing: ${project.getName}")
     DumbService.getInstance(project).waitForSmartMode()
     System.err.println(s"[ProjectRegistry] Indexing complete: ${project.getName}")
     project
+
+  /** Register a JDK so sbt resolution can find a Java VM executable. */
+  private def ensureJdkRegistered(): Unit =
+    try
+      val jdkTable = ProjectJdkTable.getInstance()
+      val javaSdkType = com.intellij.openapi.projectRoots.SdkType.EP_NAME.getExtensionList.asScala
+        .find(_.getName == "JavaSDK").orNull
+      if javaSdkType == null then return
+      if jdkTable.getAllJdks.exists(_.getSdkType.getName == "JavaSDK") then return
+
+      // Prefer IntelliJ's bundled JBR (in allowed VFS roots), then JAVA_HOME
+      val homePath = com.intellij.openapi.application.PathManager.getHomePath
+      val candidates = Seq(
+        Some(homePath + "/jbr/Contents/Home"),
+        Some(homePath + "/jbr"),
+        Option(System.getenv("JAVA_HOME")),
+      ).flatten.filter(p => java.io.File(p + "/bin/java").exists())
+
+      candidates.headOption.foreach: home =>
+        System.err.println(s"[ProjectRegistry] Registering JDK: $home")
+        ApplicationManager.getApplication.invokeAndWait: () =>
+          WriteAction.run[RuntimeException]: () =>
+            val createJdk = javaSdkType.getClass.getMethod("createJdk", classOf[String], classOf[String], classOf[Boolean])
+            val sdk = createJdk.invoke(javaSdkType, "java", home, java.lang.Boolean.FALSE)
+              .asInstanceOf[com.intellij.openapi.projectRoots.Sdk]
+            jdkTable.addJdk(sdk)
+    catch case e: Exception =>
+      System.err.println(s"[ProjectRegistry] JDK registration failed: ${e.getMessage}")
+
+  /** Refresh external system (sbt/mill) to ensure modules and source roots are resolved. */
+  private def refreshExternalProject(project: Project, projectPath: String): Unit =
+    try
+      import com.intellij.openapi.externalSystem.model.ProjectSystemId
+      import com.intellij.openapi.externalSystem.importing.ImportSpecBuilder
+      import com.intellij.openapi.externalSystem.service.execution.ProgressExecutionMode
+      import com.intellij.openapi.externalSystem.util.ExternalSystemUtil
+
+      // Check if build.sbt exists (simple heuristic for sbt projects)
+      if !java.io.File(projectPath, "build.sbt").exists() then return
+
+      val sbtSystemId = new ProjectSystemId("SBT")
+      System.err.println(s"[ProjectRegistry] Refreshing sbt project: ${project.getName}")
+      ExternalSystemUtil.refreshProject(
+        projectPath,
+        new ImportSpecBuilder(project, sbtSystemId)
+          .use(ProgressExecutionMode.MODAL_SYNC)
+      )
+      System.err.println(s"[ProjectRegistry] sbt refresh complete: ${project.getName}")
+    catch case e: Exception =>
+      System.err.println(s"[ProjectRegistry] External project refresh failed: ${e.getMessage}")
 
   private def registerMissingJdks(project: Project): Unit =
     try

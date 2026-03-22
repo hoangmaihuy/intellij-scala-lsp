@@ -118,10 +118,17 @@ object ProjectImporter:
       else
         System.err.println("[Import] sbt project linked")
 
-      // Always refresh to ensure the sbt model is fully resolved.
-      // doLinkProject triggers async resolution that may fail silently;
-      // refreshProject with MODAL_SYNC blocks until resolution completes.
-      System.err.println("[Import] Resolving sbt project model...")
+      // doLinkProject triggers async sbt resolution. Wait for it to complete
+      // before running our own synchronous refresh. The async one runs on a
+      // background thread via ExternalSystemUtil — we wait for smart mode first,
+      // then do an explicit synchronous refresh to ensure modules are fully resolved.
+      System.err.println("[Import] Waiting for initial indexing...")
+      DumbService.getInstance(project).waitForSmartMode()
+
+      // Now do a synchronous refresh to ensure the sbt model is fully resolved.
+      // The initial async resolution may have completed or failed — this ensures
+      // we get a clean synchronous resolution with proper error reporting.
+      System.err.println("[Import] Resolving sbt project model (synchronous)...")
       val sbtSystemId = new ProjectSystemId("SBT")
       ExternalSystemUtil.refreshProject(
         projectPath.toString,
