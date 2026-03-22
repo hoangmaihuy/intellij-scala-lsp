@@ -1355,6 +1355,30 @@ case "${1:-}" in
     assemble_classpath_and_flags
     check_for_updates
     if daemon_running; then
+      # In dev mode, restart daemon if plugin jar is newer than the running daemon
+      if [ "$DEV_MODE" = true ]; then
+        local pidfile="$CACHE_DIR/daemon.pid"
+        if [ "$LSP_LIB_DIR/lsp-server.jar" -nt "$pidfile" ] 2>/dev/null; then
+          log "Dev mode: plugin jar is newer than daemon, restarting..."
+          local old_pid
+          old_pid=$(cat "$pidfile" 2>/dev/null)
+          [ -n "$old_pid" ] && kill "$old_pid" 2>/dev/null || true
+          # Also kill any stray ScalaLspMain processes
+          jps 2>/dev/null | grep ScalaLspMain | awk '{print $1}' | xargs kill 2>/dev/null || true
+          rm -f "$CACHE_DIR/daemon.pid" "$CACHE_DIR/daemon.port" "$CACHE_DIR/daemon.projects"
+          sleep 2
+          start_daemon_background "$@"
+          if wait_for_port_file 60; then
+            DAEMON_PORT=$(cat "$CACHE_DIR/daemon.port")
+            log "Daemon restarted, connecting on port $DAEMON_PORT"
+            proxy_stdio_to_tcp "$DAEMON_PORT"
+          else
+            log "ERROR: Daemon restart failed. Check $LSP_LOG"
+            exit 1
+          fi
+          exit 0
+        fi
+      fi
       DAEMON_PORT=$(cat "$CACHE_DIR/daemon.port")
       log "Connecting to daemon on port $DAEMON_PORT"
       proxy_stdio_to_tcp "$DAEMON_PORT"
