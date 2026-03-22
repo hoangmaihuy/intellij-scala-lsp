@@ -556,7 +556,7 @@ wait_for_port_file() {
 
 start_daemon_background() {
   log "Starting daemon in background..."
-  # Clean stale index locks from previous unclean shutdown
+  # Clean stale locks only — preserve indexes for fast restart
   find "$CACHE_DIR/system" -name "*.lock" -delete 2>/dev/null || true
   "$JAVA" "${JVM_ARGS[@]}" -cp "$CLASSPATH" \
     org.jetbrains.scalalsP.ScalaLspMain --daemon "$@" \
@@ -1278,14 +1278,9 @@ case "${1:-}" in
       echo "[ScalaLsp] Force killing daemon..."
       kill -9 "$pid" 2>/dev/null || true
     fi
-    # Wait for OS to release memory-mapped files, then wipe index/caches
+    # Wait for OS to release memory-mapped files, then clean up
+    sleep 2
     rm -f "$CACHE_DIR/daemon.pid" "$CACHE_DIR/daemon.port" "$CACHE_DIR/daemon.projects"
-    # Retry rm -rf until the OS releases mmapped files (up to 10s)
-    for i in $(seq 1 10); do
-      rm -rf "$CACHE_DIR/system/index" "$CACHE_DIR/system/caches" 2>/dev/null
-      [ ! -d "$CACHE_DIR/system/index" ] && [ ! -d "$CACHE_DIR/system/caches" ] && break
-      sleep 1
-    done
     find "$CACHE_DIR/system" -name "*.lock" -delete 2>/dev/null || true
     echo "[ScalaLsp] Daemon stopped."
     ;;
@@ -1310,8 +1305,7 @@ case "${1:-}" in
     resolve_sdk
     assemble_classpath_and_flags
     check_for_updates
-    # Wipe index/caches to prevent corruption from unclean shutdowns
-    rm -rf "$CACHE_DIR/system/index" "$CACHE_DIR/system/caches"
+    # Clean stale locks only — preserve indexes for fast restart
     find "$CACHE_DIR/system" -name "*.lock" -delete 2>/dev/null || true
     exec "$JAVA" "${JVM_ARGS[@]}" -cp "$CLASSPATH" \
       org.jetbrains.scalalsP.ScalaLspMain --daemon "$@"
