@@ -28,7 +28,15 @@ async function resolveTargets(
     const filtered = hasExact
       ? symbols.filter(s => s.matchQuality === 'exact' || s.matchQuality === 'companion')
       : symbols;
-    return filtered.map(s => ({ uri: s.location.uri, position: s.location.range.start, label: s.name, matchQuality: s.matchQuality }));
+    // Deduplicate by URI+position — same symbol can appear from multiple contributors
+    const seen = new Set<string>();
+    const deduped = filtered.filter(s => {
+      const key = `${s.location.uri}:${s.location.range.start.line}:${s.location.range.start.character}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    return deduped.map(s => ({ uri: s.location.uri, position: s.location.range.start, label: s.name, matchQuality: s.matchQuality }));
   }
   return [];
 }
