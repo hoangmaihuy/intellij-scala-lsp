@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { LspClient } from '../lsp-client.js';
 import { FileManager } from '../file-manager.js';
 import { SymbolResolver } from '../symbol-resolver.js';
-import { uriToPath, pathToUri, addLineNumbers, toPosition } from '../utils.js';
+import { uriToPath, addLineNumbers, toPosition } from '../utils.js';
 import * as fs from 'fs';
 import {
   Location, DocumentSymbol, SymbolInformation,
