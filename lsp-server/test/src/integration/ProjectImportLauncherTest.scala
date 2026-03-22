@@ -3,6 +3,7 @@ package org.jetbrains.scalalsP.integration
 import org.junit.Test
 import org.junit.Assert.*
 import java.nio.file.{Files, Path}
+import java.util.Comparator
 
 /**
  * Tests for the --import flag in the launcher script.
@@ -40,6 +41,11 @@ class ProjectImportLauncherTest:
   private def outputContains(stdout: String, stderr: String, text: String): Boolean =
     stdout.contains(text) || stderr.contains(text)
 
+  /** Recursively delete a directory (the launcher may create subdirs like project/, target/) */
+  private def deleteRecursively(dir: Path): Unit =
+    if Files.exists(dir) then
+      Files.walk(dir).sorted(Comparator.reverseOrder()).forEach(Files.deleteIfExists(_))
+
   @Test def testMissingPathArgument(): Unit =
     val (exitCode, stdout, stderr) = runImport()
     assertEquals(s"Expected exit code 1 for missing argument. stdout: $stdout, stderr: $stderr", 1, exitCode)
@@ -66,7 +72,7 @@ class ProjectImportLauncherTest:
         outputContains(stdout, stderr, "Could not detect build tool")
       )
     finally
-      Files.deleteIfExists(tmpDir)
+      deleteRecursively(tmpDir)
 
   @Test def testDetectsMillProject(): Unit =
     val tmpDir = Files.createTempDirectory("import-test-mill")
@@ -78,8 +84,7 @@ class ProjectImportLauncherTest:
         outputContains(stdout, stderr, "Detected Mill project")
       )
     finally
-      Files.deleteIfExists(tmpDir.resolve("build.mill"))
-      Files.deleteIfExists(tmpDir)
+      deleteRecursively(tmpDir)
 
   @Test def testDetectsMillProjectWithBuildSc(): Unit =
     val tmpDir = Files.createTempDirectory("import-test-mill-sc")
@@ -91,8 +96,7 @@ class ProjectImportLauncherTest:
         outputContains(stdout, stderr, "Detected Mill project")
       )
     finally
-      Files.deleteIfExists(tmpDir.resolve("build.sc"))
-      Files.deleteIfExists(tmpDir)
+      deleteRecursively(tmpDir)
 
   @Test def testDetectsSbtProject(): Unit =
     val tmpDir = Files.createTempDirectory("import-test-sbt")
@@ -104,8 +108,7 @@ class ProjectImportLauncherTest:
         outputContains(stdout, stderr, "Detected sbt project")
       )
     finally
-      Files.deleteIfExists(tmpDir.resolve("build.sbt"))
-      Files.deleteIfExists(tmpDir)
+      deleteRecursively(tmpDir)
 
   @Test def testMillTakesPriorityOverSbt(): Unit =
     val tmpDir = Files.createTempDirectory("import-test-both")
@@ -118,6 +121,4 @@ class ProjectImportLauncherTest:
         outputContains(stdout, stderr, "Detected Mill project")
       )
     finally
-      Files.deleteIfExists(tmpDir.resolve("build.mill"))
-      Files.deleteIfExists(tmpDir.resolve("build.sbt"))
-      Files.deleteIfExists(tmpDir)
+      deleteRecursively(tmpDir)
