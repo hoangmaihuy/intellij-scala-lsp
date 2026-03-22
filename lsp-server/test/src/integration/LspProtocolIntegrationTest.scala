@@ -19,7 +19,9 @@ class LspProtocolIntegrationTest extends ScalaLspTestBase:
     svc
 
   private def workspaceService: ScalaWorkspaceService =
-    ScalaWorkspaceService(projectManager, DiagnosticsProvider(projectManager))
+    val diag = DiagnosticsProvider(projectManager)
+    val tds = ScalaTextDocumentService(projectManager, diag)
+    ScalaWorkspaceService(projectManager, diag, tds)
 
   private def definitionParams(uri: String, line: Int, char: Int): DefinitionParams =
     val params = DefinitionParams()
