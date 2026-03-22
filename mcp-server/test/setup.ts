@@ -10,7 +10,6 @@ import * as fs from 'fs';
 import * as os from 'os';
 import { LspClient } from '../src/lsp-client.js';
 import { FileManager } from '../src/file-manager.js';
-import { DiagnosticsCache } from '../src/diagnostics-cache.js';
 import { SymbolResolver } from '../src/symbol-resolver.js';
 import { applyWorkspaceEdit } from '../src/workspace-edit.js';
 import { registerTools } from '../src/tools/register.js';
@@ -34,9 +33,13 @@ export const FIXTURES = {
   externalDeps: path.join(SRC, 'ExternalDeps.scala'),
 };
 
-let lsp: LspClient;
-let fileManager: FileManager;
-let toolRunner: TestToolRunner;
+export interface TestSession {
+  lsp: LspClient;
+  fileManager: FileManager;
+  symbolResolver: SymbolResolver;
+  tools: TestToolRunner;
+  teardown: () => Promise<void>;
+}
 
 function getDaemonPort(): number {
   const portFile = path.join(os.homedir(), '.cache', 'intellij-scala-lsp', 'daemon.port');
@@ -47,13 +50,16 @@ function getDaemonPort(): number {
   return parseInt(process.env.LSP_PORT || '5007', 10);
 }
 
-export async function setupTestEnvironment(): Promise<TestToolRunner> {
+/**
+ * Create an independent LSP session for the given project directory.
+ * Each session gets its own LspClient, FileManager, SymbolResolver, and TestToolRunner.
+ */
+export async function createSession(projectDir: string): Promise<TestSession> {
   const port = getDaemonPort();
-  lsp = new LspClient();
+  const lsp = new LspClient();
   await lsp.connect(port);
 
-  fileManager = new FileManager(lsp);
-  const diagnostics = new DiagnosticsCache(lsp);
+  const fileManager = new FileManager(lsp);
 
   // Handle server-initiated requests (same as index.ts)
   lsp.onRequest('workspace/applyEdit', async (params: unknown) => {
@@ -68,29 +74,52 @@ export async function setupTestEnvironment(): Promise<TestToolRunner> {
   lsp.onRequest('client/registerCapability', async () => null);
   lsp.onRequest('window/workDoneProgress/create', async () => null);
 
-  const rootUri = pathToUri(FIXTURE_DIR);
+  // Handle server-initiated notifications
+  lsp.onNotification('window/showMessage', () => {});
+  lsp.onNotification('window/logMessage', () => {});
+
+  const rootUri = pathToUri(projectDir);
   await lsp.initialize(rootUri);
 
   const symbolResolver = new SymbolResolver(lsp, fileManager);
 
-  toolRunner = new TestToolRunner();
+  const tools = new TestToolRunner();
   registerTools(
-    toolRunner as any,
+    tools as any,
     lsp,
     fileManager,
-    diagnostics,
     symbolResolver,
   );
 
   // Give the daemon time to finish analysis after session connects
   await new Promise(r => setTimeout(r, 3000));
 
-  return toolRunner;
+  return {
+    lsp,
+    fileManager,
+    symbolResolver,
+    tools,
+    teardown: async () => {
+      fileManager.closeAll();
+      await lsp.shutdown();
+    },
+  };
 }
 
+export async function setupTestEnvironment(): Promise<TestToolRunner> {
+  const session = await createSession(FIXTURE_DIR);
+  // Store references for teardown
+  _currentSession = session;
+  return session.tools;
+}
+
+let _currentSession: TestSession | undefined;
+
 export async function teardownTestEnvironment(): Promise<void> {
-  if (fileManager) fileManager.closeAll();
-  if (lsp) await lsp.shutdown();
+  if (_currentSession) {
+    await _currentSession.teardown();
+    _currentSession = undefined;
+  }
 }
 
 export { FIXTURE_DIR };
