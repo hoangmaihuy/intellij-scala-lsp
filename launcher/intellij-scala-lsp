@@ -23,7 +23,7 @@ if [ -f "$PROJECT_ROOT/build.sbt" ]; then
   LSP_LIB_DIR="$PROJECT_ROOT/lsp-server/target/plugin/intellij-scala-lsp/lib"
 else
   DEV_MODE=false
-  LSP_LIB_DIR="$CACHE_DIR/lsp-server"
+  LSP_LIB_DIR="$CACHE_DIR/lsp-server/lib"
 fi
 
 mkdir -p "$CACHE_DIR"
@@ -424,7 +424,7 @@ download_lsp_jars() {
   tar xzf "$tmp_dir/lsp.tar.gz" -C "$CACHE_DIR/lsp-server"
   rm -rf "$tmp_dir"
   echo "$version" > "$CACHE_DIR/version"
-  log "LSP server JARs v${version} installed."
+  log "LSP server v${version} installed (lib + mcp-server + skills)."
 }
 
 do_install() {
@@ -595,8 +595,8 @@ install_skill() {
   # Find the skill source file
   if [ -n "$PROJECT_ROOT" ] && [ -f "$PROJECT_ROOT/skills/scala-code-intelligence/${mode}.md" ]; then
     skill_src="$PROJECT_ROOT/skills/scala-code-intelligence/${mode}.md"
-  elif [ -f "$INSTALL_DIR/skills/scala-code-intelligence/${mode}.md" ]; then
-    skill_src="$INSTALL_DIR/skills/scala-code-intelligence/${mode}.md"
+  elif [ -f "$CACHE_DIR/lsp-server/skills/scala-code-intelligence/${mode}.md" ]; then
+    skill_src="$CACHE_DIR/lsp-server/skills/scala-code-intelligence/${mode}.md"
   else
     echo "  (skill file not found, skipping skill installation)"
     return
@@ -759,18 +759,25 @@ MKJSON
 setup_mcp() {
   local mcp_dir="$1"
 
-  # Build MCP server
-  if [ -d "$mcp_dir" ]; then
-    echo "Building MCP server..."
-    (cd "$mcp_dir" && npm install --silent && npm run build --silent)
-  else
+  if [ ! -d "$mcp_dir" ]; then
     echo "ERROR: MCP server directory not found: $mcp_dir"
     exit 1
   fi
 
+  # In dev mode, build from source; in installed mode, dist/ is pre-built
+  if [ "$DEV_MODE" = true ]; then
+    echo "Building MCP server..."
+    (cd "$mcp_dir" && npm install --silent && npm run build --silent)
+  fi
+
   local index_js="$mcp_dir/dist/index.js"
   if [ ! -f "$index_js" ]; then
-    echo "ERROR: MCP server build failed — dist/index.js not found"
+    echo "ERROR: MCP server not found at $index_js"
+    if [ "$DEV_MODE" = true ]; then
+      echo "Run: cd $mcp_dir && npm install && npm run build"
+    else
+      echo "Run: intellij-scala-lsp --install"
+    fi
     exit 1
   fi
 
@@ -1131,7 +1138,7 @@ case "${1:-}" in
     exit 0
     ;;
   --setup-claude-code-mcp)
-    setup_mcp "$HOME/.local/share/intellij-scala-lsp/mcp-server"
+    setup_mcp "$CACHE_DIR/lsp-server/mcp-server"
     exit 0
     ;;
   --setup-claude-code-mcp-dev)
