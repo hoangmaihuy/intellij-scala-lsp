@@ -23,17 +23,32 @@ export class SymbolResolver {
   ) {}
 
   async resolve(symbolName: string): Promise<ResolvedSymbol[]> {
+    // For fully qualified names like "io.circe.Json", extract the simple name
+    // and use it as the query, then filter by containerName/package.
+    const { simpleName, packagePrefix } = this.parseQualifiedName(symbolName);
+    const query = simpleName;
+
+    logger.info(`[SymbolResolver] resolve("${symbolName}") → query="${query}", packagePrefix=${packagePrefix ?? 'null'}`);
+
     const raw = await this.client.request<SymbolInformation[]>(
       'workspace/symbol',
-      { query: symbolName },
+      { query },
     );
+
+    logger.info(`[SymbolResolver] workspace/symbol returned ${raw?.length ?? 0} results`);
+    if (raw && Array.isArray(raw)) {
+      for (const s of raw.slice(0, 10)) {
+        const info = s as SymbolInformation;
+        logger.info(`[SymbolResolver]   - name="${info.name}" container="${info.containerName}" kind=${info.kind}`);
+      }
+    }
 
     if (!raw || !Array.isArray(raw)) return [];
 
     const results: ResolvedSymbol[] = [];
     for (const sym of raw) {
       const info = sym as SymbolInformation;
-      const quality = this.matchQuality(info.name, symbolName, info.kind);
+      const quality = this.matchQuality(info.name, query, info.kind, info.containerName, packagePrefix);
       if (!quality) continue;
 
       const location = info.location;
@@ -63,15 +78,42 @@ export class SymbolResolver {
     return results;
   }
 
-  private matchQuality(symbolName: string, query: string, kind: SymbolKind): MatchQuality | null {
-    // Exact match
-    if (symbolName === query) return 'exact';
+  /** Split a potentially qualified name into simple name and package prefix. */
+  private parseQualifiedName(symbolName: string): { simpleName: string; packagePrefix: string | null } {
+    const lastDot = symbolName.lastIndexOf('.');
+    if (lastDot === -1) return { simpleName: symbolName, packagePrefix: null };
+    return {
+      simpleName: symbolName.substring(lastDot + 1),
+      packagePrefix: symbolName.substring(0, lastDot),
+    };
+  }
+
+  private matchQuality(
+    symbolName: string, query: string, kind: SymbolKind,
+    containerName?: string, packagePrefix?: string | null,
+  ): MatchQuality | null {
+    // Check if containerName matches the expected package prefix.
+    // Used when resolving fully qualified names like "io.circe.Json".
+    const packageMatches = !packagePrefix || this.containerMatchesPackage(containerName, packagePrefix);
+
+    // Exact match (considering package prefix if present)
+    if (symbolName === query) {
+      if (packagePrefix) {
+        return packageMatches ? 'exact' : null;
+      }
+      return 'exact';
+    }
 
     // Scala companion object: "Foo$" matches query "Foo"
-    if (symbolName === query + '$') return 'companion';
+    if (symbolName === query + '$') {
+      if (packagePrefix) {
+        return packageMatches ? 'companion' : null;
+      }
+      return 'companion';
+    }
 
-    // Qualified name: "Container.method"
-    if (query.includes('.')) {
+    // Qualified name: "Container.method" (no packagePrefix — old-style dotted query)
+    if (!packagePrefix && query.includes('.')) {
       const parts = query.split('.');
       const methodName = parts[parts.length - 1];
       if (kind === SymbolKind.Method || kind === SymbolKind.Function) {
@@ -81,6 +123,9 @@ export class SymbolResolver {
       }
       return null;
     }
+
+    // If we had a package prefix but it didn't match, don't fall through to suffix matches
+    if (packagePrefix && !packageMatches) return null;
 
     // Suffix match for types: "SupportingDocsTableL" matches query "TableL"
     if (kind === SymbolKind.Class || kind === SymbolKind.Interface ||
@@ -95,5 +140,16 @@ export class SymbolResolver {
     }
 
     return null;
+  }
+
+  /** Check if a symbol's containerName matches the expected package prefix. */
+  private containerMatchesPackage(containerName: string | undefined, packagePrefix: string): boolean {
+    if (!containerName) return false;
+    // containerName may be "io.circe" or "io.circe.Json" (for companion) or just "circe"
+    // Accept if containerName ends with or equals the package prefix
+    return containerName === packagePrefix
+      || containerName.endsWith('.' + packagePrefix)
+      || packagePrefix.endsWith('.' + containerName)
+      || packagePrefix === containerName;
   }
 }

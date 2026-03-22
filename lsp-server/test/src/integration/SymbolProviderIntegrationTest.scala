@@ -81,6 +81,78 @@ class SymbolProviderIntegrationTest extends ScalaLspTestBase:
     // Scala 3 enum requires proper SDK; just verify no crash
     assertNotNull(symbols)
 
+  // --- FQN workspace symbol queries ---
+
+  def testWorkspaceSymbolWithPackagePrefix(): Unit =
+    addScalaFile("com/example/MyService.scala",
+      """package com.example
+        |
+        |class MyService:
+        |  def process() = 42
+        |""".stripMargin
+    )
+    // Simple name query should find it
+    val bySimple = workspaceSymbols("MyService")
+    assertTrue("Simple name should find MyService", bySimple.exists(_.getName == "MyService"))
+
+    // FQN query should also find it
+    val byFqn = workspaceSymbols("com.example.MyService")
+    assertTrue("FQN query should find MyService",
+      byFqn.exists(_.getName == "MyService"))
+
+  def testWorkspaceSymbolFqnRejectsWrongPackage(): Unit =
+    addScalaFile("com/foo/Handler.scala",
+      """package com.foo
+        |class Handler
+        |""".stripMargin
+    )
+    addScalaFile("com/bar/Handler.scala",
+      """package com.bar
+        |class Handler
+        |""".stripMargin
+    )
+    // FQN query for com.foo.Handler should only match the com.foo one
+    val result = workspaceSymbols("com.foo.Handler")
+    // All results should have containerName matching "com.foo" (not "com.bar")
+    for sym <- result do
+      val container = sym.getContainerName
+      assertTrue(
+        s"FQN query 'com.foo.Handler' should not return container='$container'",
+        container == null || container.contains("foo") || !container.contains("bar")
+      )
+
+  def testWorkspaceSymbolContainerNameIsSet(): Unit =
+    addScalaFile("pkg/alpha/Widget.scala",
+      """package pkg.alpha
+        |class Widget
+        |""".stripMargin
+    )
+    val result = workspaceSymbols("Widget")
+    val widget = result.find(_.getName == "Widget")
+    assertTrue("Should find Widget", widget.isDefined)
+    // containerName should be set and include the package
+    val container = widget.get.getContainerName
+    assertNotNull("containerName should not be null", container)
+    assertTrue(s"containerName '$container' should contain 'pkg' or 'alpha'",
+      container.contains("pkg") || container.contains("alpha"))
+
+  def testWorkspaceSymbolSimpleNameMatchesAll(): Unit =
+    addScalaFile("ns1/Item.scala",
+      """package ns1
+        |class Item
+        |""".stripMargin
+    )
+    addScalaFile("ns2/Item.scala",
+      """package ns2
+        |class Item
+        |""".stripMargin
+    )
+    // Simple name query (no dots) should return items from BOTH packages
+    val result = workspaceSymbols("Item")
+    val items = result.filter(_.getName == "Item")
+    assertTrue(s"Simple name should find Item from both packages, found ${items.size}",
+      items.size >= 2)
+
   def testSymbolKindsAreCorrect(): Unit =
     val uri = configureScalaFile(
       """trait MyTrait

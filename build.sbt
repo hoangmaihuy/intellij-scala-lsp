@@ -42,6 +42,9 @@ lazy val `lsp-server` = project.in(file("lsp-server"))
       "junit" % "junit" % "4.13.2",
       "com.github.sbt" % "junit-interface" % "0.13.3" % Test,
       "org.opentest4j" % "opentest4j" % "1.3.0" % Test,
+      // External Scala libraries for testing workspace/symbol with external deps
+      "org.typelevel" %% "cats-core" % "2.12.0" % Test,
+      "dev.zio" %% "zio" % "2.1.14" % Test,
     ),
 
     // Add testFramework.jar to compile classpath (IntellijBootstrap uses TestApplicationManager)

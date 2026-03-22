@@ -302,10 +302,10 @@ assemble_classpath_and_flags() {
   JAVA=$(find_java)
   log "Java: $JAVA"
 
-  # In dev mode, auto-rebuild LSP server to avoid stale jar issues
+  # In dev mode, clean and rebuild LSP server to avoid stale jar issues
   if [ "$DEV_MODE" = true ] && [ -n "$PROJECT_ROOT" ]; then
     log "Dev mode: rebuilding LSP server..."
-    (cd "$PROJECT_ROOT" && sbt --batch "lsp-server/packageArtifact" 2>&1 | tail -3) || {
+    (cd "$PROJECT_ROOT" && sbt --batch "lsp-server/clean" "lsp-server/packageArtifact" 2>&1 | tail -3) || {
       log "WARNING: sbt build failed, using existing JARs"
     }
   fi

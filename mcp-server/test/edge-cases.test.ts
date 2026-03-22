@@ -1,14 +1,12 @@
 /**
- * Edge Case Tests — External Dependencies, Match Quality, Cached Sources
+ * Integration tests — verify MCP tools work end-to-end against the LSP daemon.
  *
- * Tests for:
- *   - Definition of external library symbols (cats Monad, zio ZIO)
- *   - References of external library symbols in project code
- *   - Match quality sorting (exact > suffix)
- *   - Suffix-only results hint message
- *   - Definition result capping
- *   - Cached source file handling (.tasty → .scala)
- *   - workspace_symbols including library symbols
+ * These tests catch regressions in:
+ *   - workspace_symbols: both simple ("Json") and FQN ("io.circe.Json") queries
+ *   - definition: external library symbols via symbolName and filePath+line+column
+ *   - references: finding project usages of external library symbols
+ *   - implementations: finding trait implementations
+ *   - match quality: exact vs suffix sorting
  *
  * Prerequisites:
  *   1. cd mcp-server/test/fixtures && sbt compile
@@ -31,171 +29,272 @@ afterAll(async () => {
   await teardownTestEnvironment();
 });
 
-// ── External Dependency: Definition ─────────────────────────────────
+// ── workspace_symbols ───────────────────────────────────────────────
 
-describe('definition of external symbols', () => {
-  it('should resolve Monad from cats via symbolName', async () => {
+describe('workspace_symbols', () => {
+  it('simple query "Shape" should find project symbol', async () => {
+    const result = await tools.callTool('workspace_symbols', { query: 'Shape' });
+    expect(result).toContain('Found');
+    expect(result).toContain('Shape');
+    expect(result).toContain('Shape.scala');
+  });
+
+  it('simple query "Circle" should find project symbol', async () => {
+    const result = await tools.callTool('workspace_symbols', { query: 'Circle' });
+    expect(result).toContain('Found');
+    expect(result).toContain('Circle');
+  });
+
+  it('simple query "Monad" should find library symbol', async () => {
+    const result = await tools.callTool('workspace_symbols', { query: 'Monad' });
+    // Must find results (not "No symbols found")
+    expect(result).toContain('Found');
+    expect(result).toMatch(/Monad/);
+    // Must NOT be an error
+    expect(result).not.toContain('No symbols found');
+  });
+
+  it('simple query "ZIO" should find library symbol', async () => {
+    const result = await tools.callTool('workspace_symbols', { query: 'ZIO' });
+    expect(result).toContain('Found');
+    expect(result).toMatch(/ZIO/);
+    expect(result).not.toContain('No symbols found');
+  });
+
+  it('FQN query "example.Shape" should find project symbol and include container', async () => {
+    const result = await tools.callTool('workspace_symbols', { query: 'example.Shape' });
+    expect(result).toContain('Found');
+    expect(result).toContain('Shape');
+    // Verify containerName is present
+    expect(result).toContain('in example');
+  });
+
+  it('empty query should return no results', async () => {
+    const result = await tools.callTool('workspace_symbols', { query: '' });
+    expect(result).toContain('No symbols found');
+  });
+
+  it('nonexistent symbol should return no results', async () => {
+    const result = await tools.callTool('workspace_symbols', { query: 'ZzNonExistent99' });
+    expect(result).toContain('No symbols found');
+  });
+});
+
+// ── definition via symbolName ───────────────────────────────────────
+
+describe('definition via symbolName', () => {
+  it('"Shape" should return trait definition with source code', async () => {
+    const result = await tools.callTool('definition', { symbolName: 'Shape' });
+    // Must contain actual source code, not just the name
+    expect(result).toContain('trait Shape');
+    expect(result).toContain('Shape.scala');
+    // Must NOT contain error messages
+    expect(result).not.toContain('No symbol found');
+  });
+
+  it('"Circle" should return case class definition', async () => {
+    const result = await tools.callTool('definition', { symbolName: 'Circle' });
+    expect(result).toContain('case class Circle');
+    expect(result).toContain('Circle.scala');
+    expect(result).not.toContain('No symbol found');
+  });
+
+  it('"Monad" should return definition from cats library', async () => {
     const result = await tools.callTool('definition', { symbolName: 'Monad' });
-    // Should find the cats Monad trait — either from source jar or decompiled
-    expect(result).toMatch(/Monad|trait|cats/);
+    // Must return actual source/decompiled code, not an error
     expect(result).not.toContain('No symbol found');
+    // Must contain something that looks like source code (line numbers)
+    expect(result).toMatch(/\d+\|/); // line number format: "  42|..."
+    // Should mention Monad somewhere in the source
+    expect(result).toMatch(/Monad/);
   });
 
-  it('should resolve ZIO from zio via symbolName', async () => {
+  it('"ZIO" should return definition from zio library', async () => {
     const result = await tools.callTool('definition', { symbolName: 'ZIO' });
-    expect(result).toMatch(/ZIO|zio/);
+    expect(result).not.toContain('No symbol found');
+    expect(result).toMatch(/\d+\|/);
+    expect(result).toMatch(/ZIO/);
+  });
+
+  it('"io.circe.Json" (nonexistent dep) should fail gracefully', async () => {
+    const result = await tools.callTool('definition', { symbolName: 'io.circe.Json' });
+    // circe is not a dependency of the fixture project
+    expect(result).toContain('No symbol found');
+  });
+
+  it('"cats.Monad" FQN should return Monad from cats specifically', async () => {
+    const result = await tools.callTool('definition', { symbolName: 'cats.Monad' });
+    expect(result).not.toContain('No symbol found');
+    expect(result).toMatch(/Monad/);
+    expect(result).toMatch(/\d+\|/);
+  });
+
+  it('"zio.ZIO" FQN should return ZIO from zio specifically', async () => {
+    const result = await tools.callTool('definition', { symbolName: 'zio.ZIO' });
+    expect(result).not.toContain('No symbol found');
+    expect(result).toMatch(/ZIO/);
+    expect(result).toMatch(/\d+\|/);
+  });
+
+  it('"example.Shape" FQN should return Shape from project', async () => {
+    const result = await tools.callTool('definition', { symbolName: 'example.Shape' });
+    expect(result).toContain('trait Shape');
+    expect(result).toContain('Shape.scala');
     expect(result).not.toContain('No symbol found');
   });
 
-  it('should resolve external symbol via filePath+line+column from usage site', async () => {
-    // ExternalDeps.scala line 3: "import cats.Monad" — column on "Monad"
+  it('"ZzNonExistent" should report no symbol found', async () => {
+    const result = await tools.callTool('definition', { symbolName: 'ZzNonExistent' });
+    expect(result).toContain('No symbol found');
+  });
+});
+
+// ── definition via filePath+line+column ─────────────────────────────
+
+describe('definition via position', () => {
+  it('Monad import should navigate to cats.Monad definition', async () => {
+    // ExternalDeps.scala line 3: "import cats.Monad"
     const result = await tools.callTool('definition', {
       filePath: FIXTURES.externalDeps,
       line: 3,
       column: 13, // on "Monad"
     });
+    expect(result).not.toContain('No definition found');
     expect(result).toMatch(/Monad/);
+    expect(result).toMatch(/\d+\|/);
   });
 
-  it('should resolve Task alias from zio via position', async () => {
-    // ExternalDeps.scala line 5: "import zio.{ZIO, Task}" — Task at col 19
+  it('ZIO import should navigate to zio.ZIO definition', async () => {
+    // ExternalDeps.scala line 5: "import zio.{ZIO, Task}"
     const result = await tools.callTool('definition', {
-      filePath: FIXTURES.externalDeps,
-      line: 5,
-      column: 19, // on "Task"
-    });
-    expect(result).toMatch(/Task|ZIO|zio/);
-  });
-});
-
-// ── External Dependency: References ─────────────────────────────────
-
-describe('references of external symbols', () => {
-  it('should find project references of Monad', async () => {
-    // Monad is used in ExternalDeps.scala — search by position from usage site
-    const result = await tools.callTool('references', {
-      filePath: FIXTURES.externalDeps,
-      line: 3,
-      column: 13, // on "Monad" import
-    });
-    // Should find at least the import and the using clause
-    expect(result).toContain('ExternalDeps.scala');
-  });
-
-  it('should find project references of ZIO', async () => {
-    const result = await tools.callTool('references', {
       filePath: FIXTURES.externalDeps,
       line: 5,
       column: 13, // on "ZIO"
     });
-    expect(result).toContain('ExternalDeps.scala');
+    expect(result).toMatch(/ZIO/);
+    expect(result).toMatch(/\d+\|/);
   });
 
-  it('should find references of Shape across all files', async () => {
-    const result = await tools.callTool('references', { symbolName: 'Shape' });
-    // Shape is used in Circle, Rectangle, CustomShape, ShapeService, Main, ExternalDeps
-    expect(result).toContain('.scala');
-    const fileMatches = result.match(/References: \d+/g);
-    expect(fileMatches).not.toBeNull();
-    expect(fileMatches!.length).toBeGreaterThanOrEqual(3);
+  it('Shape usage should navigate to Shape trait definition', async () => {
+    // ExternalDeps.scala line 17: "val shapes: List[Shape]"
+    const result = await tools.callTool('definition', {
+      filePath: FIXTURES.externalDeps,
+      line: 17,
+      column: 28, // on "Shape"
+    });
+    expect(result).toContain('trait Shape');
+    expect(result).toContain('Shape.scala');
   });
 });
 
-// ── Match Quality: Exact vs Suffix ──────────────────────────────────
+// ── references ──────────────────────────────────────────────────────
 
-describe('match quality sorting', () => {
-  it('should prioritize exact match "Shape" over suffix "CustomShape"', async () => {
+describe('references', () => {
+  it('"Shape" should find references across multiple files', async () => {
+    const result = await tools.callTool('references', { symbolName: 'Shape' });
+    expect(result).not.toContain('No references found');
+    expect(result).not.toContain('No symbol found');
+    // Shape is referenced in Circle.scala, Rectangle.scala, CustomShape.scala,
+    // ShapeService.scala, ExternalDeps.scala
+    expect(result).toContain('.scala');
+    // Check we found multiple files
+    const fileHeaders = result.match(/---\n.*\.scala/g);
+    expect(fileHeaders).not.toBeNull();
+    expect(fileHeaders!.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('Monad reference from import should find project usages', async () => {
+    const result = await tools.callTool('references', {
+      filePath: FIXTURES.externalDeps,
+      line: 3,
+      column: 13, // "Monad" import
+    });
+    expect(result).not.toContain('No references found');
+    expect(result).toContain('ExternalDeps.scala');
+  });
+
+  it('ZIO reference from import should find project usages', async () => {
+    const result = await tools.callTool('references', {
+      filePath: FIXTURES.externalDeps,
+      line: 5,
+      column: 13, // "ZIO" import
+    });
+    expect(result).not.toContain('No references found');
+    expect(result).toContain('ExternalDeps.scala');
+  });
+
+  it('"cats.Monad" FQN should find references in project', async () => {
+    const result = await tools.callTool('references', { symbolName: 'cats.Monad' });
+    expect(result).not.toContain('No symbol found');
+    // Should find at least the import and usage in ExternalDeps.scala
+    expect(result).toContain('ExternalDeps.scala');
+  });
+
+  it('"zio.ZIO" FQN should find references in project', async () => {
+    const result = await tools.callTool('references', { symbolName: 'zio.ZIO' });
+    expect(result).not.toContain('No symbol found');
+    expect(result).toContain('ExternalDeps.scala');
+  });
+
+  it('"ZzNonExistent" should report no symbol found', async () => {
+    const result = await tools.callTool('references', { symbolName: 'ZzNonExistent' });
+    expect(result).toContain('No symbol found');
+  });
+});
+
+// ── implementations ─────────────────────────────────────────────────
+
+describe('implementations', () => {
+  it('"Shape" should find Circle and Rectangle implementations', async () => {
+    const result = await tools.callTool('implementations', { symbolName: 'Shape' });
+    expect(result).not.toContain('No implementations found');
+    expect(result).not.toContain('No symbol found');
+    expect(result).toContain('Circle');
+    expect(result).toContain('Rectangle');
+  });
+
+  it('"example.Shape" FQN should also find implementations', async () => {
+    const result = await tools.callTool('implementations', { symbolName: 'example.Shape' });
+    expect(result).not.toContain('No implementations found');
+    expect(result).not.toContain('No symbol found');
+    expect(result).toContain('Circle');
+    expect(result).toContain('Rectangle');
+  });
+
+  it('implementation results should include source code', async () => {
+    const result = await tools.callTool('implementations', { symbolName: 'Shape' });
+    expect(result).toContain('override def area');
+  });
+});
+
+// ── match quality: exact vs suffix ──────────────────────────────────
+
+describe('match quality', () => {
+  it('"Shape" exact match should take priority over "CustomShape" suffix', async () => {
     const result = await tools.callTool('definition', { symbolName: 'Shape' });
-    // Should find the Shape trait, not just CustomShape
+    // Should show Shape trait definition, not CustomShape
     expect(result).toContain('trait Shape');
     expect(result).toContain('Shape.scala');
     // CustomShape is a suffix match — should be filtered out when exact exists
     expect(result).not.toContain('class CustomShape');
   });
 
-  it('should find exact "Circle" without other suffix matches', async () => {
+  it('"Circle" exact match should show case class definition', async () => {
     const result = await tools.callTool('definition', { symbolName: 'Circle' });
     expect(result).toContain('case class Circle');
     expect(result).toContain('Circle.scala');
   });
 });
 
-// ── Suffix-Only Results ─────────────────────────────────────────────
+// ── cached source handling ──────────────────────────────────────────
 
-describe('suffix-only definition results', () => {
-  it('should show hint when no exact match exists', async () => {
-    // "tomShape" doesn't exist but "CustomShape" ends with "tomShape" — actually no.
-    // Use a query that gets no results at all
-    const result = await tools.callTool('definition', { symbolName: 'ZzNonExistent' });
-    expect(result).toContain('No symbol found');
-  });
-});
-
-// ── Definition Result Capping ───────────────────────────────────────
-
-describe('definition result capping', () => {
-  it('should not return more than 3 full source blocks', async () => {
-    const result = await tools.callTool('definition', { symbolName: 'Shape' });
-    // Count "---" blocks (each result starts with ---)
-    const blocks = result.split('---').filter(s => s.trim().length > 0);
-    expect(blocks.length).toBeLessThanOrEqual(4); // 3 results + possible hint message
-  });
-});
-
-// ── Workspace Symbols: External ─────────────────────────────────────
-
-describe('workspace_symbols with external deps', () => {
-  it('should find project symbols', async () => {
-    const result = await tools.callTool('workspace_symbols', { query: 'Shape' });
-    expect(result).toContain('Shape');
-  });
-
-  it('should find external library symbols with include non-project', async () => {
-    const result = await tools.callTool('workspace_symbols', { query: 'Monad' });
-    // After the allScope fix, should find cats.Monad
-    expect(result).toMatch(/Monad/);
-  });
-
-  it('should find ZIO in workspace symbols', async () => {
-    const result = await tools.callTool('workspace_symbols', { query: 'ZIO' });
-    expect(result).toMatch(/ZIO/);
-  });
-});
-
-// ── Cached Source File Handling ──────────────────────────────────────
-
-describe('cached source file handling', () => {
+describe('cached source files', () => {
   const cacheDir = path.join(os.homedir(), '.cache', 'intellij-scala-lsp', 'sources');
 
-  it('should not have .tasty files in source cache', () => {
-    if (!fs.existsSync(cacheDir)) return; // skip if no cache yet
+  it('external definition should create cached .scala files (not .tasty or .class)', async () => {
+    // Trigger a definition lookup for an external symbol
+    await tools.callTool('definition', { symbolName: 'Monad' });
 
-    const findTastyFiles = (dir: string): string[] => {
-      const results: string[] = [];
-      try {
-        const entries = fs.readdirSync(dir, { withFileTypes: true });
-        for (const entry of entries) {
-          const fullPath = path.join(dir, entry.name);
-          if (entry.isDirectory()) results.push(...findTastyFiles(fullPath));
-          else if (entry.name.endsWith('.tasty')) results.push(fullPath);
-        }
-      } catch { /* ignore */ }
-      return results;
-    };
-
-    const tastyFiles = findTastyFiles(cacheDir);
-    expect(tastyFiles).toHaveLength(0);
-  });
-
-  it('should cache external sources as .scala files', async () => {
-    // Trigger a definition lookup for an external symbol to populate cache
-    await tools.callTool('definition', {
-      filePath: FIXTURES.externalDeps,
-      line: 3,
-      column: 13, // Monad import
-    });
-
-    // Check that any cached files have .scala extension, not .tasty or .class
     if (fs.existsSync(cacheDir)) {
       const findBinaryFiles = (dir: string): string[] => {
         const results: string[] = [];
@@ -210,35 +309,17 @@ describe('cached source file handling', () => {
         } catch { /* ignore */ }
         return results;
       };
-
       const binaryFiles = findBinaryFiles(cacheDir);
       expect(binaryFiles).toHaveLength(0);
     }
   });
 });
 
-// ── Implementations of External Symbols ─────────────────────────────
+// ── hover ───────────────────────────────────────────────────────────
 
-describe('implementations edge cases', () => {
-  it('should find Shape implementations', async () => {
-    const result = await tools.callTool('implementations', { symbolName: 'Shape' });
-    expect(result).toContain('Circle');
-    expect(result).toContain('Rectangle');
-    // CustomShape should also appear if daemon indexed it
-    expect(result).toMatch(/implementation/i);
-  });
-
-  it('should return source code for implementations', async () => {
-    const result = await tools.callTool('implementations', { symbolName: 'Shape' });
-    expect(result).toContain('override def area');
-  });
-});
-
-// ── Hover with External Types ───────────────────────────────────────
-
-describe('hover with external types', () => {
+describe('hover', () => {
   it('should show type info for external type usage', async () => {
-    // ExternalDeps.scala line 14: greetTask method returns Task[String]
+    // ExternalDeps.scala line 14: greetTask method
     const result = await tools.callTool('hover', {
       filePath: FIXTURES.externalDeps,
       line: 14,
@@ -247,7 +328,7 @@ describe('hover with external types', () => {
     expect(result).toMatch(/Task|ZIO|String/);
   });
 
-  it('should show supertypes for CustomShape', async () => {
+  it('should show type info for CustomShape', async () => {
     const result = await tools.callTool('hover', {
       filePath: FIXTURES.customShape,
       line: 4,

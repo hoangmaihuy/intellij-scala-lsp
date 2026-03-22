@@ -73,19 +73,21 @@ object ScalaLspMain:
     // Start TCP server
     val daemon = DaemonServer(registry)
 
-    // Clean up state files on exit
-    Runtime.getRuntime.addShutdownHook(new Thread(() => {
-      java.io.File(s"$CACHE_DIR/daemon.pid").delete()
-      java.io.File(s"$CACHE_DIR/daemon.port").delete()
-      ()
-    }))
-
     try
       // Bind FIRST, then write state files, then accept
       val boundPort = daemon.bind(port)
       java.nio.file.Files.createDirectories(java.nio.file.Path.of(CACHE_DIR))
       java.nio.file.Files.writeString(java.nio.file.Path.of(s"$CACHE_DIR/daemon.pid"), ProcessHandle.current().pid().toString)
       java.nio.file.Files.writeString(java.nio.file.Path.of(s"$CACHE_DIR/daemon.port"), boundPort.toString)
+
+      // Clean up state files on exit — register AFTER writing files
+      // to avoid a failed second daemon deleting the first daemon's files
+      Runtime.getRuntime.addShutdownHook(new Thread(() => {
+        java.io.File(s"$CACHE_DIR/daemon.pid").delete()
+        java.io.File(s"$CACHE_DIR/daemon.port").delete()
+        ()
+      }))
+
       System.err.println(s"[ScalaLsp] Daemon ready on port $boundPort")
       daemon.acceptLoop() // blocks
     catch

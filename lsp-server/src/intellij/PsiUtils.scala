@@ -36,6 +36,30 @@ object PsiUtils:
     val end = offsetToPosition(document, element.getTextRange.getEndOffset)
     Range(start, end)
 
+  /** Compute an LSP Range from raw text and byte offsets (when no Document is available).
+    * Used for library elements in JARs where FileDocumentManager returns null. */
+  private[intellij] def offsetToRange(text: String, startOffset: Int, endOffset: Int): Range =
+    if text == null || text.isEmpty then return Range(Position(0, 0), Position(0, 0))
+    var line = 0
+    var lineStart = 0
+    var startPos: Position = null
+    var i = 0
+    while i <= math.min(endOffset, text.length) do
+      if i == startOffset then
+        startPos = Position(line, i - lineStart)
+      if i == endOffset then
+        val endPos = Position(line, i - lineStart)
+        if startPos == null then startPos = endPos
+        return Range(startPos, endPos)
+      if i < text.length && text.charAt(i) == '\n' then
+        line += 1
+        lineStart = i + 1
+      i += 1
+    // Fallback: offset beyond text
+    val pos = Position(line, 0)
+    if startPos == null then startPos = pos
+    Range(startPos, pos)
+
   private val CACHE_DIR: Path = Path.of(System.getProperty("user.home"), ".cache", "intellij-scala-lsp", "sources")
 
   /** Convert a PsiElement to an LSP Location (file URI + range).
@@ -86,17 +110,22 @@ object PsiUtils:
     for
       file <- Option(effectiveElement.getContainingFile)
       vf <- Option(file.getVirtualFile)
-      document <- Option(
-        com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().getDocument(vf)
-      )
-    yield
-      val range = elementToRange(document, effectiveElement)
-      val vfPath = vf.getPath
-      if vfPath.contains("!/") then
-        val cachedUri = cacheJarEntry(file, vf)
-        Location(cachedUri, range)
-      else
-        Location(vfToUri(vf), range)
+      location <- {
+        val vfPath = vf.getPath
+        if vfPath.contains("!/") then
+          // JAR-internal files: cache source, compute range with Document fallback
+          val cachedUri = cacheJarEntry(file, vf)
+          val range = Option(com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().getDocument(vf))
+            .map(doc => elementToRange(doc, effectiveElement))
+            .getOrElse(offsetToRange(file.getText, effectiveElement.getTextRange.getStartOffset, effectiveElement.getTextRange.getEndOffset))
+          Some(Location(cachedUri, range))
+        else
+          // Local files: Document required
+          Option(com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().getDocument(vf))
+            .map: document =>
+              Location(vfToUri(vf), elementToRange(document, effectiveElement))
+      }
+    yield location
 
   /** Resolve a JAR-internal file to a cached file:// URI.
     * First tries to find the original source from attached source JARs (like IntelliJ does),
@@ -357,6 +386,9 @@ object PsiUtils:
       case e: Exception =>
         System.err.println(s"[PsiUtils] findClassByFqn($fqn) failed: ${e.getMessage}")
         None
+
+  /** Public accessor for getting the qualified name of an element. */
+  def getQualifiedNameOf(element: PsiElement): Option[String] = getQualifiedName(element)
 
   /** Get qualified name via reflection to avoid classloader issues.
     * Works for PsiClass, ScTypeDefinition, and any element with a getQualifiedName method. */

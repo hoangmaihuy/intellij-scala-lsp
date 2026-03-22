@@ -123,3 +123,63 @@ class PsiUtilsTest:
     val doc = MockDocument("hello\r\nworld\r\n")
     assertEquals(0, PsiUtils.positionToOffset(doc, Position(0, 0)))
     assertEquals(7, PsiUtils.positionToOffset(doc, Position(1, 0)))
+
+  // --- offsetToRange (fallback for library elements without Documents) ---
+
+  @Test def testOffsetToRangeBasic(): Unit =
+    val text = "package cats\n\ntrait Monad[F[_]]:\n  def pure[A](a: A): F[A]\n"
+    // "Monad" starts at offset 21, ends at 26
+    // Line 0: "package cats\n" (13 chars)  Line 1: "\n" (1 char, starts at 13)  Line 2: "trait Monad..." (starts at 14)
+    // Offset 21 = 14 + 7 → line 2, char 7 ("trait M" = 7 chars before "M")
+    val range = PsiUtils.offsetToRange(text, 21, 26)
+    assertEquals(2, range.getStart.getLine)
+    assertEquals(7, range.getStart.getCharacter)
+    assertEquals(2, range.getEnd.getLine)
+    assertEquals(12, range.getEnd.getCharacter)
+
+  @Test def testOffsetToRangeFirstLine(): Unit =
+    val text = "package cats\n\ntrait Monad\n"
+    val range = PsiUtils.offsetToRange(text, 0, 7) // "package"
+    assertEquals(0, range.getStart.getLine)
+    assertEquals(0, range.getStart.getCharacter)
+    assertEquals(0, range.getEnd.getLine)
+    assertEquals(7, range.getEnd.getCharacter)
+
+  @Test def testOffsetToRangeSpanningLines(): Unit =
+    val text = "line0\nline1\nline2\n"
+    val range = PsiUtils.offsetToRange(text, 3, 14) // "e0\nline1\nli"
+    assertEquals(0, range.getStart.getLine)
+    assertEquals(3, range.getStart.getCharacter)
+    assertEquals(2, range.getEnd.getLine)
+    assertEquals(2, range.getEnd.getCharacter)
+
+  @Test def testOffsetToRangeEmptyText(): Unit =
+    val range = PsiUtils.offsetToRange("", 0, 0)
+    assertEquals(0, range.getStart.getLine)
+    assertEquals(0, range.getStart.getCharacter)
+
+  @Test def testOffsetToRangeNullText(): Unit =
+    val range = PsiUtils.offsetToRange(null, 0, 0)
+    assertEquals(0, range.getStart.getLine)
+    assertEquals(0, range.getStart.getCharacter)
+
+  @Test def testOffsetToRangeMatchesDocumentBased(): Unit =
+    // Verify offsetToRange produces the same result as Document-based range computation
+    val text = "package org.example\n\nobject Main:\n  val x = 42\n  def hello = \"world\"\n"
+    val doc = MockDocument(text)
+    // Test several offsets
+    val testCases = Seq((0, 7), (21, 27), (34, 39), (44, 49))
+    for (start, end) <- testCases do
+      val docRange = org.eclipse.lsp4j.Range(
+        PsiUtils.offsetToPosition(doc, start),
+        PsiUtils.offsetToPosition(doc, end)
+      )
+      val textRange = PsiUtils.offsetToRange(text, start, end)
+      assertEquals(s"Start line mismatch at ($start,$end)",
+        docRange.getStart.getLine, textRange.getStart.getLine)
+      assertEquals(s"Start char mismatch at ($start,$end)",
+        docRange.getStart.getCharacter, textRange.getStart.getCharacter)
+      assertEquals(s"End line mismatch at ($start,$end)",
+        docRange.getEnd.getLine, textRange.getEnd.getLine)
+      assertEquals(s"End char mismatch at ($start,$end)",
+        docRange.getEnd.getCharacter, textRange.getEnd.getCharacter)
