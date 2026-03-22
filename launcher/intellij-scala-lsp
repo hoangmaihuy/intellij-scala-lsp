@@ -302,19 +302,11 @@ assemble_classpath_and_flags() {
   JAVA=$(find_java)
   log "Java: $JAVA"
 
-  # In dev mode, clean and rebuild LSP server to avoid stale jar issues
-  if [ "$DEV_MODE" = true ] && [ -n "$PROJECT_ROOT" ]; then
-    log "Dev mode: rebuilding LSP server..."
-    (cd "$PROJECT_ROOT" && sbt --batch "lsp-server/clean" "lsp-server/packageArtifact" 2>&1 | tail -3) || {
-      log "WARNING: sbt build failed, using existing JARs"
-    }
-  fi
-
   # Check LSP JARs exist
   if [ ! -d "$LSP_LIB_DIR" ] || [ -z "$(ls "$LSP_LIB_DIR"/*.jar 2>/dev/null)" ]; then
     if [ "$DEV_MODE" = true ]; then
       log "ERROR: LSP server JARs not found at $LSP_LIB_DIR"
-      log "Run: cd $PROJECT_ROOT && sbt 'lsp-server/packageArtifact'"
+      log "Run: intellij-scala-lsp --dev  OR  cd $PROJECT_ROOT && sbt 'lsp-server/packageArtifact'"
     else
       log "ERROR: LSP server JARs not found. Run: intellij-scala-lsp --install"
     fi
@@ -934,6 +926,245 @@ EXTJS
   echo "  To uninstall: rm -rf $ext_dir"
 }
 
+setup_vscode_dev() {
+  local port_file="$CACHE_DIR/daemon.port"
+  local ext_dir="$HOME/.vscode/extensions/intellij-scala-lsp"
+  [ -L "$ext_dir" ] && rm -f "$ext_dir"
+  mkdir -p "$ext_dir"
+
+  cat > "$ext_dir/package.json" << 'PKGJSON'
+{
+  "name": "intellij-scala-lsp",
+  "displayName": "IntelliJ Scala LSP (Dev)",
+  "description": "Scala code intelligence — connects to running daemon via TCP",
+  "version": "0.5.0-dev",
+  "publisher": "intellij-scala-lsp",
+  "engines": { "vscode": "^1.75.0" },
+  "categories": ["Programming Languages"],
+  "activationEvents": ["onLanguage:scala"],
+  "main": "./extension.js",
+  "contributes": {
+    "languages": [{ "id": "scala", "extensions": [".scala", ".sc"] }],
+    "configuration": {
+      "title": "IntelliJ Scala LSP",
+      "properties": {
+        "intellijScalaLsp.port": {
+          "type": "number",
+          "default": 0,
+          "description": "Daemon TCP port (0 = read from port file)"
+        }
+      }
+    }
+  },
+  "dependencies": { "vscode-languageclient": "^9.0.1" }
+}
+PKGJSON
+
+  cat > "$ext_dir/extension.js" << EXTJS
+const { LanguageClient, StreamInfo } = require("vscode-languageclient/node");
+const { execFile } = require("child_process");
+const net = require("net");
+const fs = require("fs");
+const vscode = require("vscode");
+
+const LAUNCHER = "$SCRIPT_DIR/intellij-scala-lsp";
+let client, outputChannel, statusBarItem;
+
+function log(msg) {
+  const ts = new Date().toISOString().replace("T", " ").replace("Z", "");
+  outputChannel.appendLine("[" + ts + "] " + msg);
+}
+
+function setStatus(icon, text, tooltip) {
+  statusBarItem.text = "\\\$(" + icon + ") " + text;
+  statusBarItem.tooltip = tooltip || text;
+  statusBarItem.show();
+}
+
+function shortUri(uri) {
+  if (!uri) return "";
+  const m = uri.match(/([^/]+)\\\$/);
+  return m ? m[1] : uri;
+}
+
+function summarizeResult(r) {
+  try {
+    if (r == null) return "null";
+    if (Array.isArray(r)) {
+      if (r.length === 0) return "[]";
+      if (r[0]?.uri) return r.length + " locations [" + shortUri(typeof r[0].uri === "string" ? r[0].uri : String(r[0].uri)) + ":" + (r[0].range?.start?.line ?? "?") + "]";
+      if (r[0]?.label) return r.length + " items";
+      return r.length + " results";
+    }
+    if (r?.contents) return "hover";
+    if (r?.signatures) return r.signatures.length + " signatures";
+    if (r?.changes || r?.documentChanges) return "workspace edit";
+    return typeof r;
+  } catch { return "?"; }
+}
+
+function createLoggingMiddleware() {
+  function wrap(method) {
+    return async function (...args) {
+      const next = args[args.length - 1], params = args[0];
+      const file = params?.textDocument?.uri ? " [" + shortUri(params.textDocument.uri) + "]" : "";
+      const pos = params?.position ? ":" + params.position.line + ":" + params.position.character : "";
+      const start = Date.now();
+      try {
+        const result = await next(...args.slice(0, -1));
+        log(method + file + pos + " -> " + (Date.now() - start) + "ms " + summarizeResult(result));
+        return result;
+      } catch (err) {
+        log(method + file + pos + " -> ERROR " + (Date.now() - start) + "ms: " + (err?.message || err));
+        throw err;
+      }
+    };
+  }
+  return {
+    provideCompletionItem: wrap("textDocument/completion"),
+    provideHover: wrap("textDocument/hover"),
+    provideDefinition: wrap("textDocument/definition"),
+    provideTypeDefinition: wrap("textDocument/typeDefinition"),
+    provideImplementation: wrap("textDocument/implementation"),
+    provideReferences: wrap("textDocument/references"),
+    provideDocumentSymbols: wrap("textDocument/documentSymbol"),
+    provideSignatureHelp: wrap("textDocument/signatureHelp"),
+    provideDocumentFormattingEdits: wrap("textDocument/formatting"),
+    provideRenameEdits: wrap("textDocument/rename"),
+    provideCodeActions: wrap("textDocument/codeAction"),
+  };
+}
+
+function waitForPortFile(timeoutMs) {
+  const portFile = "$port_file";
+  const start = Date.now();
+  return new Promise((resolve, reject) => {
+    function check() {
+      const port = readPortFromFile();
+      if (port) return resolve(port);
+      if (Date.now() - start > timeoutMs) return reject(new Error("Daemon did not start within " + (timeoutMs / 1000) + "s"));
+      setTimeout(check, 1000);
+    }
+    check();
+  });
+}
+
+function readPortFromFile() {
+  const portFile = "$port_file";
+  try {
+    return parseInt(fs.readFileSync(portFile, "utf-8").trim(), 10) || null;
+  } catch { return null; }
+}
+
+function startDaemon() {
+  log("Starting daemon: " + LAUNCHER + " --dev");
+  const child = execFile(LAUNCHER, ["--dev"], { detached: true, stdio: "ignore" });
+  child.unref();
+  return child;
+}
+
+function connectToPort(context, port) {
+  log("Connecting to daemon on port " + port);
+
+  const serverOptions = () => {
+    return new Promise((resolve, reject) => {
+      const socket = net.connect({ port, host: "127.0.0.1" }, () => {
+        resolve({ reader: socket, writer: socket });
+      });
+      socket.on("error", (err) => reject(err));
+    });
+  };
+
+  client = new LanguageClient("intellijScalaLsp", "IntelliJ Scala LSP",
+    serverOptions,
+    { documentSelector: [{ scheme: "file", language: "scala" }, { scheme: "file", pattern: "**/*.scala" }, { scheme: "file", pattern: "**/*.sc" }], outputChannel, middleware: createLoggingMiddleware() }
+  );
+  client.onDidChangeState(({ oldState, newState }) => {
+    const s = { 1: "Stopped", 2: "Starting", 3: "Running" };
+    log("Client state: " + (s[oldState] || oldState) + " -> " + (s[newState] || newState));
+    if (newState === 3) setStatus("sync~spin", "Scala LSP: Indexing", "IntelliJ Scala LSP — indexing project");
+    else if (newState === 1) setStatus("circle-slash", "Scala LSP: Stopped", "IntelliJ Scala LSP — stopped");
+    else setStatus("sync~spin", "Scala LSP: Starting", "IntelliJ Scala LSP — starting");
+  });
+  log("Starting language client");
+  client.start().then(
+    () => { log("Language client started successfully"); client.onNotification("window/logMessage", (p) => { const m = p.message || ""; log("[server] " + m); if (m.includes("Indexing project")) setStatus("sync~spin", "Scala LSP: Indexing", "IntelliJ Scala LSP — indexing project"); else if (m.includes("Indexing complete")) setStatus("check", "Scala LSP", "IntelliJ Scala LSP — ready"); }); },
+    (err) => { log("ERROR: Failed to connect: " + err.message); setStatus("error", "Scala LSP: Error", "Failed: " + err.message); vscode.window.showErrorMessage("IntelliJ Scala LSP failed to connect: " + err.message); }
+  );
+  context.subscriptions.push(client);
+}
+
+async function ensureDaemonAndConnect(context) {
+  let port = readPort();
+  if (port) {
+    // Verify daemon is actually reachable
+    try {
+      await new Promise((resolve, reject) => {
+        const s = net.connect({ port, host: "127.0.0.1" }, () => { s.destroy(); resolve(); });
+        s.on("error", reject);
+      });
+      connectToPort(context, port);
+      return;
+    } catch {
+      log("Port file exists but daemon not reachable, restarting...");
+    }
+  }
+
+  // No daemon running — start one
+  setStatus("sync~spin", "Scala LSP: Starting daemon", "IntelliJ Scala LSP — starting daemon");
+  startDaemon();
+  try {
+    port = await waitForPortFile(120000);
+    connectToPort(context, port);
+  } catch (err) {
+    const msg = "Failed to start daemon: " + err.message;
+    log("ERROR: " + msg);
+    setStatus("error", "Scala LSP: Error", msg);
+    vscode.window.showErrorMessage("IntelliJ Scala LSP: " + msg);
+  }
+}
+
+function readPort() {
+  const config = vscode.workspace.getConfiguration("intellijScalaLsp");
+  const configPort = config.get("port");
+  if (configPort && configPort > 0) return configPort;
+  const portFile = "$port_file";
+  try {
+    return parseInt(fs.readFileSync(portFile, "utf-8").trim(), 10);
+  } catch (e) {
+    return null;
+  }
+}
+
+function activate(context) {
+  outputChannel = vscode.window.createOutputChannel("IntelliJ Scala LSP");
+  context.subscriptions.push(outputChannel);
+  statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 0);
+  statusBarItem.command = "intellijScalaLsp.showOutput";
+  context.subscriptions.push(statusBarItem);
+  context.subscriptions.push(vscode.commands.registerCommand("intellijScalaLsp.showOutput", () => outputChannel.show()));
+
+  log("Activating IntelliJ Scala LSP extension (dev/TCP mode)");
+  setStatus("sync~spin", "Scala LSP: Starting", "IntelliJ Scala LSP — starting");
+
+  ensureDaemonAndConnect(context);
+}
+
+function deactivate() { if (statusBarItem) statusBarItem.dispose(); if (client) return client.stop(); }
+module.exports = { activate, deactivate };
+EXTJS
+
+  echo "Installing vscode-languageclient..."
+  (cd "$ext_dir" && npm install --silent 2>&1 | tail -3)
+
+  echo ""
+  echo "=== VS Code dev setup complete ==="
+  echo "Extension connects to daemon via TCP (auto-starts if not running)"
+  echo "Reload VS Code: Cmd+Shift+P -> 'Developer: Reload Window'"
+  echo ""
+  echo "  To uninstall: rm -rf $ext_dir"
+}
+
 setup_zed() {
   local launcher_cmd="$1"
   local ext_src="$2"
@@ -1093,6 +1324,7 @@ case "${1:-}" in
     echo "Usage: intellij-scala-lsp [OPTIONS]"
     echo ""
     echo "Options:"
+    echo "  --dev [projects...]       Rebuild LSP server and start daemon (local dev)"
     echo "  --daemon [projects...]    Start daemon, optionally pre-warm projects"
     echo "  --stop                    Stop the daemon"
     echo "  --list-projects           List projects open in the daemon"
@@ -1123,7 +1355,6 @@ case "${1:-}" in
       echo "Use --setup-claude-code-mcp for installed users."
       exit 1
     fi
-    build_lsp_server
     setup_mcp "$PROJECT_ROOT/mcp-server"
     exit 0
     ;;
@@ -1137,7 +1368,6 @@ case "${1:-}" in
       echo "Use --setup-claude-code-lsp for installed users."
       exit 1
     fi
-    build_lsp_server
     setup_claude_code "$SCRIPT_DIR/intellij-scala-lsp"
     exit 0
     ;;
@@ -1151,8 +1381,7 @@ case "${1:-}" in
       echo "Use --setup-vscode for installed users."
       exit 1
     fi
-    build_lsp_server
-    setup_vscode "$SCRIPT_DIR/intellij-scala-lsp"
+    setup_vscode_dev
     exit 0
     ;;
   --setup-zed)
@@ -1215,8 +1444,9 @@ case "${1:-}" in
     ;;
 esac
 
-# Log stderr to file
+# Log stderr to file (truncate on each session start to prevent unbounded growth)
 mkdir -p "$(dirname "$LSP_LOG")"
+: > "$LSP_LOG"
 exec 2> >(tee -a "$LSP_LOG" >&2)
 log "=== Starting at $(date) ==="
 
@@ -1279,6 +1509,20 @@ case "${1:-}" in
       echo "No projects open"
     fi
     exit 0
+    ;;
+  --dev)
+    # Dev mode: rebuild LSP server jar, then run as daemon
+    if [ "$DEV_MODE" != true ]; then
+      echo "ERROR: --dev must be run from the repo directory."
+      exit 1
+    fi
+    shift
+    build_lsp_server
+    resolve_sdk
+    assemble_classpath_and_flags
+    check_for_updates
+    exec "$JAVA" "${JVM_ARGS[@]}" -cp "$CLASSPATH" \
+      org.jetbrains.scalalsP.ScalaLspMain --daemon "$@"
     ;;
   --daemon)
     shift

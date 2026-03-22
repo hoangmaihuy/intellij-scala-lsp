@@ -62,7 +62,7 @@ class ReferencesProvider(projectManager: IntellijProjectManager):
     if effectiveTargets.isEmpty then return Seq.empty
 
     val project = projectManager.getProject
-    val scope = GlobalSearchScope.allScope(project)
+    val scope = GlobalSearchScope.projectScope(project)
 
     // Collect secondary elements (companions, bean properties) via ScalaFindUsagesHandlerFactory
     val allTargets = effectiveTargets ++ discoverSecondaryElements(effectiveTargets)
