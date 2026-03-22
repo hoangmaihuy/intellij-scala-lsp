@@ -68,8 +68,7 @@ class SymbolProvider(projectManager: IntellijProjectManager):
     if query.isEmpty then return Seq.empty
 
     projectManager.smartReadAction: () =>
-      val project = projectManager.getProject
-      searchViaContributors(project, query)
+      searchViaContributors(projectManager.getProject, query)
 
   // Use IntelliJ's GotoClassContributor and GotoSymbolContributor extension points.
   // These support prefix/fuzzy matching via processNames + processElementsWithName.
