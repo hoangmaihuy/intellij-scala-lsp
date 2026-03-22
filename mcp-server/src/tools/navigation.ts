@@ -44,7 +44,7 @@ export function registerNavigationTools(
 
   mcp.tool(
     'definition',
-    'Go to definition of a symbol. Provide EITHER symbolName OR filePath+line+column. Use filePath+line+column when you have a specific position (works for external/library symbols too).',
+    'Read the source code where a symbol is defined. Returns full implementation with line numbers. Prefer symbolName; use filePath+line+column for external/library symbols or to disambiguate overloaded methods.',
     navigationParams,
     async (args) => {
       const targets = await resolveTargets(args, symbolResolver, fileManager);
@@ -100,7 +100,7 @@ export function registerNavigationTools(
 
   mcp.tool(
     'references',
-    'Find all references of a symbol. Provide EITHER symbolName OR filePath+line+column.',
+    'Find all usages of a symbol across the codebase. Returns locations with surrounding context. Prefer symbolName; use filePath+line+column for external/library symbols or to disambiguate overloaded methods.',
     navigationParams,
     async (args) => {
       const targets = await resolveTargets(args, symbolResolver, fileManager);
@@ -161,7 +161,7 @@ export function registerNavigationTools(
 
   mcp.tool(
     'implementations',
-    'Find all implementations of a trait, class, or abstract method. Provide EITHER symbolName OR filePath+line+column.',
+    'Find all implementations of a trait, class, or abstract method. Returns source code of each implementation (up to 10 in full). Prefer symbolName; use filePath+line+column for external/library symbols.',
     navigationParams,
     async (args) => {
       const targets = await resolveTargets(args, symbolResolver, fileManager);
@@ -178,15 +178,37 @@ export function registerNavigationTools(
 
         if (!impls || impls.length === 0) continue;
 
-        for (const impl of Array.isArray(impls) ? impls : [impls]) {
+        const implArray = Array.isArray(impls) ? impls : [impls];
+        for (let idx = 0; idx < implArray.length; idx++) {
+          const impl = implArray[idx];
           const filePath = uriToPath(impl.uri);
           await fileManager.ensureOpen(filePath);
+
+          if (idx >= 10) {
+            // Beyond 10: show just location summary
+            const content = fs.readFileSync(filePath, 'utf-8');
+            const firstLine = content.split('\n')[impl.range.start.line] || '';
+            allImpls.push(`---\n${filePath}:L${impl.range.start.line + 1}\n${firstLine.trim()}`);
+            continue;
+          }
+
+          // Get full symbol range via documentSymbol
+          const docSymbols = await lsp.request<DocumentSymbol[] | SymbolInformation[]>(
+            'textDocument/documentSymbol',
+            { textDocument: { uri: impl.uri } } as DocumentSymbolParams,
+          );
+
+          let fullRange = impl.range;
+          if (docSymbols && Array.isArray(docSymbols)) {
+            const enclosing = findEnclosingSymbol(docSymbols, impl.range.start);
+            if (enclosing) fullRange = enclosing;
+          }
+
           const content = fs.readFileSync(filePath, 'utf-8');
           const lines = content.split('\n');
-          const startLine = impl.range.start.line;
-          const endLine = Math.min(startLine + 4, lines.length - 1);
-          const snippet = addLineNumbers(lines.slice(startLine, endLine + 1).join('\n'), startLine + 1);
-          allImpls.push(`---\n${filePath}:L${startLine + 1}\n\n${snippet}`);
+          const sourceLines = lines.slice(fullRange.start.line, fullRange.end.line + 1);
+          const source = addLineNumbers(sourceLines.join('\n'), fullRange.start.line + 1);
+          allImpls.push(`---\n${filePath}:L${fullRange.start.line + 1}-L${fullRange.end.line + 1}\n\n${source}`);
         }
       }
 
@@ -197,41 +219,6 @@ export function registerNavigationTools(
     },
   );
 
-  mcp.tool(
-    'type_definition',
-    'Go to the type definition of a symbol (e.g. from a variable to its type\'s class). Provide EITHER symbolName OR filePath+line+column.',
-    navigationParams,
-    async (args) => {
-      const targets = await resolveTargets(args, symbolResolver, fileManager);
-      if (targets.length === 0) {
-        return { content: [{ type: 'text' as const, text: `No symbol found matching '${args.symbolName}'. Try with filePath+line+column instead.` }] };
-      }
-
-      const results: string[] = [];
-      for (const target of targets) {
-        const typeDef = await lsp.request<Location | Location[]>('textDocument/typeDefinition', {
-          textDocument: { uri: target.uri },
-          position: target.position,
-        });
-        const locs = Array.isArray(typeDef) ? typeDef : typeDef ? [typeDef] : [];
-        for (const loc of locs) {
-          const filePath = uriToPath(loc.uri);
-          await fileManager.ensureOpen(filePath);
-          const content = fs.readFileSync(filePath, 'utf-8');
-          const lines = content.split('\n');
-          const startLine = loc.range.start.line;
-          const endLine = Math.min(startLine + 4, lines.length - 1);
-          const snippet = addLineNumbers(lines.slice(startLine, endLine + 1).join('\n'), startLine + 1);
-          results.push(`---\nType of ${target.label}:\n${filePath}:L${startLine + 1}\n\n${snippet}`);
-        }
-      }
-
-      if (results.length === 0) {
-        return { content: [{ type: 'text' as const, text: `No type definition found for '${args.symbolName || targets[0]?.label}'` }] };
-      }
-      return { content: [{ type: 'text' as const, text: results.join('\n\n') }] };
-    },
-  );
 }
 
 function findEnclosingSymbol(symbols: (DocumentSymbol | SymbolInformation)[], pos: Position): Range | null {
