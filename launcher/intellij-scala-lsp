@@ -1278,11 +1278,14 @@ case "${1:-}" in
       echo "[ScalaLsp] Force killing daemon..."
       kill -9 "$pid" 2>/dev/null || true
     fi
-    # Wait for OS to release memory-mapped file locks after process death
-    sleep 2
-    # Clean up state files and wipe corrupted index/caches (IntelliJ rebuilds on next start)
+    # Wait for OS to release memory-mapped files, then wipe index/caches
     rm -f "$CACHE_DIR/daemon.pid" "$CACHE_DIR/daemon.port" "$CACHE_DIR/daemon.projects"
-    rm -rf "$CACHE_DIR/system/index" "$CACHE_DIR/system/caches"
+    # Retry rm -rf until the OS releases mmapped files (up to 10s)
+    for i in $(seq 1 10); do
+      rm -rf "$CACHE_DIR/system/index" "$CACHE_DIR/system/caches" 2>/dev/null
+      [ ! -d "$CACHE_DIR/system/index" ] && [ ! -d "$CACHE_DIR/system/caches" ] && break
+      sleep 1
+    done
     find "$CACHE_DIR/system" -name "*.lock" -delete 2>/dev/null || true
     echo "[ScalaLsp] Daemon stopped."
     ;;
