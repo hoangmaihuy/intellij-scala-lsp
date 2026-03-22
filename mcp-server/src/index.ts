@@ -71,8 +71,9 @@ async function ensureDaemonRunning(): Promise<number> {
 }
 
 async function main(): Promise<void> {
-  const rootUri = pathToUri(process.cwd());
-  logger.info(`Starting MCP server for workspace: ${process.cwd()}`);
+  const projectRoot = process.env.CLAUDE_WORKING_DIR || process.cwd();
+  const rootUri = pathToUri(projectRoot);
+  logger.info(`Starting MCP server for workspace: ${projectRoot}`);
 
   const port = await ensureDaemonRunning();
 
