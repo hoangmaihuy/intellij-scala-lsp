@@ -2,46 +2,104 @@
 
 ## Overview
 
-intellij-scala-lsp runs IntelliJ IDEA headless as a persistent daemon, exposing its Scala analysis engine over the Language Server Protocol. LSP clients connect via TCP; a `socat` proxy bridges stdio-based clients (like Claude Code) to the daemon.
+intellij-scala-lsp runs IntelliJ IDEA headless as a persistent daemon, exposing its Scala analysis engine over the Language Server Protocol. Clients connect in two ways:
+
+- **LSP clients** (VS Code, Zed, Neovim) connect via `socat` stdio-to-TCP proxy
+- **Claude Code** connects via an MCP server that translates MCP tool calls into LSP requests over TCP
 
 ```
-                          ┌─────────────────────────────────────────────┐
-                          │  Daemon JVM (one process, multiple projects)│
-                          │                                             │
-Claude Code ──socat──┐    │  ┌──────────────┐    ┌──────────────────┐  │
-                     ├──TCP──▶ DaemonServer  ├───▶│ ProjectRegistry  │  │
-VS Code ─────socat──┘    │  │  (port 5007)  │    │ osiris: Project  │  │
-                          │  └──────┬───────┘    │ jsoniter: Project │  │
-                          │         │            └──────────────────┘  │
-                          │   per-connection                           │
-                          │         │                                  │
-                          │  ┌──────▼───────┐                         │
-                          │  │ScalaLspServer │ (one per session)       │
-                          │  │  TextDoc Svc  │                         │
-                          │  │  Workspace Svc│                         │
-                          │  └──────┬───────┘                         │
-                          │         │                                  │
-                          │  ┌──────▼───────┐                         │
-                          │  │   Providers   │ (Hover, Definition,...) │
-                          │  └──────┬───────┘                         │
-                          │         │                                  │
-                          │  ┌──────▼────────────────────────────────┐ │
-                          │  │ IntelliJ Platform + Scala Plugin      │ │
-                          │  │ PSI, Indexes, DaemonCodeAnalyzer, VFS │ │
-                          │  └──────────────────────────────────────┘ │
-                          └─────────────────────────────────────────────┘
+                        +------------------------------------------------+
+                        |  Daemon JVM (one process, multiple projects)   |
+                        |                                                |
+Claude Code --MCP--+    |  +--------------+    +-------------------+     |
+                   +-TCP--> DaemonServer  +--->| ProjectRegistry   |     |
+VS Code ---socat---+    |  | (port 5007)  |    |  osiris: Project  |     |
+Zed -------socat---+    |  +---------+----+    |  jsoniter: Project|     |
+                        |            |         +-------------------+     |
+                        |      per-connection                            |
+                        |            |                                   |
+                        |  +---------v--------+                          |
+                        |  | ScalaLspServer    | (one per session)       |
+                        |  |   TextDoc Svc     |                         |
+                        |  |   Workspace Svc   |                         |
+                        |  +---------+--------+                          |
+                        |            |                                   |
+                        |  +---------v--------+                          |
+                        |  |    Providers      | (Hover, Definition,...) |
+                        |  +---------+--------+                          |
+                        |            |                                   |
+                        |  +---------v------------------------------+    |
+                        |  | IntelliJ Platform + Scala Plugin       |    |
+                        |  | PSI, Indexes, DaemonCodeAnalyzer, VFS  |    |
+                        |  +----------------------------------------+    |
+                        +------------------------------------------------+
 ```
+
+### MCP Server (Claude Code)
+
+The MCP server is a Node.js process that bridges Claude Code to the daemon. It translates MCP tool calls into LSP requests over a persistent TCP connection, exposing 12 tools backed by IntelliJ's analysis engine. See [MCP Tools](mcp-tools.md) for the full tool reference.
+
+```
+Claude Code
+    | (MCP over stdio)
+    v
++-----------------------------------------------------------+
+|  MCP Server (Node.js)                                     |
+|                                                           |
+|  +---------------+  +---------------+  +--------------+   |
+|  | McpServer     |  | LspClient     |  | FileManager  |   |
+|  | (stdio)       |  | (TCP:5007)    |  | (mtime track)|   |
+|  +------+--------+  +------+--------+  +--------------+   |
+|         |                  |                              |
+|  +------v--------+  +-----v---------+  +--------------+   |
+|  | 12 MCP Tools  |  | SymbolResolver|  | Diagnostics  |   |
+|  | (5 groups)    |  |               |  | Cache        |   |
+|  +---------------+  +---------------+  +--------------+   |
++----------------------------+------------------------------+
+                             | (LSP JSON-RPC over TCP)
+                             v
+                     DaemonServer (JVM)
+```
+
+#### MCP Startup Sequence
+
+1. **Daemon detection.** Read port from `~/.cache/intellij-scala-lsp/daemon.port`, try TCP probe. If daemon isn't running, spawn `intellij-scala-lsp --daemon` and poll (up to 60s).
+2. **TCP connect.** Open persistent TCP socket to daemon port.
+3. **Register handlers.** Set up `publishDiagnostics`, `workspace/applyEdit`, `window/showMessage`, etc.
+4. **LSP initialize.** Send `initialize` with `rootUri` from `process.cwd()`.
+5. **Register MCP tools.** All 12 tools registered on the `McpServer`.
+6. **Serve.** Connect to `StdioServerTransport`, begin accepting tool calls.
+
+#### MCP Modules
+
+| Module | Purpose |
+|--------|---------|
+| `lsp-client.ts` | TCP connection, JSON-RPC framing, request/response routing |
+| `file-manager.ts` | Open file tracking with mtime-based staleness detection |
+| `diagnostics-cache.ts` | Cache for push diagnostics with wait-for support |
+| `symbol-resolver.ts` | `workspace/symbol` → Location resolution with filtering |
+| `workspace-edit.ts` | Apply `WorkspaceEdit` to disk files (reverse-order offset preservation) |
+| `tools/*.ts` | 12 tools in 5 groups: navigation, display, editing, formatting, workspace |
+
+#### File Tracking
+
+The MCP server maintains a map of open files (`URI → { version, mtime }`). Before any tool touches a file:
+1. **Not yet open** — reads content, records `mtime`, sends `didOpen`
+2. **Open but stale** — detects Claude Code edits via mtime change, sends `didChange` + `didChangeWatchedFiles`
+3. **Open and current** — no-op
+
+---
 
 ## Daemon Lifecycle
 
 ### Startup
 
-1. `launch-lsp.sh --daemon [projects...]` starts the JVM
-2. `ScalaLspMain.daemonMode()` installs a global lenient `LoggedErrorProcessor` (via reflection on the static `ourInstance` field) to prevent `TestLoggerFactory` from converting `LOG.error()` into fatal exceptions
-3. `IntellijBootstrap.initialize()` calls `TestApplicationManager.getInstance()` which bootstraps the full IntelliJ platform: EDT, VFS, plugin loading, kernel, services
+1. `intellij-scala-lsp --daemon [projects...]` starts the JVM
+2. `ScalaLspMain.daemonMode()` installs a lenient `LoggedErrorProcessor` to prevent `TestLoggerFactory` from converting `LOG.error()` into fatal exceptions
+3. `IntellijBootstrap.initialize()` calls `TestApplicationManager.getInstance()` to bootstrap the full IntelliJ platform: EDT, VFS, plugin loading, kernel, services
 4. Pre-warm projects are opened via `ProjectRegistry.openProject()` — each waits for `DumbService.waitForSmartMode()`
 5. `DaemonServer.bind(port)` creates the TCP `ServerSocket`
-6. State files (`daemon.pid`, `daemon.port`) are written to `~/.cache/intellij-scala-lsp/`
+6. State files (`daemon.pid`, `daemon.port`) written to `~/.cache/intellij-scala-lsp/`
 7. `DaemonServer.acceptLoop()` blocks, accepting connections
 
 ### Per-Connection
@@ -58,13 +116,13 @@ VS Code ─────socat──┘    │  │  (port 5007)  │    │ osiri
 
 ### Shutdown
 
-- `launch-lsp.sh --stop` sends a `shutdown` JSON-RPC message to the daemon port
+- `intellij-scala-lsp --stop` sends a `shutdown` JSON-RPC message to the daemon port
 - `DaemonServer.stop()` closes the `ServerSocket`, calls `ProjectRegistry.closeAll()`
 - JVM shutdown hook deletes state files
 
 ### Auto-Start (connect mode)
 
-When `launch-lsp.sh` is called without `--daemon`:
+When `intellij-scala-lsp` is called without `--daemon`:
 1. Checks `daemon.pid` + `daemon.port` — if daemon alive, proxies via `socat`
 2. If not running, starts daemon in background, waits for `daemon.port` file (up to 60s), then proxies
 
@@ -221,7 +279,7 @@ The workaround:
 
 ## Launcher Script
 
-`launch-lsp.sh` handles:
+`intellij-scala-lsp` handles:
 - IntelliJ installation detection (installed app or sbt-idea-plugin SDK)
 - Scala plugin version matching (extracts IDE build number, picks compatible plugin)
 - JVM args from `product-info.json` (boot classpath, `--add-opens`, etc.)
@@ -231,6 +289,7 @@ The workaround:
 - CDS warning suppression (`-Xlog:cds=off`)
 - Daemon management (`--daemon`, `--stop`, auto-start connect mode)
 - `socat` stdio↔TCP proxy
+- Editor setup (`--setup-claude-code-mcp`, `--setup-claude-code-lsp`, `--setup-vscode`, `--setup-zed`)
 
 ## State and Caching
 
@@ -268,3 +327,5 @@ The `system/` directory persists indexes across daemon restarts. On warm restart
 **Lazy completion resolve.** Completion items are returned lean (label + basic info). Detail, documentation, and auto-import edits are resolved on demand via `completionItem/resolve`, keeping initial response sizes small.
 
 **Code action two-phase resolve.** `codeAction` collects available actions quickly in a read action. `codeAction/resolve` computes the actual workspace edit by applying the fix on a PSI copy and diffing — avoiding write actions during browsing.
+
+**MCP over direct LSP for Claude Code.** Claude Code's built-in LSP support exposes only 9 operations. The MCP server bridges LSP methods as 12 MCP tools with better ergonomics for AI use (symbol-name-based lookup, 1-indexed positions, full source extraction for definitions).
