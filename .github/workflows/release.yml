@@ -23,14 +23,32 @@ jobs:
       - name: Set up sbt
         uses: sbt/setup-sbt@v1
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
       - name: Build LSP server JARs
         run: sbt lsp-server/packageArtifact
+
+      - name: Build MCP server
+        working-directory: mcp-server
+        run: npm ci && npm run build
 
       - name: Package artifacts
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          cd lsp-server/target/plugin/intellij-scala-lsp/lib
-          tar czf "$GITHUB_WORKSPACE/intellij-scala-lsp-${VERSION}.tar.gz" *.jar
+          mkdir -p staging/lib staging/mcp-server staging/skills
+          # LSP server JARs
+          cp lsp-server/target/plugin/intellij-scala-lsp/lib/*.jar staging/lib/
+          # MCP server (dist + production deps only)
+          cp -r mcp-server/dist mcp-server/package.json mcp-server/package-lock.json staging/mcp-server/
+          cd staging/mcp-server && npm ci --omit=dev && cd "$GITHUB_WORKSPACE"
+          # Skills
+          cp -r skills/* staging/skills/
+          # Tarball
+          cd staging
+          tar czf "$GITHUB_WORKSPACE/intellij-scala-lsp-${VERSION}.tar.gz" .
           cd "$GITHUB_WORKSPACE"
 
       - name: Stamp version constants in launcher
