@@ -109,21 +109,24 @@ object PsiUtils:
       val entryPath = vfPath.substring(separatorIndex + 2)
 
       // Determine cache path — preserve original extension for source files,
-      // map .class to .scala/.java for decompiled files
-      val (cachedEntryPath, isClassFile) = if entryPath.endsWith(".class") then
-        (entryPath.replaceAll("\\.class$", ".scala"), true)
+      // map .class/.tasty to .scala for decompiled files
+      val isBinaryFile = entryPath.endsWith(".class") || entryPath.endsWith(".tasty")
+      val cachedEntryPath = if entryPath.endsWith(".class") then
+        entryPath.replaceAll("\\.class$", ".scala")
+      else if entryPath.endsWith(".tasty") then
+        entryPath.replaceAll("\\.tasty$", ".scala")
       else
-        (entryPath, false)
+        entryPath
       val cachePath = CACHE_DIR.resolve(jarName).resolve(cachedEntryPath)
 
       if !Files.exists(cachePath) then
         Files.createDirectories(cachePath.getParent)
 
         // Try 1: Find original source from attached source JARs
-        val sourceText = if isClassFile then findSourceFromSourceJar(vf, entryPath) else None
+        val sourceText = if isBinaryFile then findSourceFromSourceJar(vf, entryPath) else None
 
         val text = sourceText.getOrElse:
-          // Try 2: Use PSI text — IntelliJ decompiles .class files into readable source
+          // Try 2: Use PSI text — IntelliJ decompiles .class/.tasty files into readable source
           val psiText = psiFile.getText
           if psiText != null && psiText.nonEmpty then psiText
           else s"// Could not resolve source: $vfPath"
@@ -138,27 +141,35 @@ object PsiUtils:
 
   /** Try to find the original source file from source JARs attached to the library.
     * Uses IntelliJ's ProjectFileIndex to find the library, then searches its source roots. */
-  private def findSourceFromSourceJar(classVf: VirtualFile, entryPath: String): Option[String] =
+  private def findSourceFromSourceJar(binaryVf: VirtualFile, entryPath: String): Option[String] =
     try
-      // Get the class root (the JAR containing this .class file)
-      val jarPath = classVf.getPath.substring(0, classVf.getPath.indexOf("!/"))
+      // Get the JAR root containing this binary file
+      val jarPath = binaryVf.getPath.substring(0, binaryVf.getPath.indexOf("!/"))
       val classRoot = com.intellij.openapi.vfs.VirtualFileManager.getInstance()
         .findFileByUrl(s"jar://$jarPath!/")
 
       if classRoot == null then return None
 
-      // Convert .class entry path to potential source paths
+      // Convert .class/.tasty entry path to potential source paths
       // e.g., com/foo/Bar.class -> com/foo/Bar.scala, com/foo/Bar.java
+      //       com/foo/Bar$package.tasty -> com/foo/Bar$package.scala
       // For inner classes: com/foo/Bar$Inner.class -> com/foo/Bar.scala
-      val basePath = entryPath.replaceAll("\\$[^/]*\\.class$", "").replaceAll("\\.class$", "")
-      val sourceNames = Seq(s"$basePath.scala", s"$basePath.java")
+      val basePath = entryPath
+        .replaceAll("\\.tasty$", "")
+        .replaceAll("\\$[^/]*\\.class$", "")
+        .replaceAll("\\.class$", "")
+      // For $package files (Scala 3 top-level definitions), also try without $package suffix
+      val baseWithoutPackage = basePath.replaceAll("\\$package$", "")
+      val sourceNames = (Seq(s"$basePath.scala", s"$basePath.java") ++
+        (if basePath != baseWithoutPackage then Seq(s"$baseWithoutPackage.scala") else Seq.empty)
+      ).distinct
 
       // Find which library owns this class file via ProjectFileIndex
       val project = com.intellij.openapi.project.ProjectManager.getInstance().getOpenProjects
       if project.isEmpty then return None
 
       val fileIndex = ProjectFileIndex.getInstance(project.head)
-      val orderEntries = fileIndex.getOrderEntriesForFile(classVf)
+      val orderEntries = fileIndex.getOrderEntriesForFile(binaryVf)
 
       // Search source roots of each library order entry
       orderEntries.asScala.flatMap:
@@ -257,3 +268,102 @@ object PsiUtils:
         while parent != null && !parent.isInstanceOf[PsiNamedElement] do
           parent = parent.getParent
         if parent != null then Some(parent) else Some(element)
+
+  /** Check if a URI points to a cached source file (external dependency). */
+  def isCachedSourceFile(uri: String): Boolean =
+    val path = if uri.startsWith("file://") then java.net.URI.create(uri).getPath else uri
+    path.startsWith(CACHE_DIR.toString)
+
+  /** For elements from cached source files, find the real library PsiElement via IntelliJ's index.
+    * Cached file elements are disconnected from the index, so ReferencesSearch/DefinitionsSearch
+    * won't find anything. This maps them back to the original library element by FQN.
+    * Uses reflection for JavaPsiFacade to avoid classloader isolation issues in daemon mode. */
+  def resolveLibraryElement(cachedElement: PsiElement): Option[PsiElement] =
+    try
+      cachedElement match
+        case named: PsiNamedElement =>
+          val name = named.getName
+          if name == null then return None
+
+          val project = com.intellij.openapi.project.ProjectManager.getInstance().getOpenProjects.headOption
+          if project.isEmpty then return None
+
+          val scope = com.intellij.psi.search.GlobalSearchScope.allScope(project.get)
+
+          // Extract package from file text
+          val containingFile = cachedElement.getContainingFile
+          if containingFile == null then return None
+          val text = containingFile.getText
+          val packageName = text.linesIterator
+            .map(_.trim)
+            .find(_.startsWith("package "))
+            .map(_.stripPrefix("package ").trim)
+            .getOrElse("")
+
+          val fqn = if packageName.nonEmpty then s"$packageName.$name" else name
+          System.err.println(s"[PsiUtils] Resolving cached element to library: $fqn")
+
+          // Use reflection to call JavaPsiFacade.findClass — the facade class lives in the
+          // Java plugin classloader, different from our classloader in daemon mode
+          findClassByFqn(project.get, fqn, scope)
+            .orElse(findClassByFqn(project.get, fqn + "$", scope))
+        case _ => None
+    catch
+      case e: Exception =>
+        System.err.println(s"[PsiUtils] Failed to resolve library element: ${e.getMessage}")
+        None
+
+  /** Find a class by FQN using the ChooseByNameContributor approach (same as SymbolProvider).
+    * Uses reflection for getQualifiedName to avoid classloader isolation issues. */
+  private def findClassByFqn(
+    project: com.intellij.openapi.project.Project,
+    fqn: String,
+    scope: com.intellij.psi.search.GlobalSearchScope,
+  ): Option[PsiElement] =
+    try
+      import com.intellij.navigation.ChooseByNameContributor
+      import com.intellij.util.indexing.FindSymbolParameters
+      val shortName = fqn.split('.').last
+      val contributors =
+        ChooseByNameContributor.CLASS_EP_NAME.getExtensionList.asScala ++
+        ChooseByNameContributor.SYMBOL_EP_NAME.getExtensionList.asScala
+
+      val params = FindSymbolParameters.wrap(shortName, project, true)
+      var result: Option[PsiElement] = None
+      val iter = contributors.iterator
+      while result.isEmpty && iter.hasNext do
+        iter.next() match
+          case ex: com.intellij.navigation.ChooseByNameContributorEx =>
+            ex.processElementsWithName(
+              shortName,
+              ((item: com.intellij.navigation.NavigationItem) => {
+                if result.isEmpty then
+                  item match
+                    case psi: PsiElement =>
+                      // Use reflection to get qualifiedName — works across classloaders
+                      val qualName = getQualifiedName(psi)
+                      if qualName.nonEmpty && (qualName.get == fqn || qualName.get == fqn.stripSuffix("$")) then
+                        result = Some(psi)
+                    case _ => ()
+                result.isEmpty
+              }): com.intellij.util.Processor[com.intellij.navigation.NavigationItem],
+              params,
+            )
+          case _ => ()
+      if result.isEmpty then
+        System.err.println(s"[PsiUtils] findClassByFqn($fqn): not found via ${contributors.size} contributors")
+      result
+    catch
+      case e: Exception =>
+        System.err.println(s"[PsiUtils] findClassByFqn($fqn) failed: ${e.getMessage}")
+        None
+
+  /** Get qualified name via reflection to avoid classloader issues.
+    * Works for PsiClass, ScTypeDefinition, and any element with a getQualifiedName method. */
+  private def getQualifiedName(element: PsiElement): Option[String] =
+    try
+      val method = element.getClass.getMethod("getQualifiedName")
+      Option(method.invoke(element)).map(_.toString)
+    catch
+      case _: NoSuchMethodException => None
+      case _: Exception => None

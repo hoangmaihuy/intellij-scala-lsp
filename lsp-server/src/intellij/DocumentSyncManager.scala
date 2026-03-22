@@ -14,7 +14,9 @@ class DocumentSyncManager(projectManager: IntellijProjectManager):
 
   def didOpen(uri: String, text: String): Unit =
     System.err.println(s"[DocSync] didOpen: $uri")
-    updateDocument(uri, text)
+    try updateDocument(uri, text)
+    catch case e: Exception =>
+      System.err.println(s"[DocSync] Error opening $uri: ${e.getMessage}")
 
   def didChange(uri: String, text: String): Unit =
     updateDocument(uri, text)

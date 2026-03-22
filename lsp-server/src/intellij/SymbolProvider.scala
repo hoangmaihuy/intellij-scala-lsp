@@ -3,6 +3,7 @@ package org.jetbrains.scalalsP.intellij
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.navigation.{ChooseByNameContributor, ChooseByNameContributorEx, NavigationItem}
 import com.intellij.psi.*
+import com.intellij.openapi.roots.ProjectFileIndex
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.util.indexing.FindSymbolParameters
 import org.eclipse.lsp4j.{DocumentSymbol, SymbolInformation, Location as LspLocation}
@@ -101,7 +102,7 @@ class SymbolProvider(projectManager: IntellijProjectManager):
             )
 
             // For each matching name, collect the navigation items
-            val params = FindSymbolParameters.wrap(query, project, false)
+            val params = FindSymbolParameters.wrap(query, project, true)
             for name <- matchingNames.take(100) do // limit to avoid overwhelming results
               ex.processElementsWithName(
                 name,
@@ -127,10 +128,10 @@ class SymbolProvider(projectManager: IntellijProjectManager):
           case legacy =>
             // Fallback for non-Ex contributors: use getNames/getItemsByName
             try
-              val names = legacy.getNames(project, false)
+              val names = legacy.getNames(project, true)
               if names != null then
                 for name <- names if name != null && name.toLowerCase.contains(lowerQuery) do
-                  val items = legacy.getItemsByName(name, query, project, false)
+                  val items = legacy.getItemsByName(name, query, project, true)
                   if items != null then
                     for item <- items.take(20) do
                       item match
@@ -144,7 +145,17 @@ class SymbolProvider(projectManager: IntellijProjectManager):
             catch
               case _: Exception => ()
 
-      results.result()
+      // Sort: project symbols first, then library symbols (like IntelliJ's "include non-project items")
+      val projectFileIndex = ProjectFileIndex.getInstance(project)
+      val allResults = results.result()
+      val (projectResults, libraryResults) = allResults.partition: sym =>
+        val uri = sym.getLocation.getUri
+        if uri.startsWith("file://") then
+          val path = java.net.URI.create(uri).getPath
+          val vf = com.intellij.openapi.vfs.VirtualFileManager.getInstance().findFileByUrl("file://" + path)
+          vf != null && projectFileIndex.isInContent(vf)
+        else false
+      projectResults ++ libraryResults
     catch
       case e: Exception =>
         System.err.println(s"[SymbolProvider] Error searching workspace symbols: ${e.getMessage}")

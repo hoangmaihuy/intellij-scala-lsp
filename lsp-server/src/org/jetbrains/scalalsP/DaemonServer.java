@@ -105,8 +105,12 @@ public final class DaemonServer {
             LspLauncher.startAndAwait(server, replayedIn, out);
 
         } catch (Exception e) {
-            System.err.println("[DaemonServer] Session error: " + e.getMessage());
-            e.printStackTrace(System.err);
+            if ("health-check".equals(e.getMessage())) {
+                // Silent: probe connection from MCP ensureDaemonRunning()
+            } else {
+                System.err.println("[DaemonServer] Session error: " + e.getMessage());
+                e.printStackTrace(System.err);
+            }
         } finally {
             activeSessions.decrementAndGet();
             try { socket.close(); } catch (IOException ignored) {}
@@ -132,7 +136,8 @@ public final class DaemonServer {
             prev = curr;
         }
         if (contentLength <= 0) {
-            throw new IOException("No Content-Length header in first message");
+            // Health check probe (e.g., MCP ensureDaemonRunning) — no LSP message
+            throw new IOException("health-check");
         }
         byte[] body = new byte[contentLength];
         int read = 0;

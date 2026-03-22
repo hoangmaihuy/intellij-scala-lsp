@@ -3,6 +3,7 @@ package org.jetbrains.scalalsP
 import com.intellij.openapi.application.{ApplicationManager, WriteAction}
 import com.intellij.openapi.project.{DumbService, Project, ProjectManager}
 import com.intellij.openapi.projectRoots.ProjectJdkTable
+import com.intellij.openapi.vfs.newvfs.impl.VfsRootAccess
 import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
 import scala.jdk.CollectionConverters.*
@@ -52,6 +53,7 @@ class ProjectRegistry:
 
   private def doOpenProject(projectPath: String): Project =
     System.err.println(s"[ProjectRegistry] Opening project at: $projectPath")
+    VfsRootAccess.allowRootAccess(ApplicationManager.getApplication, projectPath)
     val project = ProjectManager.getInstance().loadAndOpenProject(projectPath)
     if project == null then throw RuntimeException(s"Failed to open project at $projectPath")
     System.err.println(s"[ProjectRegistry] Project opened: ${project.getName}")
@@ -82,6 +84,7 @@ class ProjectRegistry:
 
       candidates.headOption.foreach: home =>
         System.err.println(s"[ProjectRegistry] Registering JDK: $home")
+        VfsRootAccess.allowRootAccess(ApplicationManager.getApplication, home)
         ApplicationManager.getApplication.invokeAndWait: () =>
           WriteAction.run[RuntimeException]: () =>
             val createJdk = javaSdkType.getClass.getMethod("createJdk", classOf[String], classOf[String], classOf[Boolean])
@@ -132,6 +135,7 @@ class ProjectRegistry:
         if jdkTable.findJdk(jdkName) == null then
           findJdkHome().foreach: home =>
             System.err.println(s"[ProjectRegistry] Registering JDK '$jdkName' -> $home")
+            VfsRootAccess.allowRootAccess(ApplicationManager.getApplication, home)
             ApplicationManager.getApplication.invokeAndWait: () =>
               WriteAction.run[RuntimeException]: () =>
                 val createJdk = javaSdkType.getClass.getMethod("createJdk", classOf[String], classOf[String], classOf[Boolean])

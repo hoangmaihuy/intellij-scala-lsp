@@ -1,6 +1,7 @@
 package org.jetbrains.scalalsP.intellij
 
 import com.intellij.openapi.fileEditor.FileDocumentManager
+import com.intellij.psi.*
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.search.searches.ReferencesSearch
 import org.eclipse.lsp4j.{Location, Position}
@@ -20,32 +21,42 @@ class ReferencesProvider(projectManager: IntellijProjectManager):
         document <- Option(FileDocumentManager.getInstance().getDocument(vf))
       yield
         val offset = PsiUtils.positionToOffset(document, position)
-        findRefsAtOffset(psiFile, offset, includeDeclaration)
+        findRefsAtOffset(psiFile, offset, includeDeclaration, uri)
 
       result.getOrElse(Seq.empty)
 
   private def findRefsAtOffset(
-    psiFile: com.intellij.psi.PsiFile,
+    psiFile: PsiFile,
     offset: Int,
-    includeDeclaration: Boolean
+    includeDeclaration: Boolean,
+    uri: String,
   ): Seq[Location] =
     val targetElement = PsiUtils.resolveToDeclaration(psiFile, offset)
 
-    targetElement match
+    // For cached source files (external deps), the PsiElement is from a standalone file,
+    // not connected to IntelliJ's index. Map to the real library element for search.
+    val effectiveTarget = targetElement.flatMap: target =>
+      if PsiUtils.isCachedSourceFile(uri) then
+        PsiUtils.resolveLibraryElement(target).orElse(Some(target))
+      else
+        Some(target)
+
+    effectiveTarget match
       case Some(target) =>
+        System.err.println(s"[References] Searching references for: ${target.getClass.getName} '${target match { case n: PsiNamedElement => n.getName; case _ => "?" }}'")
         val project = projectManager.getProject
         val scope = GlobalSearchScope.projectScope(project)
 
-        // Use forEach instead of findAll to collect partial results if search crashes partway
         val refsBuffer = scala.collection.mutable.ArrayBuffer[Location]()
         try
-          ReferencesSearch.search(target, scope, false).forEach: (ref: com.intellij.psi.PsiReference) =>
+          ReferencesSearch.search(target, scope, false).forEach: (ref: PsiReference) =>
             PsiUtils.elementToLocation(ref.getElement).foreach(refsBuffer += _)
             true
         catch
           case e: Exception =>
             System.err.println(s"[References] ReferencesSearch partially failed: ${e.getClass.getSimpleName}: ${e.getMessage}")
 
+        System.err.println(s"[References] Found ${refsBuffer.size} references")
         val references = refsBuffer.toSeq
         if includeDeclaration then
           val declLocation = PsiUtils.elementToLocation(target).toSeq

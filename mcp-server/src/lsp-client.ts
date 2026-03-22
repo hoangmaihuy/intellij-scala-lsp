@@ -28,7 +28,7 @@ export class LspClient {
   }>();
   private notificationHandlers = new Map<string, NotificationHandler>();
   private serverRequestHandlers = new Map<string, ServerRequestHandler>();
-  private requestTimeout = 30_000;
+  private requestTimeout = 120_000;
 
   async connect(port: number, host = '127.0.0.1'): Promise<void> {
     return new Promise((resolve, reject) => {
