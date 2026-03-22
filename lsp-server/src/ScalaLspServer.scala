@@ -23,7 +23,7 @@ class ScalaLspServer(
   private var client: LanguageClient = uninitialized
   private val diagnosticsProvider = DiagnosticsProvider(projectManager)
   private val textDocumentService = ScalaTextDocumentService(projectManager, diagnosticsProvider)
-  private val workspaceService = ScalaWorkspaceService(projectManager, diagnosticsProvider)
+  private val workspaceService = ScalaWorkspaceService(projectManager, diagnosticsProvider, textDocumentService)
 
   def connect(client: LanguageClient): Unit =
     this.client = client
@@ -97,7 +97,7 @@ class ScalaLspServer(
 
       // Execute commands
       val executeCommandOptions = ExecuteCommandOptions(
-        java.util.List.of("scala.organizeImports", "scala.reformat", "scala.gotoLocation", "scala.pullDiagnostics")
+        java.util.List.of("scala.organizeImports", "scala.reformat", "scala.gotoLocation", "scala.pullDiagnostics", "scala.referencesWithTypes")
       )
       capabilities.setExecuteCommandProvider(executeCommandOptions)
 
