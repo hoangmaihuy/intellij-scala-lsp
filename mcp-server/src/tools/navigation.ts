@@ -23,10 +23,10 @@ async function resolveTargets(
   }
   if (args.symbolName) {
     const symbols = await symbolResolver.resolve(args.symbolName);
-    const hasExact = symbols.some(s => s.matchQuality === 'exact' || s.matchQuality === 'companion');
+    const hasExact = symbols.some(s => s.matchQuality === 'exact');
     // If exact matches exist, drop suffix matches to avoid processing irrelevant symbols
     const filtered = hasExact
-      ? symbols.filter(s => s.matchQuality === 'exact' || s.matchQuality === 'companion')
+      ? symbols.filter(s => s.matchQuality === 'exact')
       : symbols;
     // Deduplicate by URI+position — same symbol can appear from multiple contributors
     const seen = new Set<string>();
@@ -136,11 +136,7 @@ export function registerNavigationTools(
         return { content: [{ type: 'text' as const, text: `No symbol found matching '${args.symbolName}'. Try with filePath+line+column instead.` }] };
       }
 
-      // For symbolName queries, skip companion objects — the class search covers both
-      const dedupedTargets = args.symbolName
-        ? targets.filter(t => t.matchQuality !== 'companion')
-        : targets;
-      const effectiveTargets = dedupedTargets.length > 0 ? dedupedTargets : targets;
+      const effectiveTargets = targets;
 
       const allRefs: string[] = [];
       for (const target of effectiveTargets) {
