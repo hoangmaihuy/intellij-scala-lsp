@@ -2,7 +2,7 @@
 
 **Date:** 2026-03-22
 **Status:** Draft
-**Goal:** Reduce 22 MCP tools to 10, optimized for Claude Code experience.
+**Goal:** Reduce 22 MCP tools to 12, optimized for Claude Code experience.
 
 ## Problem
 
@@ -20,21 +20,22 @@ Inspired by [mcp-language-server](https://github.com/isaacphi/mcp-language-serve
 ## Design Principles
 
 1. **Discovery tools return source code**, not location pointers — eliminates read-file round-trips.
-2. **Symbol-name input only** for discovery tools — no dual-mode (symbol name OR file+position) confusion.
+2. **Symbol-name preferred** for discovery tools, with optional `filePath+line+column` fallback for external/library symbols and disambiguation of overloaded methods.
 3. **File+position input** for mutation tools — Claude already has the file open when mutating.
 4. **Each tool is self-contained** — Claude gets what it needs in 1-2 calls, not 3-4.
 5. **Plain-text output** with file paths and line numbers — optimized for LLM consumption, no JSON wrapping.
+6. **Best-effort enrichment** — sub-calls (e.g., supertypes in hover) fail gracefully, showing "unavailable" rather than failing the whole tool.
 
-## Tool Inventory: 22 → 10
+## Tool Inventory: 22 → 12
 
 ### Kept & Enhanced (5 tools)
 
 | Tool | Enhancement |
 |------|-------------|
-| `definition` | Returns full source code with line numbers, not just a location |
-| `references` | Returns context lines (±2) around each usage, grouped by file |
-| `implementations` | Returns source code of each implementation |
-| `hover` | Absorbs `type_definition`, `supertypes`/`subtypes`, `signature_help` into one response |
+| `definition` | Returns full source code with line numbers, not just a location. Keeps optional file+position fallback. |
+| `references` | Returns context lines (±2) around each usage, grouped by file. Keeps optional file+position fallback. |
+| `implementations` | Returns source code of each implementation (max 10 in full, rest as signature + location). Keeps optional file+position fallback. |
+| `hover` | Absorbs `type_definition` (includes type def path), `supertypes`/`subtypes` into one response. Supports both symbol name and file+position. |
 | `diagnostics` | Unchanged |
 
 ### Kept As-Is (5 tools)
@@ -42,38 +43,48 @@ Inspired by [mcp-language-server](https://github.com/isaacphi/mcp-language-serve
 | Tool | Notes |
 |------|-------|
 | `workspace_symbols` | Unchanged |
-| `document_symbols` | Unchanged |
+| `document_symbols` | Unchanged (interface unchanged, file may be restructured) |
 | `rename_symbol` | File+position based, unchanged |
 | `code_actions` | Unchanged |
 | `apply_code_action` | Unchanged |
 
-### Dropped (12 tools)
+### Consolidated (2 tools, from 3)
+
+| Tool | Notes |
+|------|-------|
+| `format` | Merges `format_file` + `format_range` into one tool with optional range parameter |
+| `organize_imports` | Kept — uses `workspace/executeCommand`, not available as code action |
+
+### Removed/Merged (11 tools, net -10)
 
 | Tool | Reason |
 |------|--------|
-| `type_definition` | Merged into `hover` |
+| `type_definition` | Merged into `hover` (hover output includes type definition file path) |
 | `supertypes` | Merged into `hover` |
 | `subtypes` | Merged into `hover` |
-| `signature_help` | Merged into `hover` |
+| `signature_help` | Rarely used by Claude; hover provides type signatures |
 | `incoming_calls` | Rarely used; `references` covers the common case |
 | `outgoing_calls` | Rarely used; read the function body instead |
 | `completion` | Claude writes code directly, doesn't need LSP completion |
-| `format_file` | Claude can use `code_actions` or edit directly |
-| `format_range` | Claude can use `code_actions` or edit directly |
-| `organize_imports` | Claude can use `code_actions` or edit directly |
+| `format_file` | Merged into `format` |
+| `format_range` | Merged into `format` |
 | `inlay_hints` | Display-only, not useful for Claude |
 | `code_lens` | Display-only, not useful for Claude |
 
 ## Tool Specifications
 
-### Discovery Tools (symbol-name based)
+### Discovery Tools (symbol-name preferred, file+position fallback)
+
+All discovery tools accept either `symbolName` OR `filePath+line+column`. Prefer `symbolName` for most cases. Use `filePath+line+column` when navigating from a specific usage site (works for external/library symbols too) or to disambiguate overloaded methods.
+
+**Input priority:** If both `symbolName` and `filePath+line+column` are provided, `filePath+line+column` takes precedence. If `filePath` is provided without `line`/`column`, it is ignored and `symbolName` is used.
 
 #### 1. `definition`
 
 - **Description:** Read the source code where a symbol is defined. Returns full implementation with line numbers.
-- **Input:** `{ symbolName: string }`
+- **Input:** `{ symbolName?: string, filePath?: string, line?: number, column?: number }`
 - **Output:** Full source code of the symbol with line numbers, file path, and symbol kind. If multiple matches (e.g., companion object + class), return all.
-- **LSP calls:** `workspace/symbol` → `textDocument/definition` → `textDocument/documentSymbol` (to get full range) → read source
+- **LSP calls:** `workspace/symbol` (or direct position) → `textDocument/definition` → `textDocument/documentSymbol` (to get full range) → read source
 - **Example:**
 
 ```
@@ -90,9 +101,9 @@ definition("TableL")
 #### 2. `references`
 
 - **Description:** Find all usages of a symbol across the codebase. Returns locations with surrounding context.
-- **Input:** `{ symbolName: string }`
+- **Input:** `{ symbolName?: string, filePath?: string, line?: number, column?: number }`
 - **Output:** All usages grouped by file, with ±2 context lines around each reference. Shows total count and file count.
-- **LSP calls:** `workspace/symbol` → `textDocument/references`
+- **LSP calls:** `workspace/symbol` (or direct position) → `textDocument/references`
 - **Example:**
 
 ```
@@ -114,16 +125,16 @@ Found 7 references in 3 files
 #### 3. `implementations`
 
 - **Description:** Find all implementations of a trait, class, or abstract method. Returns source code of each implementation.
-- **Input:** `{ symbolName: string }`
-- **Output:** Source code of each implementation, same format as `definition`.
-- **LSP calls:** `workspace/symbol` → `textDocument/implementation` → `textDocument/documentSymbol` (per impl) → read source
+- **Input:** `{ symbolName?: string, filePath?: string, line?: number, column?: number }`
+- **Output:** Source code of each implementation, same format as `definition`. Shows up to 10 implementations in full; additional ones are shown as signature + file:line location.
+- **LSP calls:** `workspace/symbol` (or direct position) → `textDocument/implementation` → `textDocument/documentSymbol` (per impl) → read source
 
 #### 4. `hover`
 
-- **Description:** Get complete info about a symbol: type signature, documentation, supertypes, subtypes.
-- **Input:** `{ symbolName: string }`
-- **Output:** Combined view with type signature, ScalaDoc, supertypes, subtypes, and method signatures (if class/trait/object).
-- **LSP calls:** `workspace/symbol` → `textDocument/hover` + `typeHierarchy/supertypes` + `typeHierarchy/subtypes`
+- **Description:** Get complete info about a symbol: type signature, documentation, supertypes, subtypes, and type definition location.
+- **Input:** `{ symbolName?: string, filePath?: string, line?: number, column?: number }`
+- **Output:** Combined view with type signature, ScalaDoc, supertypes, subtypes, and type definition file path + line. Each sub-section is best-effort; if a sub-call fails (e.g., type hierarchy not supported), that section shows "unavailable" rather than failing the whole tool.
+- **LSP calls:** `workspace/symbol` (or direct position) → `textDocument/hover` + `textDocument/typeDefinition` + `typeHierarchy/supertypes` + `typeHierarchy/subtypes` (parallel, best-effort)
 - **Example:**
 
 ```
@@ -131,6 +142,7 @@ hover("TableL")
 →
 case class TableL(name: String, columns: List[Column])
 
+Type definition: src/main/scala/com/example/TableL.scala:15
 Supertypes: Product, Serializable
 Subtypes: none
 Defined in: com.example.schema
@@ -182,6 +194,22 @@ Defined in: com.example.schema
 - **Input:** `{ filePath: string, actionIndex: number }`
 - **Output:** Summary of edits applied.
 
+### Formatting Tools
+
+#### 11. `format`
+
+- **Description:** Format Scala code using IntelliJ code style. Formats the entire file, or a specific line range if provided.
+- **Input:** `{ filePath: string, startLine?: number, endLine?: number }`
+- **Output:** Confirmation of formatting applied.
+- **LSP calls:** `textDocument/formatting` (whole file) or `textDocument/rangeFormatting` (with range)
+
+#### 12. `organize_imports`
+
+- **Description:** Remove unused imports and sort remaining imports in a Scala file.
+- **Input:** `{ filePath: string }`
+- **Output:** Confirmation of imports organized.
+- **LSP calls:** `workspace/executeCommand` with `scala.organizeImports`
+
 ## Output Format Conventions
 
 ### Source code output (definition, implementations)
@@ -216,6 +244,7 @@ Found 7 references in 3 files
 ```
 case class TableL(name: String, columns: List[Column])
 
+Type definition: src/main/scala/com/example/TableL.scala:15
 Supertypes: Product, Serializable
 Subtypes: none
 Defined in: com.example.schema
@@ -266,6 +295,14 @@ The new `hover` tool makes 3 parallel LSP calls after resolving the symbol:
 
 Results are combined into a single formatted response.
 
+### Edge Cases
+
+**Ambiguous symbol resolution:** When `definition("process")` matches multiple symbols, return all matches (up to 10). If more than 10, show the first 10 with a message "N more matches not shown — qualify the name (e.g., 'MyClass.process') or use filePath+line+column."
+
+**Empty results:** Return a clear message like "No definition found for 'Foo'. Check the symbol name or use workspace_symbols to search." rather than an empty response.
+
+**Large implementations list:** `implementations` shows up to 10 implementations with full source code. Beyond 10, show just the signature and file:line location.
+
 ### Files to Modify
 
 - `mcp-server/src/tools/navigation.ts` — Rewrite: 4 tools → 3 tools (definition, references, implementations), all returning source code
@@ -273,5 +310,5 @@ Results are combined into a single formatted response.
 - `mcp-server/src/tools/editing.ts` — Remove completion and signature_help, keep rename/code_actions/apply_code_action
 - `mcp-server/src/tools/workspace.ts` — Unchanged
 - `mcp-server/src/tools/hierarchy.ts` — Delete (supertypes/subtypes merged into hover, calls dropped)
-- `mcp-server/src/tools/formatting.ts` — Delete
+- `mcp-server/src/tools/formatting.ts` — Rewrite: 3 tools → 2 tools (format merges format_file+format_range, organize_imports kept)
 - `mcp-server/src/tools/register.ts` — Update registration to match new tool set
