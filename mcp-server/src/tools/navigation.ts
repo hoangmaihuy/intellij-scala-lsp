@@ -23,10 +23,10 @@ async function resolveTargets(
   }
   if (args.symbolName) {
     const symbols = await symbolResolver.resolve(args.symbolName);
-    const hasExact = symbols.some(s => s.matchQuality === 'exact');
-    // If exact matches exist, drop suffix matches to avoid processing irrelevant symbols
+    const hasExact = symbols.some(s => s.matchQuality === 'exact' || s.matchQuality === 'companion');
+    // If exact/companion matches exist, drop suffix matches to avoid processing irrelevant symbols
     const filtered = hasExact
-      ? symbols.filter(s => s.matchQuality === 'exact')
+      ? symbols.filter(s => s.matchQuality === 'exact' || s.matchQuality === 'companion')
       : symbols;
     // Deduplicate by URI+position — same symbol can appear from multiple contributors
     const seen = new Set<string>();
