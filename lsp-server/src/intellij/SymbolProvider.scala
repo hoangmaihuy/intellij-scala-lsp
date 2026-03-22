@@ -127,12 +127,12 @@ class SymbolProvider(projectManager: IntellijProjectManager):
                             case None => true
 
                           if fqnMatch then
-                            PsiUtils.elementToLocation(psi).foreach: loc =>
-                              val key = s"${named.getName}@${loc.getUri}:${loc.getRange.getStart.getLine}"
-                              if !seen.contains(key) then
-                                seen += key
+                            val containerName = getContainerName(psi)
+                            val qualKey = Option(containerName).filter(_.nonEmpty).map(c => s"$c.${named.getName}").getOrElse(named.getName)
+                            if !seen.contains(qualKey) then
+                              PsiUtils.elementToLocation(psi).foreach: loc =>
+                                seen += qualKey
                                 val kind = PsiUtils.getSymbolKind(named)
-                                val containerName = getContainerName(psi)
                                 results += new SymbolInformation(named.getName, kind, loc, containerName)
                         case _ => ()
                     case _ => ()
@@ -163,11 +163,12 @@ class SymbolProvider(projectManager: IntellijProjectManager):
                             case None => true
 
                           if fqnMatch then
-                            PsiUtils.elementToLocation(psi).foreach: loc =>
-                              val key = s"${psi.getName}@${loc.getUri}:${loc.getRange.getStart.getLine}"
-                              if !seen.contains(key) then
-                                seen += key
-                                results += new SymbolInformation(psi.getName, PsiUtils.getSymbolKind(psi), loc, getContainerName(psi))
+                            val containerName = getContainerName(psi)
+                            val qualKey = Option(containerName).filter(_.nonEmpty).map(c => s"$c.${psi.getName}").getOrElse(psi.getName)
+                            if !seen.contains(qualKey) then
+                              PsiUtils.elementToLocation(psi).foreach: loc =>
+                                seen += qualKey
+                                results += new SymbolInformation(psi.getName, PsiUtils.getSymbolKind(psi), loc, containerName)
                         case _ => ()
             catch
               case _: Exception => ()
