@@ -61,27 +61,16 @@ object ScalaLspMain:
         e.printStackTrace(System.err)
         System.exit(1)
 
-    // Pre-warm projects
+    // Start TCP server — bind port before indexing so clients can connect early
     val registry = ProjectRegistry()
-    for path <- projectPaths do
-      try
-        System.err.println(s"[ScalaLsp] Pre-warming project: $path")
-        registry.openProject(path)
-      catch case e: Exception =>
-        System.err.println(s"[ScalaLsp] Failed to pre-warm $path: ${e.getMessage}")
-
-    // Start TCP server
     val daemon = DaemonServer(registry)
 
     try
-      // Bind FIRST, then write state files, then accept
       val boundPort = daemon.bind(port)
       java.nio.file.Files.createDirectories(java.nio.file.Path.of(CACHE_DIR))
       java.nio.file.Files.writeString(java.nio.file.Path.of(s"$CACHE_DIR/daemon.pid"), ProcessHandle.current().pid().toString)
       java.nio.file.Files.writeString(java.nio.file.Path.of(s"$CACHE_DIR/daemon.port"), boundPort.toString)
 
-      // Clean up state files on exit — register AFTER writing files
-      // to avoid a failed second daemon deleting the first daemon's files
       Runtime.getRuntime.addShutdownHook(new Thread(() => {
         java.io.File(s"$CACHE_DIR/daemon.pid").delete()
         java.io.File(s"$CACHE_DIR/daemon.port").delete()
@@ -89,6 +78,19 @@ object ScalaLspMain:
       }))
 
       System.err.println(s"[ScalaLsp] Daemon ready on port $boundPort")
+
+      // Pre-warm projects in background — clients can connect while indexing
+      val warmupThread = new Thread(() =>
+        for path <- projectPaths do
+          try
+            System.err.println(s"[ScalaLsp] Pre-warming project: $path")
+            registry.openProject(path)
+          catch case e: Exception =>
+            System.err.println(s"[ScalaLsp] Failed to pre-warm $path: ${e.getMessage}")
+      , "project-warmup")
+      warmupThread.setDaemon(true)
+      warmupThread.start()
+
       daemon.acceptLoop() // blocks
     catch
       case e: java.net.BindException =>
