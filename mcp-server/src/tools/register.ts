@@ -18,7 +18,7 @@ export function registerTools(
   symbolResolver: SymbolResolver,
 ): void {
   registerNavigationTools(mcp, lsp, fileManager, symbolResolver);
-  registerDisplayTools(mcp, lsp, fileManager, diagnostics);
+  registerDisplayTools(mcp, lsp, fileManager, diagnostics, symbolResolver);
   registerEditingTools(mcp, lsp, fileManager);
   registerWorkspaceTools(mcp, lsp);
   registerHierarchyTools(mcp, lsp, fileManager, symbolResolver);

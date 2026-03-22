@@ -3,9 +3,11 @@ import { z } from 'zod';
 import { LspClient } from '../lsp-client.js';
 import { FileManager } from '../file-manager.js';
 import { DiagnosticsCache } from '../diagnostics-cache.js';
-import { toPosition } from '../utils.js';
+import { SymbolResolver } from '../symbol-resolver.js';
+import { uriToPath, toPosition } from '../utils.js';
 import {
   HoverParams, Hover, DocumentSymbolParams, DocumentSymbol, SymbolInformation, SymbolKind,
+  Location, TypeHierarchyItem, TypeHierarchyPrepareParams,
   InlayHint, CodeLens,
 } from 'vscode-languageserver-protocol';
 import * as fs from 'fs';
@@ -15,39 +17,106 @@ export function registerDisplayTools(
   lsp: LspClient,
   fileManager: FileManager,
   diagnostics: DiagnosticsCache,
+  symbolResolver: SymbolResolver,
 ): void {
 
   mcp.tool(
     'hover',
-    'Get type info and documentation for a symbol at the specified position in a file.',
+    'Get complete info about a symbol: type signature, documentation, supertypes, subtypes, and type definition location. Prefer symbolName; use filePath+line+column for positional context.',
     {
-      filePath: z.string().describe('Absolute path to the file'),
-      line: z.number().describe('Line number (1-indexed)'),
-      column: z.number().describe('Column number (1-indexed)'),
+      symbolName: z.string().optional().describe('Symbol name (e.g. "MyClass", "MyClass.myMethod")'),
+      filePath: z.string().optional().describe('Absolute path to the file (use with line+column)'),
+      line: z.number().optional().describe('Line number, 1-indexed (use with filePath+column)'),
+      column: z.number().optional().describe('Column number, 1-indexed (use with filePath+line)'),
     },
-    async ({ filePath, line, column }) => {
-      const uri = await fileManager.ensureOpen(filePath);
-      const result = await lsp.request<Hover | null>('textDocument/hover', {
-        textDocument: { uri },
-        position: toPosition(line, column),
+    async (args) => {
+      // Resolve to URI + position
+      let uri: string;
+      let position: { line: number; character: number };
+
+      if (args.filePath && args.line !== undefined && args.column !== undefined) {
+        uri = await fileManager.ensureOpen(args.filePath);
+        position = toPosition(args.line, args.column);
+      } else if (args.symbolName) {
+        const symbols = await symbolResolver.resolve(args.symbolName);
+        if (symbols.length === 0) {
+          return { content: [{ type: 'text' as const, text: `No symbol found matching '${args.symbolName}'. Try workspace_symbols to search.` }] };
+        }
+        uri = symbols[0].location.uri;
+        position = symbols[0].location.range.start;
+        // Ensure file is open for LSP requests
+        await fileManager.ensureOpen(uriToPath(uri));
+      } else {
+        return { content: [{ type: 'text' as const, text: 'Provide either symbolName or filePath+line+column.' }] };
+      }
+
+      const sections: string[] = [];
+
+      // 1. Hover info (type signature + docs)
+      const hoverResult = await lsp.request<Hover | null>('textDocument/hover', {
+        textDocument: { uri }, position,
       } as HoverParams);
 
-      if (!result || !result.contents) {
-        return { content: [{ type: 'text' as const, text: `No hover information at ${filePath}:${line}:${column}` }] };
+      if (hoverResult?.contents) {
+        let text: string;
+        if (typeof hoverResult.contents === 'string') {
+          text = hoverResult.contents;
+        } else if ('value' in hoverResult.contents) {
+          text = hoverResult.contents.value;
+        } else if (Array.isArray(hoverResult.contents)) {
+          text = hoverResult.contents.map(c => typeof c === 'string' ? c : c.value).join('\n\n');
+        } else {
+          text = JSON.stringify(hoverResult.contents);
+        }
+        sections.push(text);
       }
 
-      let text: string;
-      if (typeof result.contents === 'string') {
-        text = result.contents;
-      } else if ('value' in result.contents) {
-        text = result.contents.value;
-      } else if (Array.isArray(result.contents)) {
-        text = result.contents.map(c => typeof c === 'string' ? c : c.value).join('\n\n');
-      } else {
-        text = JSON.stringify(result.contents);
+      // 2. Type definition location (best-effort)
+      try {
+        const typeDef = await lsp.request<Location | Location[]>('textDocument/typeDefinition', {
+          textDocument: { uri }, position,
+        });
+        const locs = Array.isArray(typeDef) ? typeDef : typeDef ? [typeDef] : [];
+        if (locs.length > 0) {
+          const typeDefPaths = locs.map(l => `${uriToPath(l.uri)}:${l.range.start.line + 1}`);
+          sections.push(`Type definition: ${typeDefPaths.join(', ')}`);
+        }
+      } catch { /* best-effort */ }
+
+      // 3. Supertypes + Subtypes (best-effort, single prepare call)
+      try {
+        const hierarchyItems = await lsp.request<TypeHierarchyItem[]>('textDocument/prepareTypeHierarchy', {
+          textDocument: { uri }, position,
+        } as TypeHierarchyPrepareParams);
+
+        if (hierarchyItems && hierarchyItems.length > 0) {
+          // Supertypes
+          try {
+            const allSupers: string[] = [];
+            for (const item of hierarchyItems) {
+              const supers = await lsp.request<TypeHierarchyItem[]>('typeHierarchy/supertypes', { item });
+              if (supers) for (const s of supers) allSupers.push(s.name);
+            }
+            if (allSupers.length > 0) sections.push(`Supertypes: ${allSupers.join(', ')}`);
+          } catch { /* best-effort */ }
+
+          // Subtypes
+          try {
+            const allSubs: string[] = [];
+            for (const item of hierarchyItems) {
+              const subs = await lsp.request<TypeHierarchyItem[]>('typeHierarchy/subtypes', { item });
+              if (subs) for (const s of subs) allSubs.push(s.name);
+            }
+            if (allSubs.length > 0) sections.push(`Subtypes: ${allSubs.join(', ')}`);
+          } catch { /* best-effort */ }
+        }
+      } catch { /* best-effort: prepareTypeHierarchy not supported */ }
+
+      if (sections.length === 0) {
+        return { content: [{ type: 'text' as const, text: `No hover information for '${args.symbolName || `${args.filePath}:${args.line}:${args.column}`}'` }] };
       }
 
-      return { content: [{ type: 'text' as const, text }] };
+      return { content: [{ type: 'text' as const, text: sections.join('\n\n') }] };
     },
   );
 
