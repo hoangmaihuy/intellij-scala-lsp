@@ -153,6 +153,44 @@ object SemanticTokensProvider:
     if parent != null && ScalaTypes.isTemplateBody(parent) then TMethod
     else TFunction
 
+  /** Try to classify an unresolved reference by examining its PSI context.
+    * For qualified refs like `obj.member`, try resolving the qualifier.
+    * For simple refs, check if the name is followed by args (method call). */
+  private def classifyUnresolved(element: PsiElement): Option[Int] =
+    // Check if this is a qualified reference (has a qualifier child)
+    try
+      val qualifier = element.getClass.getMethod("qualifier").invoke(element)
+      qualifier match
+        case Some(q: PsiElement) =>
+          // Has qualifier — this is `qualifier.name`, so the name part is a member access.
+          // Check if qualifier resolves to determine member type
+          val qRef = q.getReference
+          if qRef != null then
+            val qResolved = try Option(qRef.resolve()) catch case _: Exception => None
+            qResolved.flatMap(classifyElement) match
+              case Some(_) =>
+                // Qualifier resolved to a type — the unresolved part is a member.
+                // Check if it looks like a method call (has argument list as next sibling)
+                val parent = element.getParent
+                if parent != null && ScalaTypes.isMethodCall(parent) then Some(TMethod)
+                else Some(TProperty)
+              case None =>
+                // Qualifier itself didn't resolve — still likely a member access
+                if element.getParent != null && ScalaTypes.isMethodCall(element.getParent) then Some(TMethod)
+                else Some(TProperty)
+          else
+            // Qualifier has no ref — common for `_.member` patterns
+            if element.getParent != null && ScalaTypes.isMethodCall(element.getParent) then Some(TMethod)
+            else Some(TProperty)
+        case _ =>
+          // No qualifier — simple reference like `createdBy` or `destStorageId`.
+          // Check if it's a method call
+          if element.getParent != null && ScalaTypes.isMethodCall(element.getParent) then Some(TMethod)
+          else None // Can't determine — could be variable, parameter, etc.
+    catch
+      case _: NoSuchMethodException => None // Not a ScReferenceExpression
+      case _: Exception => None
+
   /** Classify a binding pattern as property (class member) or variable (local). */
   private def classifyBinding(element: PsiElement): Option[Int] =
     if ScalaTypes.isBindingPattern(element) then
@@ -281,7 +319,11 @@ class SemanticTokensProvider(projectManager: IntellijProjectManager):
       val resolved = try
         ref match
           case poly: PsiPolyVariantReference =>
-            poly.multiResolve(false).flatMap(rr => Option(rr.getElement)).headOption
+            // Try strict resolve first, then lenient, then simple resolve
+            val strict = poly.multiResolve(false).flatMap(rr => Option(rr.getElement)).headOption
+            strict.orElse:
+              poly.multiResolve(true).flatMap(rr => Option(rr.getElement)).headOption
+            .orElse(Option(ref.resolve()))
           case _ =>
             Option(ref.resolve())
       catch
@@ -298,7 +340,12 @@ class SemanticTokensProvider(projectManager: IntellijProjectManager):
               val nameRange = getNameRange(element)
               tokens += ((nameRange._1, nameRange._2, tokenType, modifiers))
             case None => ()
-        case None => ()
+        case None =>
+          // Try to classify unresolved references by context:
+          // For qualified refs like "input.folderName", try resolving the qualifier
+          classifyUnresolved(element).foreach: tokenType =>
+            val nameRange = getNameRange(element)
+            tokens += ((nameRange._1, nameRange._2, tokenType, 0))
 
     // Check for keyword tokens (leaf elements with keyword token type)
     if element.getChildren.isEmpty then
