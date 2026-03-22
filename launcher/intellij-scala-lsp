@@ -302,6 +302,14 @@ assemble_classpath_and_flags() {
   JAVA=$(find_java)
   log "Java: $JAVA"
 
+  # In dev mode, auto-rebuild LSP server to avoid stale jar issues
+  if [ "$DEV_MODE" = true ] && [ -n "$PROJECT_ROOT" ]; then
+    log "Dev mode: rebuilding LSP server..."
+    (cd "$PROJECT_ROOT" && sbt --batch "lsp-server/packageArtifact" 2>&1 | tail -3) || {
+      log "WARNING: sbt build failed, using existing JARs"
+    }
+  fi
+
   # Check LSP JARs exist
   if [ ! -d "$LSP_LIB_DIR" ] || [ -z "$(ls "$LSP_LIB_DIR"/*.jar 2>/dev/null)" ]; then
     if [ "$DEV_MODE" = true ]; then
@@ -324,7 +332,15 @@ assemble_classpath_and_flags() {
   local jar_cmd="$(dirname "$JAVA")/jar"
   [ -x "$jar_cmd" ] || jar_cmd="jar"
   local stripped_jar="$CACHE_DIR/lsp-server-stripped.jar"
-  if [ "$LSP_LIB_DIR/lsp-server.jar" -nt "$stripped_jar" ] 2>/dev/null; then
+  # In dev mode, always rebuild to avoid stale code issues.
+  # In installed mode, only rebuild when source jar is newer.
+  local need_strip=false
+  if [ "$DEV_MODE" = true ]; then
+    need_strip=true
+  elif [ "$LSP_LIB_DIR/lsp-server.jar" -nt "$stripped_jar" ] 2>/dev/null; then
+    need_strip=true
+  fi
+  if [ "$need_strip" = true ]; then
     local strip_tmp="$CACHE_DIR/strip-tmp"
     rm -rf "$strip_tmp"
     mkdir -p "$strip_tmp"
@@ -785,11 +801,25 @@ setup_mcp() {
   if command -v claude >/dev/null 2>&1; then
     echo "Registering MCP server with Claude Code..."
     claude mcp remove intellij-scala-lsp 2>/dev/null || true
-    claude mcp add -s user intellij-scala-lsp -- node "$index_js"
+    if [ "$DEV_MODE" = true ]; then
+      # In dev mode, register a wrapper that auto-builds before running.
+      # This ensures TS changes are always compiled before the MCP server starts.
+      local wrapper="$mcp_dir/dist/dev-run.sh"
+      cat > "$wrapper" << DEVSCRIPT
+#!/bin/bash
+cd "$mcp_dir" && npm run build --silent 2>/dev/null
+exec node "$index_js" "\$@"
+DEVSCRIPT
+      chmod +x "$wrapper"
+      claude mcp add -s user intellij-scala-lsp -- bash "$wrapper"
+    else
+      claude mcp add -s user intellij-scala-lsp -- node "$index_js"
+    fi
     install_skill "mcp"
     echo ""
     echo "=== MCP server setup complete ==="
     echo "MCP server: $index_js"
+    [ "$DEV_MODE" = true ] && echo "Dev mode: auto-builds TS on each Claude Code session start"
     echo ""
     echo "Restart Claude Code for the MCP server to take effect."
     echo "  Verify: claude mcp list"
