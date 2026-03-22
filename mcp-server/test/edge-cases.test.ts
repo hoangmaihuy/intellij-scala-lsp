@@ -176,11 +176,11 @@ describe('definition via position', () => {
   });
 
   it('Shape usage should navigate to Shape trait definition', async () => {
-    // ExternalDeps.scala line 17: "val shapes: List[Shape]"
+    // ExternalDeps.scala line 16: "  val shapes: List[Shape]"
     const result = await tools.callTool('definition', {
       filePath: FIXTURES.externalDeps,
-      line: 17,
-      column: 28, // on "Shape"
+      line: 16,
+      column: 20, // on "Shape"
     });
     expect(result).toContain('trait Shape');
     expect(result).toContain('Shape.scala');
