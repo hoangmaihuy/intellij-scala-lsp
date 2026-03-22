@@ -807,7 +807,7 @@ setup_mcp() {
       local wrapper="$mcp_dir/dist/dev-run.sh"
       cat > "$wrapper" << DEVSCRIPT
 #!/bin/bash
-cd "$mcp_dir" && npm run build --silent 2>/dev/null
+(cd "$mcp_dir" && npm run build --silent 2>/dev/null)
 exec node "$index_js" "\$@"
 DEVSCRIPT
       chmod +x "$wrapper"
