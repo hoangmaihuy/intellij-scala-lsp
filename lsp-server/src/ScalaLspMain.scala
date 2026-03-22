@@ -7,10 +7,11 @@ import java.util.EnumSet
 /**
  * Entry point for the IntelliJ Scala LSP server.
  *
- * Supports three modes:
- *   --daemon [project...]  Bootstrap IntelliJ, pre-warm projects, start TCP server
- *   --stop                 Send shutdown signal to running daemon, exit
- *   (default)              Stdio LSP mode (original behavior)
+ * Supports these modes:
+ *   --daemon [project...]    Bootstrap IntelliJ, pre-warm projects, start TCP server
+ *   --stop                   Send shutdown signal to running daemon, exit
+ *   --list-projects          List projects open in the running daemon
+ *   (default)                Stdio LSP mode (original behavior)
  */
 object ScalaLspMain:
 
@@ -21,9 +22,10 @@ object ScalaLspMain:
 
   def main(args: Array[String]): Unit =
     args.toList match
-      case "--daemon" :: projects => daemonMode(projects)
-      case "--stop" :: _         => stopMode()
-      case other                 => stdioMode(other.headOption.getOrElse(""))
+      case "--daemon" :: projects  => daemonMode(projects)
+      case "--stop" :: _           => stopMode()
+      case "--list-projects" :: _  => listProjectsMode()
+      case other                   => stdioMode(other.headOption.getOrElse(""))
 
   private def daemonMode(projectPaths: List[String]): Unit =
     System.err.println("[ScalaLsp] Starting daemon mode...")
@@ -120,6 +122,27 @@ object ScalaLspMain:
     java.nio.file.Files.deleteIfExists(portFile)
     java.nio.file.Files.deleteIfExists(pidFile)
     if pid > 0 then ProcessHandle.of(pid).ifPresent(_.destroy())
+
+  private def listProjectsMode(): Unit =
+    val projectsFile = java.nio.file.Path.of(s"$CACHE_DIR/daemon.projects")
+    val portFile = java.nio.file.Path.of(s"$CACHE_DIR/daemon.port")
+    if !java.nio.file.Files.exists(portFile) then
+      System.err.println("No daemon running.")
+      System.exit(1)
+
+    val port = java.nio.file.Files.readString(portFile).trim
+    if !java.nio.file.Files.exists(projectsFile) then
+      System.err.println(s"Daemon running on port $port (no projects open)")
+      System.exit(0)
+
+    val projects = java.nio.file.Files.readString(projectsFile).trim
+    if projects.isEmpty then
+      System.err.println(s"Daemon running on port $port (no projects open)")
+    else
+      System.err.println(s"Daemon running on port $port")
+      System.err.println(s"Open projects:")
+      for line <- projects.split("\n") if line.nonEmpty do
+        System.err.println(s"  $line")
 
   private def stdioMode(projectPath: String): Unit =
     System.err.println("[ScalaLsp] Starting IntelliJ Scala LSP server...")
