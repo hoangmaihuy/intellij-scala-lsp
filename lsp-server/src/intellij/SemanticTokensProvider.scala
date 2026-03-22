@@ -70,9 +70,9 @@ object SemanticTokensProvider:
     else if ScalaTypes.isBindingPattern(element) then classifyBinding(element)
     else if ScalaTypes.isFieldId(element) then classifyFieldId(element)
     else if element.isInstanceOf[PsiClass] then Some(2) // Java class fallback
-    else
-      System.err.println(s"[SemanticTokens] Unclassified resolved element: ${element.getClass.getName}")
-      None
+    else if element.getClass.getName.contains("ScPackageImpl") then Some(0)  // namespace
+    else if element.getClass.getName.contains("PrimaryConstructor") then Some(5) // method
+    else None // silently skip unclassified elements
 
   /** Classify a binding pattern as property (class member) or variable (local). */
   private def classifyBinding(element: PsiElement): Option[Int] =
