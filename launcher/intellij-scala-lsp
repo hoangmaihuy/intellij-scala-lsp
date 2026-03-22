@@ -556,6 +556,8 @@ wait_for_port_file() {
 
 start_daemon_background() {
   log "Starting daemon in background..."
+  # Clean stale index locks from previous unclean shutdown
+  find "$CACHE_DIR/system/index" -name "*.lock" -delete 2>/dev/null || true
   "$JAVA" "${JVM_ARGS[@]}" -cp "$CLASSPATH" \
     org.jetbrains.scalalsP.ScalaLspMain --daemon "$@" \
     >> "$LSP_LOG" 2>&1 &
@@ -1303,6 +1305,8 @@ case "${1:-}" in
     resolve_sdk
     assemble_classpath_and_flags
     check_for_updates
+    # Clean stale index locks from previous unclean shutdown
+    find "$CACHE_DIR/system/index" -name "*.lock" -delete 2>/dev/null || true
     exec "$JAVA" "${JVM_ARGS[@]}" -cp "$CLASSPATH" \
       org.jetbrains.scalalsP.ScalaLspMain --daemon "$@"
     ;;
