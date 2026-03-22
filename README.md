@@ -121,6 +121,9 @@ intellij-scala-lsp --setup-claude-code-lsp
 # VS Code
 intellij-scala-lsp --setup-vscode
 
+# Zed
+intellij-scala-lsp --setup-zed
+
 # Neovim (manual config)
 # cmd = { "intellij-scala-lsp" }
 ```
