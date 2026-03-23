@@ -181,7 +181,7 @@ class ScalaLspServer(
     val token = "indexing"
     val createParams = WorkDoneProgressCreateParams()
     createParams.setToken(token)
-    try client.createProgress(createParams).get()
+    try client.createProgress(createParams).get(5, java.util.concurrent.TimeUnit.SECONDS)
     catch case _: Exception => ()
 
     val begin = WorkDoneProgressBegin()

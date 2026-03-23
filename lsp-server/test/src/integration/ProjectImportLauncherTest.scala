@@ -2,8 +2,9 @@ package org.jetbrains.scalalsP.integration
 
 import org.junit.Test
 import org.junit.Assert.*
-import java.nio.file.{Files, Path}
-import java.util.Comparator
+import java.nio.file.{Files, FileVisitResult, Path, SimpleFileVisitor}
+import java.nio.file.attribute.BasicFileAttributes
+import java.io.IOException
 
 /**
  * Tests for the --import flag in the launcher script.
@@ -34,17 +35,38 @@ class ProjectImportLauncherTest:
     val process = pb.start()
     val stdout = new String(process.getInputStream.readAllBytes())
     val stderr = new String(process.getErrorStream.readAllBytes())
-    val exitCode = process.waitFor()
+    // Timeout to avoid hanging if the script spawns long-running children
+    val finished = process.waitFor(30, java.util.concurrent.TimeUnit.SECONDS)
+    if !finished then process.destroyForcibly()
+    val exitCode = if finished then process.exitValue() else 1
     (exitCode, stdout, stderr)
 
   /** Check if text appears in stdout or stderr (the script uses both) */
   private def outputContains(stdout: String, stderr: String, text: String): Boolean =
     stdout.contains(text) || stderr.contains(text)
 
-  /** Recursively delete a directory (the launcher may create subdirs like project/, target/) */
+  /** Recursively delete a directory (the launcher may create subdirs like project/, target/).
+    * Uses walkFileTree + retry to handle races where the launched process is still writing files. */
   private def deleteRecursively(dir: Path): Unit =
-    if Files.exists(dir) then
-      Files.walk(dir).sorted(Comparator.reverseOrder()).forEach(Files.deleteIfExists(_))
+    if !Files.exists(dir) then return
+    // Retry up to 3 times — the launched script process may still be writing files
+    for attempt <- 1 to 3 do
+      try
+        Files.walkFileTree(dir, new SimpleFileVisitor[Path]:
+          override def visitFile(file: Path, attrs: BasicFileAttributes): FileVisitResult =
+            Files.deleteIfExists(file)
+            FileVisitResult.CONTINUE
+          override def visitFileFailed(file: Path, exc: IOException): FileVisitResult =
+            FileVisitResult.CONTINUE // skip files that vanished mid-walk
+          override def postVisitDirectory(d: Path, exc: IOException): FileVisitResult =
+            try Files.deleteIfExists(d)
+            catch case _: IOException => () // directory may not be empty yet
+            FileVisitResult.CONTINUE
+        )
+        if !Files.exists(dir) then return
+        Thread.sleep(200) // brief pause before retry
+      catch case _: IOException =>
+        Thread.sleep(200)
 
   @Test def testMissingPathArgument(): Unit =
     val (exitCode, stdout, stderr) = runImport()
