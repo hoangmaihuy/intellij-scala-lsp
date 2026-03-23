@@ -11,6 +11,7 @@ import org.eclipse.lsp4j.*
 import org.eclipse.lsp4j.services.LanguageClient
 
 import java.util.Collection as JCollection
+import java.util.concurrent.{Executors, ScheduledExecutorService, ScheduledFuture, TimeUnit}
 import scala.jdk.CollectionConverters.*
 
 class DiagnosticsProvider(projectManager: IntellijProjectManager):
@@ -18,6 +19,15 @@ class DiagnosticsProvider(projectManager: IntellijProjectManager):
   import scala.compiletime.uninitialized
   private var client: LanguageClient = uninitialized
   private val openFiles = scala.collection.concurrent.TrieMap[String, Boolean]()
+
+  // Debounced analysis scheduler: IntelliJ's daemon code analyzer only runs on files
+  // open in IntelliJ's own editor (FileEditor). LSP-opened files have no FileEditor,
+  // so we must explicitly run analysis passes and publish diagnostics.
+  private val analysisExecutor: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor: r =>
+    val t = new Thread(r, "lsp-diagnostics-analyzer")
+    t.setDaemon(true)
+    t
+  private val pendingAnalysis = scala.collection.concurrent.TrieMap[String, ScheduledFuture[?]]()
 
   def connect(client: LanguageClient): Unit =
     this.client = client
@@ -41,11 +51,39 @@ class DiagnosticsProvider(projectManager: IntellijProjectManager):
 
   def trackOpen(uri: String): Unit =
     openFiles.put(uri, true)
+    scheduleAnalysis(uri, delayMs = 100) // Analyze shortly after open
 
   def trackClose(uri: String): Unit =
     openFiles.remove(uri)
+    cancelPendingAnalysis(uri)
     if client != null then
       client.publishDiagnostics(new PublishDiagnosticsParams(uri, java.util.Collections.emptyList()))
+
+  /** Schedule debounced analysis for a file. Subsequent calls within the delay window
+    * cancel the previous scheduled run, ensuring rapid edits don't overwhelm the analyzer. */
+  def scheduleAnalysis(uri: String, delayMs: Long = 1000): Unit =
+    if client == null || !openFiles.contains(uri) then return
+    cancelPendingAnalysis(uri)
+    val future = analysisExecutor.schedule(
+      (() => runAnalysisAndPublish(uri)): Runnable,
+      delayMs,
+      TimeUnit.MILLISECONDS
+    )
+    pendingAnalysis.put(uri, future)
+
+  private def cancelPendingAnalysis(uri: String): Unit =
+    pendingAnalysis.remove(uri).foreach(_.cancel(false))
+
+  /** Run analysis passes and publish results to the client. */
+  private def runAnalysisAndPublish(uri: String): Unit =
+    if client == null || !openFiles.contains(uri) then return
+    try
+      val diagnostics = runAnalysisAndCollect(uri)
+      val params = new PublishDiagnosticsParams(uri, diagnostics.asJava)
+      client.publishDiagnostics(params)
+    catch
+      case e: Exception =>
+        System.err.println(s"[DiagnosticsProvider] Failed to analyze and publish for $uri: ${e.getMessage}")
 
   def publishDiagnostics(uri: String): Unit =
     if client == null then return
