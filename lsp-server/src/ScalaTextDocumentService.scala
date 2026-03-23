@@ -61,6 +61,7 @@ class ScalaTextDocumentService(projectManager: IntellijProjectManager, val diagn
     val changes = params.getContentChanges.asScala.toSeq
     changes.headOption.foreach: change =>
       documentSync.didChange(uri, change.getText)
+    diagnosticsProvider.scheduleAnalysis(uri) // debounced, 1s delay
 
   override def didClose(params: DidCloseTextDocumentParams): Unit =
     val uri = params.getTextDocument.getUri
@@ -68,7 +69,9 @@ class ScalaTextDocumentService(projectManager: IntellijProjectManager, val diagn
     diagnosticsProvider.trackClose(uri)
 
   override def didSave(params: DidSaveTextDocumentParams): Unit =
-    documentSync.didSave(params.getTextDocument.getUri)
+    val uri = params.getTextDocument.getUri
+    documentSync.didSave(uri)
+    diagnosticsProvider.scheduleAnalysis(uri, delayMs = 100) // analyze promptly on save
 
   // --- Navigation ---
 
