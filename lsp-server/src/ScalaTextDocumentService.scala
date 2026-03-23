@@ -6,7 +6,7 @@ import org.eclipse.lsp4j.services.{LanguageClient, TextDocumentService}
 import org.jetbrains.scalalsP.intellij.*
 
 import java.util
-import java.util.concurrent.CompletableFuture
+import java.util.concurrent.{CompletableFuture, ExecutorService, Executors}
 import scala.jdk.CollectionConverters.*
 
 // Handles all textDocument LSP requests by delegating to IntelliJ-backed providers.
@@ -14,6 +14,18 @@ class ScalaTextDocumentService(projectManager: IntellijProjectManager, val diagn
 
   import scala.compiletime.uninitialized
   private var client: LanguageClient = uninitialized
+
+  // Dedicated thread pool for LSP request handlers. Using the common ForkJoinPool causes deadlocks
+  // when all threads block in smartReadAction (waiting for smart mode) or invokeAndWait (waiting for EDT).
+  // A cached pool grows as needed and reclaims idle threads, preventing thread starvation.
+  private val lspExecutor: ExecutorService = Executors.newCachedThreadPool: r =>
+    val t = Thread(r, "lsp-request-handler")
+    t.setDaemon(true)
+    t
+  /** Run a supplier on the dedicated LSP executor, returning a CompletableFuture. */
+  private def supplyAsync[T](f: => T): CompletableFuture[T] =
+    CompletableFuture.supplyAsync((() => f): java.util.function.Supplier[T], lspExecutor)
+
   private val documentSync = DocumentSyncManager(projectManager)
   private val definitionProvider = DefinitionProvider(projectManager)
   private val referencesProvider = ReferencesProvider(projectManager)
@@ -76,7 +88,7 @@ class ScalaTextDocumentService(projectManager: IntellijProjectManager, val diagn
   // --- Navigation ---
 
   override def definition(params: DefinitionParams): CompletableFuture[LspEither[util.List[? <: Location], util.List[? <: LocationLink]]] =
-    CompletableFuture.supplyAsync: () =>
+    supplyAsync:
       val locations = definitionOrReferencesProvider.getDefinitionOrReferences(
         params.getTextDocument.getUri,
         params.getPosition
@@ -84,7 +96,7 @@ class ScalaTextDocumentService(projectManager: IntellijProjectManager, val diagn
       LspEither.forLeft(locations.asJava)
 
   override def references(params: ReferenceParams): CompletableFuture[util.List[? <: Location]] =
-    CompletableFuture.supplyAsync: () =>
+    supplyAsync:
       referencesProvider.findReferences(
         params.getTextDocument.getUri,
         params.getPosition,
@@ -92,14 +104,14 @@ class ScalaTextDocumentService(projectManager: IntellijProjectManager, val diagn
       ).asJava
 
   override def hover(params: HoverParams): CompletableFuture[Hover] =
-    CompletableFuture.supplyAsync: () =>
+    supplyAsync:
       hoverProvider.getHover(
         params.getTextDocument.getUri,
         params.getPosition
       ).orNull
 
   override def typeDefinition(params: TypeDefinitionParams): CompletableFuture[LspEither[util.List[? <: Location], util.List[? <: LocationLink]]] =
-    CompletableFuture.supplyAsync: () =>
+    supplyAsync:
       val locations = typeDefinitionProvider.getTypeDefinition(
         params.getTextDocument.getUri,
         params.getPosition
@@ -107,7 +119,7 @@ class ScalaTextDocumentService(projectManager: IntellijProjectManager, val diagn
       LspEither.forLeft(locations.asJava)
 
   override def implementation(params: ImplementationParams): CompletableFuture[LspEither[util.List[? <: Location], util.List[? <: LocationLink]]] =
-    CompletableFuture.supplyAsync: () =>
+    supplyAsync:
       val locations = implementationProvider.getImplementations(
         params.getTextDocument.getUri,
         params.getPosition
@@ -115,54 +127,54 @@ class ScalaTextDocumentService(projectManager: IntellijProjectManager, val diagn
       LspEither.forLeft(locations.asJava)
 
   override def documentSymbol(params: DocumentSymbolParams): CompletableFuture[util.List[LspEither[SymbolInformation, DocumentSymbol]]] =
-    CompletableFuture.supplyAsync: () =>
+    supplyAsync:
       symbolProvider.documentSymbols(params.getTextDocument.getUri)
         .map(ds => LspEither.forRight[SymbolInformation, DocumentSymbol](ds))
         .asJava
 
   override def foldingRange(params: FoldingRangeRequestParams): CompletableFuture[util.List[FoldingRange]] =
-    CompletableFuture.supplyAsync: () =>
+    supplyAsync:
       foldingRangeProvider.getFoldingRanges(params.getTextDocument.getUri).asJava
 
   override def selectionRange(params: SelectionRangeParams): CompletableFuture[util.List[SelectionRange]] =
-    CompletableFuture.supplyAsync: () =>
+    supplyAsync:
       val positions = params.getPositions.asScala.toSeq
       selectionRangeProvider.getSelectionRanges(params.getTextDocument.getUri, positions).asJava
 
   // --- Call Hierarchy ---
 
   override def prepareCallHierarchy(params: CallHierarchyPrepareParams): CompletableFuture[util.List[CallHierarchyItem]] =
-    CompletableFuture.supplyAsync: () =>
+    supplyAsync:
       callHierarchyProvider.prepare(
         params.getTextDocument.getUri,
         params.getPosition
       ).asJava
 
   override def callHierarchyIncomingCalls(params: CallHierarchyIncomingCallsParams): CompletableFuture[util.List[CallHierarchyIncomingCall]] =
-    CompletableFuture.supplyAsync: () =>
+    supplyAsync:
       callHierarchyProvider.incomingCalls(params.getItem).asJava
 
   override def callHierarchyOutgoingCalls(params: CallHierarchyOutgoingCallsParams): CompletableFuture[util.List[CallHierarchyOutgoingCall]] =
-    CompletableFuture.supplyAsync: () =>
+    supplyAsync:
       callHierarchyProvider.outgoingCalls(params.getItem).asJava
 
   // --- Inlay Hints ---
 
   override def inlayHint(params: InlayHintParams): CompletableFuture[util.List[InlayHint]] =
-    CompletableFuture.supplyAsync: () =>
+    supplyAsync:
       inlayHintProvider.getInlayHints(
         params.getTextDocument.getUri,
         params.getRange
       ).asJava
 
   override def resolveInlayHint(hint: InlayHint): CompletableFuture[InlayHint] =
-    CompletableFuture.supplyAsync: () =>
+    supplyAsync:
       inlayHintProvider.resolveInlayHint(hint)
 
   // --- Completion ---
 
   override def completion(params: CompletionParams): CompletableFuture[LspEither[util.List[CompletionItem], CompletionList]] =
-    CompletableFuture.supplyAsync: () =>
+    supplyAsync:
       val items = completionProvider.getCompletions(
         params.getTextDocument.getUri,
         params.getPosition
@@ -170,13 +182,13 @@ class ScalaTextDocumentService(projectManager: IntellijProjectManager, val diagn
       LspEither.forLeft(items.asJava)
 
   override def resolveCompletionItem(unresolved: CompletionItem): CompletableFuture[CompletionItem] =
-    CompletableFuture.supplyAsync: () =>
+    supplyAsync:
       completionProvider.resolveCompletion(unresolved)
 
   // --- Signature Help ---
 
   override def signatureHelp(params: SignatureHelpParams): CompletableFuture[SignatureHelp] =
-    CompletableFuture.supplyAsync: () =>
+    supplyAsync:
       signatureHelpProvider.getSignatureHelp(
         params.getTextDocument.getUri,
         params.getPosition
@@ -185,7 +197,7 @@ class ScalaTextDocumentService(projectManager: IntellijProjectManager, val diagn
   // --- Code Actions ---
 
   override def codeAction(params: CodeActionParams): CompletableFuture[util.List[LspEither[Command, CodeAction]]] =
-    CompletableFuture.supplyAsync: () =>
+    supplyAsync:
       codeActionProvider.getCodeActions(
         params.getTextDocument.getUri,
         params.getRange,
@@ -193,13 +205,13 @@ class ScalaTextDocumentService(projectManager: IntellijProjectManager, val diagn
       ).map(ca => LspEither.forRight[Command, CodeAction](ca)).asJava
 
   override def resolveCodeAction(unresolved: CodeAction): CompletableFuture[CodeAction] =
-    CompletableFuture.supplyAsync: () =>
+    supplyAsync:
       codeActionProvider.resolveCodeAction(unresolved)
 
   // --- Rename ---
 
   override def prepareRename(params: PrepareRenameParams): CompletableFuture[LspEither3[Range, PrepareRenameResult, PrepareRenameDefaultBehavior]] =
-    CompletableFuture.supplyAsync: () =>
+    supplyAsync:
       val result = renameProvider.prepareRename(
         params.getTextDocument.getUri,
         params.getPosition
@@ -208,7 +220,7 @@ class ScalaTextDocumentService(projectManager: IntellijProjectManager, val diagn
       else null
 
   override def rename(params: RenameParams): CompletableFuture[WorkspaceEdit] =
-    CompletableFuture.supplyAsync: () =>
+    supplyAsync:
       renameProvider.rename(
         params.getTextDocument.getUri,
         params.getPosition,
@@ -218,35 +230,35 @@ class ScalaTextDocumentService(projectManager: IntellijProjectManager, val diagn
   // --- Type Hierarchy ---
 
   override def prepareTypeHierarchy(params: TypeHierarchyPrepareParams): CompletableFuture[util.List[TypeHierarchyItem]] =
-    CompletableFuture.supplyAsync: () =>
+    supplyAsync:
       typeHierarchyProvider.prepare(
         params.getTextDocument.getUri,
         params.getPosition
       ).asJava
 
   override def typeHierarchySupertypes(params: TypeHierarchySupertypesParams): CompletableFuture[util.List[TypeHierarchyItem]] =
-    CompletableFuture.supplyAsync: () =>
+    supplyAsync:
       typeHierarchyProvider.supertypes(params.getItem).asJava
 
   override def typeHierarchySubtypes(params: TypeHierarchySubtypesParams): CompletableFuture[util.List[TypeHierarchyItem]] =
-    CompletableFuture.supplyAsync: () =>
+    supplyAsync:
       typeHierarchyProvider.subtypes(params.getItem).asJava
 
   // --- Formatting ---
 
   override def formatting(params: DocumentFormattingParams): CompletableFuture[util.List[? <: TextEdit]] =
-    CompletableFuture.supplyAsync: () =>
+    supplyAsync:
       formattingProvider.getFormatting(params.getTextDocument.getUri).asJava
 
   override def rangeFormatting(params: DocumentRangeFormattingParams): CompletableFuture[util.List[? <: TextEdit]] =
-    CompletableFuture.supplyAsync: () =>
+    supplyAsync:
       formattingProvider.getRangeFormatting(
         params.getTextDocument.getUri,
         params.getRange
       ).asJava
 
   override def onTypeFormatting(params: DocumentOnTypeFormattingParams): CompletableFuture[util.List[? <: TextEdit]] =
-    CompletableFuture.supplyAsync: () =>
+    supplyAsync:
       onTypeFormattingProvider.onTypeFormatting(
         params.getTextDocument.getUri,
         params.getPosition,
@@ -256,17 +268,17 @@ class ScalaTextDocumentService(projectManager: IntellijProjectManager, val diagn
   // --- Document Links ---
 
   override def documentLink(params: DocumentLinkParams): CompletableFuture[util.List[DocumentLink]] =
-    CompletableFuture.supplyAsync: () =>
+    supplyAsync:
       documentLinkProvider.getDocumentLinks(params.getTextDocument.getUri).asJava
 
   // --- Semantic Tokens ---
 
   override def semanticTokensFull(params: SemanticTokensParams): CompletableFuture[SemanticTokens] =
-    CompletableFuture.supplyAsync: () =>
+    supplyAsync:
       semanticTokensProvider.getSemanticTokensFull(params.getTextDocument.getUri)
 
   override def semanticTokensRange(params: SemanticTokensRangeParams): CompletableFuture[SemanticTokens] =
-    CompletableFuture.supplyAsync: () =>
+    supplyAsync:
       semanticTokensProvider.getSemanticTokensRange(
         params.getTextDocument.getUri,
         params.getRange
@@ -275,7 +287,7 @@ class ScalaTextDocumentService(projectManager: IntellijProjectManager, val diagn
   // --- Document Highlights ---
 
   override def documentHighlight(params: DocumentHighlightParams): CompletableFuture[util.List[? <: DocumentHighlight]] =
-    CompletableFuture.supplyAsync: () =>
+    supplyAsync:
       documentHighlightProvider.getDocumentHighlights(
         params.getTextDocument.getUri,
         params.getPosition
@@ -286,9 +298,9 @@ class ScalaTextDocumentService(projectManager: IntellijProjectManager, val diagn
   // --- Code Lens ---
 
   override def codeLens(params: CodeLensParams): CompletableFuture[util.List[? <: CodeLens]] =
-    CompletableFuture.supplyAsync: () =>
+    supplyAsync:
       codeLensProvider.getCodeLenses(params.getTextDocument.getUri).asJava
 
   override def resolveCodeLens(codeLens: CodeLens): CompletableFuture[CodeLens] =
-    CompletableFuture.supplyAsync: () =>
+    supplyAsync:
       codeLensProvider.resolveCodeLens(codeLens)

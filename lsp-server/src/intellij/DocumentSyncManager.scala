@@ -30,8 +30,12 @@ class DocumentSyncManager(projectManager: IntellijProjectManager):
 
   private def reloadFromDisk(uri: String): Unit =
     projectManager.findVirtualFile(uri).foreach: vf =>
-      ApplicationManager.getApplication.invokeAndWait: () =>
-        // Refresh VFS to see latest disk content (safe because we never dirty the document)
+      // Use invokeLater instead of invokeAndWait to avoid blocking lsp4j message threads.
+      // invokeAndWait can deadlock when EDT is busy with a write action triggered by another
+      // LSP request (e.g., formatting). Async dispatch is safe because disk is always the
+      // source of truth — if a subsequent request sees slightly stale data, the next
+      // notification will trigger another reload.
+      ApplicationManager.getApplication.invokeLater: () =>
         vf.refresh(false, false)
         val fdm = FileDocumentManager.getInstance()
         val document = fdm.getDocument(vf)

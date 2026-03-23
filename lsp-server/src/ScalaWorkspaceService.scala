@@ -10,7 +10,7 @@ import org.eclipse.lsp4j.services.{LanguageClient, WorkspaceService}
 import org.jetbrains.scalalsP.intellij.{DiagnosticsProvider, IntellijProjectManager, PsiUtils, ScalaTypes, SymbolProvider}
 
 import java.util
-import java.util.concurrent.CompletableFuture
+import java.util.concurrent.{CompletableFuture, ExecutorService, Executors}
 import scala.jdk.CollectionConverters.*
 
 // Handles workspace LSP requests.
@@ -20,11 +20,20 @@ class ScalaWorkspaceService(projectManager: IntellijProjectManager, diagnosticsP
   private var client: LanguageClient = uninitialized
   private val symbolProvider = SymbolProvider(projectManager)
 
+  // Dedicated thread pool — same rationale as ScalaTextDocumentService.lspExecutor
+  private val lspExecutor: ExecutorService = Executors.newCachedThreadPool: r =>
+    val t = Thread(r, "lsp-workspace-handler")
+    t.setDaemon(true)
+    t
+
+  private def supplyAsync[T](f: => T): CompletableFuture[T] =
+    CompletableFuture.supplyAsync((() => f): java.util.function.Supplier[T], lspExecutor)
+
   def connect(client: LanguageClient): Unit =
     this.client = client
 
   override def symbol(params: WorkspaceSymbolParams): CompletableFuture[org.eclipse.lsp4j.jsonrpc.messages.Either[util.List[? <: SymbolInformation], util.List[? <: WorkspaceSymbol]]] =
-    CompletableFuture.supplyAsync: () =>
+    supplyAsync:
       val symbols = symbolProvider.workspaceSymbols(params.getQuery)
       org.eclipse.lsp4j.jsonrpc.messages.Either.forLeft(symbols.asJava)
 
@@ -45,7 +54,7 @@ class ScalaWorkspaceService(projectManager: IntellijProjectManager, diagnosticsP
             case s: String => s
             case gson: com.google.gson.JsonPrimitive => gson.getAsString
             case other => other.toString.replaceAll("\"", "")
-          return CompletableFuture.supplyAsync(() => diagnosticsProvider.runAnalysisAndCollect(uri).asJava)
+          return supplyAsync(diagnosticsProvider.runAnalysisAndCollect(uri).asJava)
         null
       case "scala.gotoLocation" =>
         if client != null && args != null && args.size() >= 3 then
@@ -55,7 +64,8 @@ class ScalaWorkspaceService(projectManager: IntellijProjectManager, diagnosticsP
           val showParams = ShowDocumentParams(targetUri)
           showParams.setSelection(Range(Position(targetLine, targetChar), Position(targetLine, targetChar)))
           showParams.setTakeFocus(true)
-          client.showDocument(showParams).get()
+          try client.showDocument(showParams).get(10, java.util.concurrent.TimeUnit.SECONDS)
+          catch case _: Exception => ()
         null
       case "scala.referencesWithTypes" =>
         import com.google.gson.{JsonArray, JsonObject}
@@ -155,7 +165,7 @@ class ScalaWorkspaceService(projectManager: IntellijProjectManager, diagnosticsP
         projectManager.closeProject(path)
 
   override def willRenameFiles(params: RenameFilesParams): CompletableFuture[WorkspaceEdit] =
-    CompletableFuture.supplyAsync: () =>
+    supplyAsync:
       try
         val allDocChanges = new java.util.ArrayList[org.eclipse.lsp4j.jsonrpc.messages.Either[TextDocumentEdit, ResourceOperation]]()
 
