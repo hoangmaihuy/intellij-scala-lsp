@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { LspClient } from '../lsp-client.js';
 import { uriToPath } from '../utils.js';
+import { withToolLogging } from '../tool-logging.js';
 import { SymbolInformation, SymbolKind, WorkspaceSymbolParams } from 'vscode-languageserver-protocol';
 
 export function registerWorkspaceTools(
@@ -12,7 +13,7 @@ export function registerWorkspaceTools(
     'workspace_symbols',
     'Search for symbols (classes, methods, vals, etc.) across the entire project.',
     { query: z.string().describe('Search query (e.g. "MyClass", "process")') },
-    async ({ query }) => {
+    withToolLogging('workspace_symbols', async ({ query }) => {
       const result = await lsp.request<SymbolInformation[]>(
         'workspace/symbol',
         { query } as WorkspaceSymbolParams,
@@ -42,6 +43,6 @@ export function registerWorkspaceTools(
       }
 
       return { content: [{ type: 'text' as const, text: output.join('\n') }] };
-    },
+    }),
   );
 }

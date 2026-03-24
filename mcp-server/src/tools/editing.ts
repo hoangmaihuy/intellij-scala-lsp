@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { LspClient } from '../lsp-client.js';
 import { FileManager } from '../file-manager.js';
 import { toPosition, uriToPath } from '../utils.js';
+import { withToolLogging } from '../tool-logging.js';
 import { applyWorkspaceEdit } from '../workspace-edit.js';
 import {
   RenameParams, WorkspaceEdit, CodeActionParams, CodeAction, Command,
@@ -24,7 +25,7 @@ export function registerEditingTools(
       column: z.number().describe('Column number (1-indexed)'),
       newName: z.string().describe('New name for the symbol'),
     },
-    async ({ filePath, line, column, newName }) => {
+    withToolLogging('rename_symbol', async ({ filePath, line, column, newName }) => {
       const uri = await fileManager.ensureOpen(filePath);
       const edit = await lsp.request<WorkspaceEdit>('textDocument/rename', {
         textDocument: { uri },
@@ -60,7 +61,7 @@ export function registerEditingTools(
 
       const fileList = [...files].map(f => `  ${f}`).join('\n');
       return { content: [{ type: 'text' as const, text: `Renamed to '${newName}': ${changeCount} occurrence(s) in ${files.size} file(s):\n${fileList}` }] };
-    },
+    }),
   );
 
   mcp.tool(
@@ -73,7 +74,7 @@ export function registerEditingTools(
       endLine: z.number().describe('End line (1-indexed)'),
       endColumn: z.number().describe('End column (1-indexed)'),
     },
-    async ({ filePath, startLine, startColumn, endLine, endColumn }) => {
+    withToolLogging('code_actions', async ({ filePath, startLine, startColumn, endLine, endColumn }) => {
       const uri = await fileManager.ensureOpen(filePath);
       const result = await lsp.request<(CodeAction | Command)[]>('textDocument/codeAction', {
         textDocument: { uri },
@@ -100,7 +101,7 @@ export function registerEditingTools(
       output.push('\nUse apply_code_action with the index number to apply.');
 
       return { content: [{ type: 'text' as const, text: output.join('\n') }] };
-    },
+    }),
   );
 
   mcp.tool(
@@ -110,7 +111,7 @@ export function registerEditingTools(
       filePath: z.string().describe('Absolute path to the file (must match the file from code_actions)'),
       actionIndex: z.number().describe('Index of the action to apply (1-indexed, from code_actions output)'),
     },
-    async ({ filePath, actionIndex }) => {
+    withToolLogging('apply_code_action', async ({ filePath, actionIndex }) => {
       if (cachedCodeActions.length === 0) {
         return { content: [{ type: 'text' as const, text: 'No cached code actions. Call code_actions first.' }] };
       }
@@ -135,7 +136,7 @@ export function registerEditingTools(
       }
 
       return { content: [{ type: 'text' as const, text: `Applied: ${action.title}\nModified ${modifiedUris.length} file(s): ${modifiedUris.map(uriToPath).join(', ')}` }] };
-    },
+    }),
   );
 
 }
