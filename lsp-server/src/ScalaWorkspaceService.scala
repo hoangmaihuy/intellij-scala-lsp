@@ -29,16 +29,38 @@ class ScalaWorkspaceService(projectManager: IntellijProjectManager, diagnosticsP
   private def supplyAsync[T](f: => T): CompletableFuture[T] =
     CompletableFuture.supplyAsync((() => f): java.util.function.Supplier[T], lspExecutor)
 
+  private val requestCounter = new java.util.concurrent.atomic.AtomicLong(0)
+
+  private def logged[T](method: String, params: => String)(f: => CompletableFuture[T]): CompletableFuture[T] =
+    val id = requestCounter.incrementAndGet()
+    val start = System.currentTimeMillis()
+    System.err.println(s"[LSP] --> $method #$id $params")
+    f.whenComplete: (_, error) =>
+      val elapsed = System.currentTimeMillis() - start
+      if error != null then
+        val msg = Option(error.getCause).map(_.getMessage).getOrElse(error.getMessage)
+        System.err.println(s"[LSP] <-- $method #$id ERROR ${elapsed}ms: $msg")
+      else
+        System.err.println(s"[LSP] <-- $method #$id ${elapsed}ms")
+
+  private def shortUri(uri: String): String =
+    val idx = uri.lastIndexOf('/')
+    if idx >= 0 then uri.substring(idx + 1) else uri
+
   def connect(client: LanguageClient): Unit =
     this.client = client
 
   override def symbol(params: WorkspaceSymbolParams): CompletableFuture[org.eclipse.lsp4j.jsonrpc.messages.Either[util.List[? <: SymbolInformation], util.List[? <: WorkspaceSymbol]]] =
-    supplyAsync:
-      val symbols = symbolProvider.workspaceSymbols(params.getQuery)
-      org.eclipse.lsp4j.jsonrpc.messages.Either.forLeft(symbols.asJava)
+    logged("workspace/symbol", s"query=${params.getQuery}"):
+      supplyAsync:
+        val symbols = symbolProvider.workspaceSymbols(params.getQuery)
+        org.eclipse.lsp4j.jsonrpc.messages.Either.forLeft(symbols.asJava)
 
   override def executeCommand(params: ExecuteCommandParams): CompletableFuture[AnyRef] =
     val command = params.getCommand
+    System.err.println(s"[LSP] --> workspace/executeCommand $command")
+    val start = System.currentTimeMillis()
+    def logDone(): Unit = System.err.println(s"[LSP] <-- workspace/executeCommand $command ${System.currentTimeMillis() - start}ms")
     val args = params.getArguments
     val result: AnyRef = command match
       case "scala.organizeImports" =>
@@ -54,7 +76,9 @@ class ScalaWorkspaceService(projectManager: IntellijProjectManager, diagnosticsP
             case s: String => s
             case gson: com.google.gson.JsonPrimitive => gson.getAsString
             case other => other.toString.replaceAll("\"", "")
-          return supplyAsync(diagnosticsProvider.runAnalysisAndCollect(uri).asJava)
+          val future: CompletableFuture[AnyRef] = supplyAsync(diagnosticsProvider.runAnalysisAndCollect(uri).asJava)
+          future.whenComplete((_, _) => logDone())
+          return future
         null
       case "scala.gotoLocation" =>
         if client != null && args != null && args.size() >= 3 then
@@ -87,10 +111,12 @@ class ScalaWorkspaceService(projectManager: IntellijProjectManager, diagnosticsP
           obj.add("location", locObj)
           obj.addProperty("usageType", r.usageType)
           arr.add(obj)
+        logDone()
         return CompletableFuture.completedFuture(arr)
       case _ =>
         System.err.println(s"[WorkspaceService] Unknown command: $command")
         null
+    logDone()
     CompletableFuture.completedFuture(result)
 
   private def executeOnFile(args: java.util.List[AnyRef])(action: com.intellij.psi.PsiFile => Unit): Null =
@@ -149,6 +175,9 @@ class ScalaWorkspaceService(projectManager: IntellijProjectManager, diagnosticsP
   override def didChangeWorkspaceFolders(params: DidChangeWorkspaceFoldersParams): Unit =
     val event = params.getEvent
     if event == null then return
+    val added = Option(event.getAdded).map(_.asScala.size).getOrElse(0)
+    val removed = Option(event.getRemoved).map(_.asScala.size).getOrElse(0)
+    System.err.println(s"[LSP] notify workspace/didChangeWorkspaceFolders +$added -$removed")
     if event.getAdded != null then
       event.getAdded.asScala.foreach: folder =>
         val uri = folder.getUri
@@ -165,48 +194,50 @@ class ScalaWorkspaceService(projectManager: IntellijProjectManager, diagnosticsP
         projectManager.closeProject(path)
 
   override def willRenameFiles(params: RenameFilesParams): CompletableFuture[WorkspaceEdit] =
-    supplyAsync:
-      try
-        val allDocChanges = new java.util.ArrayList[org.eclipse.lsp4j.jsonrpc.messages.Either[TextDocumentEdit, ResourceOperation]]()
+    val fileNames = params.getFiles.asScala.map(f => shortUri(f.getOldUri) + " -> " + shortUri(f.getNewUri)).mkString(", ")
+    logged("workspace/willRenameFiles", fileNames):
+      supplyAsync:
+        try
+          val allDocChanges = new java.util.ArrayList[org.eclipse.lsp4j.jsonrpc.messages.Either[TextDocumentEdit, ResourceOperation]]()
 
-        params.getFiles.asScala.foreach: fileRename =>
-          val oldUri = fileRename.getOldUri
-          val newUri = fileRename.getNewUri
+          params.getFiles.asScala.foreach: fileRename =>
+            val oldUri = fileRename.getOldUri
+            val newUri = fileRename.getNewUri
 
-          // Only process Scala file renames
-          if oldUri.endsWith(".scala") then
-            val oldFileName = oldUri.substring(oldUri.lastIndexOf('/') + 1).stripSuffix(".scala")
-            val newFileName = newUri.substring(newUri.lastIndexOf('/') + 1).stripSuffix(".scala")
+            // Only process Scala file renames
+            if oldUri.endsWith(".scala") then
+              val oldFileName = oldUri.substring(oldUri.lastIndexOf('/') + 1).stripSuffix(".scala")
+              val newFileName = newUri.substring(newUri.lastIndexOf('/') + 1).stripSuffix(".scala")
 
-            // Find top-level type definitions matching old filename and generate rename edits
-            val edits = projectManager.smartReadAction: () =>
-              (for
-                psiFile <- projectManager.findPsiFile(oldUri)
-                vf <- projectManager.findVirtualFile(oldUri)
-                document <- Option(FileDocumentManager.getInstance().getDocument(vf))
-              yield
-                import com.intellij.psi.PsiNameIdentifierOwner
-                psiFile.getChildren.collect:
-                  case elem: PsiNameIdentifierOwner if ScalaTypes.isTypeDefinition(elem) && elem.getName == oldFileName => elem
-                .flatMap: td =>
-                  Option(td.getNameIdentifier).map: nameId =>
-                    val start = PsiUtils.offsetToPosition(document, nameId.getTextRange.getStartOffset)
-                    val end = PsiUtils.offsetToPosition(document, nameId.getTextRange.getEndOffset)
-                    TextEdit(Range(start, end), newFileName)
-                .toSeq
-              ).getOrElse(Seq.empty)
+              // Find top-level type definitions matching old filename and generate rename edits
+              val edits = projectManager.smartReadAction: () =>
+                (for
+                  psiFile <- projectManager.findPsiFile(oldUri)
+                  vf <- projectManager.findVirtualFile(oldUri)
+                  document <- Option(FileDocumentManager.getInstance().getDocument(vf))
+                yield
+                  import com.intellij.psi.PsiNameIdentifierOwner
+                  psiFile.getChildren.collect:
+                    case elem: PsiNameIdentifierOwner if ScalaTypes.isTypeDefinition(elem) && elem.getName == oldFileName => elem
+                  .flatMap: td =>
+                    Option(td.getNameIdentifier).map: nameId =>
+                      val start = PsiUtils.offsetToPosition(document, nameId.getTextRange.getStartOffset)
+                      val end = PsiUtils.offsetToPosition(document, nameId.getTextRange.getEndOffset)
+                      TextEdit(Range(start, end), newFileName)
+                  .toSeq
+                ).getOrElse(Seq.empty)
 
-            if edits.nonEmpty then
-              val versionedId = VersionedTextDocumentIdentifier(oldUri, null)
-              val docEdit = TextDocumentEdit(versionedId, edits.asJava)
-              allDocChanges.add(org.eclipse.lsp4j.jsonrpc.messages.Either.forLeft(docEdit))
+              if edits.nonEmpty then
+                val versionedId = VersionedTextDocumentIdentifier(oldUri, null)
+                val docEdit = TextDocumentEdit(versionedId, edits.asJava)
+                allDocChanges.add(org.eclipse.lsp4j.jsonrpc.messages.Either.forLeft(docEdit))
 
-        if allDocChanges.isEmpty then WorkspaceEdit()
-        else WorkspaceEdit(allDocChanges)
-      catch
-        case e: Exception =>
-          System.err.println(s"[WorkspaceService] willRenameFiles error: ${e.getMessage}")
-          WorkspaceEdit()
+          if allDocChanges.isEmpty then WorkspaceEdit()
+          else WorkspaceEdit(allDocChanges)
+        catch
+          case e: Exception =>
+            System.err.println(s"[WorkspaceService] willRenameFiles error: ${e.getMessage}")
+            WorkspaceEdit()
 
   override def didChangeConfiguration(params: DidChangeConfigurationParams): Unit =
     System.err.println(s"[WorkspaceService] Configuration changed: ${params.getSettings}")
