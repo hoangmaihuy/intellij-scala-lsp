@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { LspClient } from '../lsp-client.js';
 import { FileManager } from '../file-manager.js';
 import { applyWorkspaceEdit } from '../workspace-edit.js';
+import { withToolLogging } from '../tool-logging.js';
 import { toPosition } from '../utils.js';
 import { DocumentFormattingParams, DocumentRangeFormattingParams, TextEdit, ExecuteCommandParams } from 'vscode-languageserver-protocol';
 
@@ -13,7 +14,7 @@ export function registerFormattingTools(mcp: McpServer, lsp: LspClient, fileMana
       startLine: z.number().optional().describe('Start line (1-indexed, optional)'),
       endLine: z.number().optional().describe('End line (1-indexed, optional)'),
     },
-    async ({ filePath, startLine, endLine }) => {
+    withToolLogging('format', async ({ filePath, startLine, endLine }) => {
       const uri = await fileManager.ensureOpen(filePath);
 
       let edits: TextEdit[];
@@ -39,18 +40,18 @@ export function registerFormattingTools(mcp: McpServer, lsp: LspClient, fileMana
 
       const rangeMsg = startLine !== undefined ? ` lines ${startLine}-${endLine}` : '';
       return { content: [{ type: 'text' as const, text: `Formatted ${filePath}${rangeMsg} (${edits.length} edit(s))` }] };
-    },
+    }),
   );
 
   mcp.tool('organize_imports', 'Remove unused imports and sort remaining imports in a Scala file.',
     { filePath: z.string().describe('Absolute path to the file') },
-    async ({ filePath }) => {
+    withToolLogging('organize_imports', async ({ filePath }) => {
       const uri = await fileManager.ensureOpen(filePath);
       await lsp.request<unknown>('workspace/executeCommand', {
         command: 'scala.organizeImports', arguments: [{ uri }],
       } as ExecuteCommandParams);
       fileManager.notifySaved(uri);
       return { content: [{ type: 'text' as const, text: `Organized imports in ${filePath}` }] };
-    },
+    }),
   );
 }

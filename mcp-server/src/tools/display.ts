@@ -4,6 +4,7 @@ import { LspClient } from '../lsp-client.js';
 import { FileManager } from '../file-manager.js';
 import { SymbolResolver } from '../symbol-resolver.js';
 import { uriToPath, toPosition } from '../utils.js';
+import { withToolLogging } from '../tool-logging.js';
 import {
   HoverParams, Hover, DocumentSymbolParams, DocumentSymbol, SymbolInformation, SymbolKind,
   Location, TypeHierarchyItem, TypeHierarchyPrepareParams,
@@ -27,7 +28,7 @@ export function registerDisplayTools(
       line: z.number().optional().describe('Line number, 1-indexed (use with filePath+column)'),
       column: z.number().optional().describe('Column number, 1-indexed (use with filePath+line)'),
     },
-    async (args) => {
+    withToolLogging('hover', async (args) => {
       // Resolve to URI + position
       let uri: string;
       let position: { line: number; character: number };
@@ -115,7 +116,7 @@ export function registerDisplayTools(
       }
 
       return { content: [{ type: 'text' as const, text: sections.join('\n\n') }] };
-    },
+    }),
   );
 
   mcp.tool(
@@ -124,7 +125,7 @@ export function registerDisplayTools(
     {
       filePath: z.string().describe('Absolute path to the file'),
     },
-    async ({ filePath }) => {
+    withToolLogging('diagnostics', async ({ filePath }) => {
       const uri = await fileManager.ensureOpen(filePath);
       const diags = await lsp.request<Diagnostic[]>('workspace/executeCommand', {
         command: 'scala.pullDiagnostics',
@@ -152,7 +153,7 @@ export function registerDisplayTools(
       }
 
       return { content: [{ type: 'text' as const, text: output.join('\n') }] };
-    },
+    }),
   );
 
   mcp.tool(
@@ -161,7 +162,7 @@ export function registerDisplayTools(
     {
       filePath: z.string().describe('Absolute path to the file'),
     },
-    async ({ filePath }) => {
+    withToolLogging('document_symbols', async ({ filePath }) => {
       const uri = await fileManager.ensureOpen(filePath);
       const result = await lsp.request<DocumentSymbol[] | SymbolInformation[]>(
         'textDocument/documentSymbol',
@@ -175,7 +176,7 @@ export function registerDisplayTools(
       const output: string[] = [`Symbols in ${filePath}:\n`];
       formatSymbols(result, output, 0);
       return { content: [{ type: 'text' as const, text: output.join('\n') }] };
-    },
+    }),
   );
 
 }

@@ -4,6 +4,7 @@ import { LspClient } from '../lsp-client.js';
 import { FileManager } from '../file-manager.js';
 import { SymbolResolver } from '../symbol-resolver.js';
 import { uriToPath, addLineNumbers, toPosition } from '../utils.js';
+import { withToolLogging } from '../tool-logging.js';
 import * as fs from 'fs';
 import {
   Location, DocumentSymbol, SymbolInformation,
@@ -59,7 +60,7 @@ export function registerNavigationTools(
     'definition',
     'Read the source code where a symbol is defined. Returns full implementation with line numbers. Prefer symbolName; use filePath+line+column for external/library symbols or to disambiguate overloaded methods.',
     navigationParams,
-    async (args) => {
+    withToolLogging('definition', async (args) => {
       const targets = await resolveTargets(args, symbolResolver, fileManager);
       if (targets.length === 0) {
         return { content: [{ type: 'text' as const, text: `No symbol found matching '${args.symbolName}'. Try with filePath+line+column instead to resolve from a usage site.` }] };
@@ -123,14 +124,14 @@ export function registerNavigationTools(
       }
 
       return { content: [{ type: 'text' as const, text: results.join('\n\n') }] };
-    },
+    }),
   );
 
   mcp.tool(
     'references',
     'Find all usages of a symbol across the codebase. Returns locations with surrounding context. Prefer symbolName; use filePath+line+column for external/library symbols or to disambiguate overloaded methods.',
     navigationParams,
-    async (args) => {
+    withToolLogging('references', async (args) => {
       const targets = await resolveTargets(args, symbolResolver, fileManager);
       if (targets.length === 0) {
         return { content: [{ type: 'text' as const, text: `No symbol found matching '${args.symbolName}'. Try with filePath+line+column instead.` }] };
@@ -186,14 +187,14 @@ export function registerNavigationTools(
         return { content: [{ type: 'text' as const, text: `No references found for '${args.symbolName || targets[0]?.label}'` }] };
       }
       return { content: [{ type: 'text' as const, text: allRefs.join('\n\n') }] };
-    },
+    }),
   );
 
   mcp.tool(
     'implementations',
     'Find all implementations of a trait, class, or abstract method. Returns source code of each implementation (up to 10 in full). Prefer symbolName; use filePath+line+column for external/library symbols.',
     navigationParams,
-    async (args) => {
+    withToolLogging('implementations', async (args) => {
       const targets = await resolveTargets(args, symbolResolver, fileManager);
       if (targets.length === 0) {
         return { content: [{ type: 'text' as const, text: `No symbol found matching '${args.symbolName}'. Try with filePath+line+column instead.` }] };
@@ -246,7 +247,7 @@ export function registerNavigationTools(
         return { content: [{ type: 'text' as const, text: `No implementations found for '${args.symbolName || targets[0]?.label}'` }] };
       }
       return { content: [{ type: 'text' as const, text: `Found ${allImpls.length} implementation(s):\n\n${allImpls.join('\n\n')}` }] };
-    },
+    }),
   );
 
 }

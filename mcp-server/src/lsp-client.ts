@@ -57,15 +57,24 @@ export class LspClient {
 
   async request<T>(method: string, params?: unknown): Promise<T> {
     const id = this.nextId++;
-    logger.debug(`-> request ${method} id=${id}`);
+    const start = Date.now();
+    logger.debug(`LSP -> ${method} id=${id} ${JSON.stringify(params)}`);
     return new Promise<T>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pendingRequests.delete(id);
         reject(new Error(`Request ${method} (id=${id}) timed out after ${this.requestTimeout}ms`));
       }, this.requestTimeout);
       this.pendingRequests.set(id, {
-        resolve: resolve as (result: unknown) => void,
-        reject,
+        resolve: ((result: unknown) => {
+          const elapsed = Date.now() - start;
+          logger.debug(`LSP <- ${method} id=${id} (${elapsed}ms) ${JSON.stringify(result)}`);
+          resolve(result as T);
+        }) as (result: unknown) => void,
+        reject: ((error: Error) => {
+          const elapsed = Date.now() - start;
+          logger.debug(`LSP <- ${method} id=${id} (${elapsed}ms) ERROR: ${error.message}`);
+          reject(error);
+        }),
         timer,
       });
       this.send({ jsonrpc: '2.0', id, method, params });
@@ -73,7 +82,7 @@ export class LspClient {
   }
 
   notify(method: string, params?: unknown): void {
-    logger.debug(`-> notify ${method}`);
+    logger.debug(`LSP -> ${method} (notification) ${JSON.stringify(params)}`);
     this.send({ jsonrpc: '2.0', method, params });
   }
 
@@ -140,7 +149,6 @@ export class LspClient {
     if (!this.socket) throw new Error('Not connected');
     const json = JSON.stringify(msg);
     const header = `Content-Length: ${Buffer.byteLength(json)}\r\n\r\n`;
-    logger.debug(`-> wire: ${json.substring(0, 200)}`);
     this.socket.write(header + json);
   }
 
@@ -161,7 +169,7 @@ export class LspClient {
       if (this.buffer.length < contentStart + contentLength) break;
       const content = this.buffer.subarray(contentStart, contentStart + contentLength).toString();
       this.buffer = this.buffer.subarray(contentStart + contentLength);
-      logger.debug(`<- wire: ${content.substring(0, 200)}`);
+      logger.debug(`<- wire: ${content}`);
       try {
         this.handleMessage(JSON.parse(content));
       } catch (err) {
