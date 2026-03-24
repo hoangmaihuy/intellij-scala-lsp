@@ -22,6 +22,18 @@ function shortUri(uri) {
   return match ? match[1] : uri;
 }
 
+const MAX_PAYLOAD_BYTES = 10 * 1024; // 10KB
+
+function truncatePayload(obj) {
+  try {
+    const json = JSON.stringify(obj, null, 2);
+    if (json.length <= MAX_PAYLOAD_BYTES) return json;
+    return json.substring(0, MAX_PAYLOAD_BYTES) + `\n... [truncated, ${(json.length / 1024).toFixed(0)}KB total]`;
+  } catch {
+    return "[unserializable]";
+  }
+}
+
 // Middleware that logs requests with timing.
 // vscode-languageclient middleware signature: (params, token, next) => result
 // where `next` is the default handler provided by the framework.
@@ -48,7 +60,7 @@ function summarizeResult(result) {
   }
 }
 
-function createLoggingMiddleware() {
+function createLoggingMiddleware(getVerbose) {
   function wrap(method) {
     return async function (...args) {
       // Last arg is always `next`, params is first, token may be in between
@@ -63,10 +75,17 @@ function createLoggingMiddleware() {
         let summary;
         try { summary = summarizeResult(result); } catch { summary = "?"; }
         log(`${method}${file}${pos} -> ${ms}ms ${summary}`);
+        if (getVerbose()) {
+          log(`  params: ${truncatePayload(params)}`);
+          log(`  result: ${truncatePayload(result)}`);
+        }
         return result;
       } catch (err) {
         const ms = Date.now() - start;
         log(`${method}${file}${pos} -> ERROR ${ms}ms: ${err?.message || err}`);
+        if (getVerbose()) {
+          log(`  params: ${truncatePayload(params)}`);
+        }
         throw err;
       }
     };
@@ -84,6 +103,26 @@ function createLoggingMiddleware() {
     provideDocumentFormattingEdits: wrap("textDocument/formatting"),
     provideRenameEdits: wrap("textDocument/rename"),
     provideCodeActions: wrap("textDocument/codeAction"),
+    didOpen: (data, next) => {
+      log(`textDocument/didOpen [${shortUri(data.textDocument.uri)}]`);
+      return next(data);
+    },
+    didClose: (data, next) => {
+      log(`textDocument/didClose [${shortUri(data.textDocument.uri)}]`);
+      return next(data);
+    },
+    didChange: (data, next) => {
+      log(`textDocument/didChange [${shortUri(data.textDocument.uri)}]`);
+      return next(data);
+    },
+    didSave: (data, next) => {
+      log(`textDocument/didSave [${shortUri(data.textDocument.uri)}]`);
+      return next(data);
+    },
+    handleDiagnostics: (uri, diagnostics, next) => {
+      log(`textDocument/publishDiagnostics [${shortUri(uri.toString())}] ${diagnostics.length} diagnostic(s)`);
+      return next(uri, diagnostics);
+    },
   };
 }
 
@@ -109,6 +148,8 @@ function activate(context) {
   // Use configured launcher, or fall back to 'intellij-scala-lsp' in PATH
   const launcher = config.get("launcher") || "intellij-scala-lsp";
 
+  let verboseLogging = config.get("verboseLogging", false);
+  log(`Verbose logging: ${verboseLogging}`);
   log(`Launcher: ${launcher}`);
 
   const serverOptions = {
@@ -124,7 +165,7 @@ function activate(context) {
       { scheme: "file", pattern: "**/*.sc" },
     ],
     outputChannel: outputChannel,
-    middleware: createLoggingMiddleware(),
+    middleware: createLoggingMiddleware(() => verboseLogging),
   };
 
   client = new LanguageClient(
@@ -168,6 +209,15 @@ function activate(context) {
       setStatus("error", "Scala LSP: Error", `Failed to start: ${err.message}`);
       vscode.window.showErrorMessage(`IntelliJ Scala LSP failed to start: ${err.message}`);
     }
+  );
+
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration("intellijScalaLsp.verboseLogging")) {
+        verboseLogging = vscode.workspace.getConfiguration("intellijScalaLsp").get("verboseLogging", false);
+        log(`Verbose logging ${verboseLogging ? "enabled" : "disabled"}`);
+      }
+    })
   );
 
   context.subscriptions.push(client);
