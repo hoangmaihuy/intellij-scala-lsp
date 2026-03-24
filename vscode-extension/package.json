@@ -26,6 +26,11 @@
           "type": "string",
           "default": "",
           "description": "Path to intellij-scala-lsp launcher (auto-detected from PATH if empty)"
+        },
+        "intellijScalaLsp.verboseLogging": {
+          "type": "boolean",
+          "default": false,
+          "description": "Log full request/response payloads in the output channel (verbose mode)"
         }
       }
     }
