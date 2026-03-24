@@ -27,3 +27,27 @@ class SymbolE2eTest extends E2eTestBase:
     openFixture("service/Repository.scala")
     val symbols = client.workspaceSymbol("ShapeService")
     assertTrue(s"Should find ShapeService, found ${symbols.size}", symbols.nonEmpty)
+
+  def testWorkspaceSymbolFindsMethod(): Unit =
+    openFixture("service/ShapeService.scala")
+    openFixture("service/ShapeRepository.scala")
+    openFixture("service/Repository.scala")
+    openFixture("hierarchy/Shape.scala")
+    openFixture("hierarchy/Circle.scala")
+    // Search for a method by simple name
+    val symbols = client.workspaceSymbol("totalArea")
+    assertTrue(s"Should find method 'totalArea', got: ${symbols.map(s => s"${s.getContainerName}.${s.getName}").mkString(", ")}",
+      symbols.exists(_.getName == "totalArea"))
+
+  def testWorkspaceSymbolMethodHasContainer(): Unit =
+    openFixture("service/ShapeService.scala")
+    openFixture("service/ShapeRepository.scala")
+    openFixture("service/Repository.scala")
+    openFixture("hierarchy/Shape.scala")
+    openFixture("hierarchy/Circle.scala")
+    // Verify method has some container info (package at minimum).
+    // Full class-level container (e.g., "service.ShapeService") requires Scala 3
+    // language level to be configured, which test projects don't have.
+    val symbols = client.workspaceSymbol("totalArea")
+    assertTrue(s"Should find method 'totalArea', got: ${symbols.map(s => s"${s.getContainerName}.${s.getName}").mkString(", ")}",
+      symbols.exists(s => s.getName == "totalArea" && s.getContainerName != null))

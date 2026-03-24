@@ -1,7 +1,7 @@
 package org.jetbrains.scalalsP.intellij
 
 import com.intellij.openapi.fileEditor.FileDocumentManager
-import com.intellij.navigation.{ChooseByNameContributor, ChooseByNameContributorEx, NavigationItem}
+import com.intellij.navigation.{ChooseByNameContributor, ChooseByNameContributorEx, GotoClassContributor, NavigationItem}
 import com.intellij.psi.*
 import com.intellij.openapi.roots.ProjectFileIndex
 import com.intellij.psi.search.GlobalSearchScope
@@ -144,10 +144,10 @@ class SymbolProvider(projectManager: IntellijProjectManager):
                       val unwrapped = PsiUtils.unwrapSyntheticElement(psi)
                       unwrapped match
                         case named: PsiNamedElement if isSignificantElement(named) =>
+                          val container = getContainerName(named, item, contributor)
                           // If query was FQN, verify the element's FQN matches
                           val fqnMatch = fqnPrefix match
                             case Some(prefix) =>
-                              val container = getContainerName(named)
                               container != null && (
                                 container == prefix ||
                                 container.endsWith("." + prefix) ||
@@ -157,7 +157,7 @@ class SymbolProvider(projectManager: IntellijProjectManager):
 
                           if fqnMatch then
                             scoreMatch(named.getName, simpleName).foreach: relevance =>
-                              val containerName = getContainerName(unwrapped)
+                              val containerName = if container != null then container else getContainerName(unwrapped, item, contributor)
                               val rawQualKey = Option(containerName).filter(_.nonEmpty).map(c => s"$c.${named.getName}").getOrElse(named.getName)
                               val qualKey = if rawQualKey.endsWith("$") then rawQualKey.stripSuffix("$") else rawQualKey
                               val existing = seen.get(qualKey)
@@ -189,9 +189,9 @@ class SymbolProvider(projectManager: IntellijProjectManager):
                     for item <- items.take(20) do
                       item match
                         case psi: PsiNamedElement if isSignificantElement(psi) =>
+                          val container = getContainerName(psi, item, legacy)
                           val fqnMatch = fqnPrefix match
                             case Some(prefix) =>
-                              val container = getContainerName(psi)
                               container != null && (
                                 container == prefix ||
                                 container.endsWith("." + prefix) ||
@@ -204,7 +204,7 @@ class SymbolProvider(projectManager: IntellijProjectManager):
                             unwrapped match
                               case namedUnwrapped: PsiNamedElement =>
                                 scoreMatch(namedUnwrapped.getName, simpleName).foreach: relevance =>
-                                  val containerName = getContainerName(unwrapped)
+                                  val containerName = if container != null then container else getContainerName(unwrapped, item, legacy)
                                   val rawQualKey = Option(containerName).filter(_.nonEmpty).map(c => s"$c.${namedUnwrapped.getName}").getOrElse(namedUnwrapped.getName)
                                   val qualKey = if rawQualKey.endsWith("$") then rawQualKey.stripSuffix("$") else rawQualKey
                                   val existing = seen.get(qualKey)
@@ -240,7 +240,22 @@ class SymbolProvider(projectManager: IntellijProjectManager):
         System.err.println(s"[SymbolProvider] Error searching workspace symbols: ${e.getMessage}")
         Seq.empty
 
-  private def getContainerName(element: PsiElement): String =
+  /** Get the container from a GotoClassContributor's qualified name.
+    * E.g., if contributor says qualified name is "com.example.Foo.bar",
+    * and the item name is "bar", the container is "com.example.Foo". */
+  private def getContainerFromContributor(item: NavigationItem, contributor: ChooseByNameContributor): String =
+    contributor match
+      case gcc: GotoClassContributor =>
+        val qn = gcc.getQualifiedName(item)
+        if qn != null then
+          val sep = gcc.getQualifiedNameSeparator
+          if sep != null then
+            val lastSep = qn.lastIndexOf(sep)
+            if lastSep > 0 then return qn.substring(0, lastSep)
+        null
+      case _ => null
+
+  private def getContainerName(element: PsiElement, item: NavigationItem = null, contributor: ChooseByNameContributor = null): String =
     // Try to derive container FQN from the element's own FQN
     // e.g., for "io.circe.Json", containerName = "io.circe"
     element match
@@ -252,12 +267,52 @@ class SymbolProvider(projectManager: IntellijProjectManager):
           case _ => ()
       case _ => ()
 
-    // Fallback: walk up the PSI tree for the nearest significant parent
+    // Try PsiMethod.getContainingClass
+    element match
+      case method: PsiMethod =>
+        try
+          val cls = method.getContainingClass
+          if cls != null then
+            val fqn = cls.getQualifiedName
+            if fqn != null && fqn.nonEmpty then return fqn
+            val name = cls.getName
+            if name != null && name.nonEmpty then return name
+        catch case _: Exception => ()
+      case _ => ()
+
+    // For stub-based elements (from index), the parent chain may be incomplete.
+    // Resolve through the file's full PSI tree to find the enclosing class/object.
+    try
+      val psiFile = element.getContainingFile
+      if psiFile != null then
+        val offset = element.getTextOffset
+        if offset >= 0 then
+          val elementInFile = psiFile.findElementAt(offset)
+          if elementInFile != null then
+            var p = elementInFile.getParent
+            while p != null && p != psiFile do
+              if ScalaTypes.isClassLike(p) || ScalaTypes.isTypeDefinition(p) then
+                PsiUtils.getQualifiedNameOf(p) match
+                  case Some(fqn) if fqn.nonEmpty => return fqn
+                  case _ =>
+                    p match
+                      case named: PsiNamedElement =>
+                        val name = named.getName
+                        if name != null && name.nonEmpty then return name
+                      case _ => ()
+              p = p.getParent
+    catch case _: Exception => ()
+
+    // Try the contributor's own qualified name resolution
+    if item != null && contributor != null then
+      val fromContrib = getContainerFromContributor(item, contributor)
+      if fromContrib != null then return fromContrib
+
+    // Walk up the PSI tree for the nearest significant parent
     var parent = element.getParent
     while parent != null do
       parent match
         case named: PsiNamedElement if isSignificantElement(named) =>
-          // Try FQN on the parent
           PsiUtils.getQualifiedNameOf(named) match
             case Some(fqn) => return fqn
             case None => return named.getName
