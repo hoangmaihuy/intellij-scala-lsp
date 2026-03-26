@@ -94,9 +94,9 @@ The MCP server maintains a map of open files (`URI → { version, mtime }`). Bef
 
 ### Startup
 
-1. `intellij-scala-lsp --daemon [projects...]` starts the JVM
-2. `ScalaLspMain.daemonMode()` installs a lenient `LoggedErrorProcessor` to prevent `TestLoggerFactory` from converting `LOG.error()` into fatal exceptions
-3. `IntellijBootstrap.initialize()` calls `TestApplicationManager.getInstance()` to bootstrap the full IntelliJ platform: EDT, VFS, plugin loading, kernel, services
+1. `intellij-scala-lsp --daemon [projects...]` starts the JVM via `com.intellij.idea.Main scala-lsp --daemon`
+2. IntelliJ's production startup pipeline initializes the platform: plugin loading, kernel, EDT, VFS, services
+3. `ScalaLspApplicationStarter.main()` is invoked after full platform initialization — registered as `com.intellij.appStarter` extension with `id="scala-lsp"` in `plugin.xml`
 4. Pre-warm projects are opened via `ProjectRegistry.openProject()` — each waits for `DumbService.waitForSmartMode()`
 5. `DaemonServer.bind(port)` creates the TCP `ServerSocket`
 6. State files (`daemon.pid`, `daemon.port`) written to `~/.cache/intellij-scala-lsp/`
@@ -271,23 +271,28 @@ The workaround:
 
 ## Bootstrap
 
-`IntellijBootstrap.java` uses `TestApplicationManager.getInstance()` from IntelliJ's test framework to bootstrap the platform in headless mode. This is a pragmatic choice:
-- The production `com.intellij.idea.Main` rejects custom commands (hardcoded `WellKnownCommands` whitelist in 2025.3)
-- Custom `ApplicationImpl` bootstrap hits edge cases with EDT, VFS locks, Fleet kernel
-- `TestApplicationManager` is proven to work (all integration tests use it)
-- The `@TestOnly` annotation is just a marker — the APIs set boolean flags, acceptable trade-off
+The LSP server uses IntelliJ's production startup via `com.intellij.idea.Main`. The launcher passes `scala-lsp` as the first argument, which IntelliJ's `ApplicationStarter` extension point resolves to `ScalaLspApplicationStarter` after the full platform is initialized (plugin loading, kernel, services).
+
+This production bootstrap:
+- Properly handles IntelliJ Ultimate's classloader hierarchy (content modules like `intellij.rd.platform` get their own `PluginClassLoader`)
+- Uses the standard extension point system — no test-framework dependency at runtime
+- Supports both Community (IC) and Ultimate (IU) SDK installations
+
+The `com.intellij.appStarter` extension point lookup happens in `ApplicationLoader.createAppStarter()`, which runs *after* `registerComponents()` — so plugin-provided starters are found correctly. The key is using `id="scala-lsp"` (not `commandName`) in plugin.xml, as `findStarter()` matches by `orderId`.
+
+JVM flags (including `--add-opens`, `-Djava.system.class.loader=PathClassLoader`, JNA paths) are extracted from the SDK's `product-info.json` by the launcher script, matching the correct OS and architecture.
 
 ## Launcher Script
 
 `intellij-scala-lsp` handles:
-- IntelliJ installation detection (installed app or sbt-idea-plugin SDK)
+- IntelliJ installation detection (installed app or sbt-idea-plugin SDK, both IC and IU)
 - Scala plugin version matching (extracts IDE build number, picks compatible plugin)
-- JVM args from `product-info.json` (boot classpath, `--add-opens`, etc.)
-- Stripped JAR creation (removes `META-INF/plugin.xml` from classpath copy to avoid plugin loader conflict)
-- Scala runtime JARs on classpath (from Scala plugin dir)
+- JVM args from `product-info.json` (boot classpath, `--add-opens`, PathClassLoader, JNA, etc.) with OS+arch matching
+- Classpath assembly: IntelliJ SDK JARs + LSP server JARs (with plugin.xml for extension point registration) + Scala plugin JARs + Java plugin JARs
 - JDK table copy from user's IntelliJ config
 - CDS warning suppression (`-Xlog:cds=off`)
 - Daemon management (`--daemon`, `--stop`, auto-start connect mode)
+- Entry point: `com.intellij.idea.Main scala-lsp [--daemon]` for LSP modes, `com.intellij.idea.Main scala-lsp-import` for project import
 - `socat` stdio↔TCP proxy
 - Editor setup (`--setup-claude-code-mcp`, `--setup-claude-code-lsp`, `--setup-vscode`, `--setup-zed`)
 
@@ -303,7 +308,6 @@ The workaround:
     log/idea.log              # IntelliJ's internal log
   config/                     # IntelliJ config (isolated from user's IDE)
     options/jdk.table.xml     # copied from user's IntelliJ config on first start
-  lsp-server-stripped.jar     # cached copy of lsp-server.jar without plugin.xml
 ```
 
 The `system/` directory persists indexes across daemon restarts. On warm restart, IntelliJ scans 92k+ files but finds 0 needing re-indexing — startup is fast.
