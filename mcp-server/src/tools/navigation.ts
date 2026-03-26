@@ -58,7 +58,7 @@ export function registerNavigationTools(
 
   mcp.tool(
     'definition',
-    'Read the source code where a symbol is defined. Returns full implementation with line numbers. Prefer symbolName; use filePath+line+column for external/library symbols or to disambiguate overloaded methods.',
+    'Read the full source code where a symbol is defined (returns the enclosing class/method body with line numbers, up to 3 matches). Use this instead of Read for Scala files. Prefer symbolName (e.g. "MyClass", "pkg.MyClass.method"); use filePath+line+column to disambiguate overloads or resolve from a usage site.',
     navigationParams,
     withToolLogging('definition', async (args) => {
       const targets = await resolveTargets(args, symbolResolver, fileManager);
@@ -129,7 +129,7 @@ export function registerNavigationTools(
 
   mcp.tool(
     'references',
-    'Find all usages of a symbol across the codebase. Returns locations with surrounding context. Prefer symbolName; use filePath+line+column for external/library symbols or to disambiguate overloaded methods.',
+    'Find all usages of a symbol across the codebase (excludes the declaration). Returns locations grouped by file with 2 lines of surrounding context. Prefer symbolName; use filePath+line+column to disambiguate overloads or resolve from a usage site.',
     navigationParams,
     withToolLogging('references', async (args) => {
       const targets = await resolveTargets(args, symbolResolver, fileManager);
@@ -137,7 +137,11 @@ export function registerNavigationTools(
         return { content: [{ type: 'text' as const, text: `No symbol found matching '${args.symbolName}'. Try with filePath+line+column instead.` }] };
       }
 
-      const effectiveTargets = targets;
+      // Filter like definition does: if exact/companion matches exist, drop suffix matches
+      const hasExact = targets.some(t => t.matchQuality === 'exact' || t.matchQuality === 'companion');
+      const effectiveTargets = hasExact
+        ? targets.filter(t => t.matchQuality === 'exact' || t.matchQuality === 'companion')
+        : targets;
 
       const allRefs: string[] = [];
       for (const target of effectiveTargets) {
@@ -192,7 +196,7 @@ export function registerNavigationTools(
 
   mcp.tool(
     'implementations',
-    'Find all implementations of a trait, class, or abstract method. Returns source code of each implementation (up to 10 in full). Prefer symbolName; use filePath+line+column for external/library symbols.',
+    'Find all implementations of a trait, abstract class, or abstract method. Returns full source code of each implementation (up to 10 in full, then summaries). Prefer symbolName; use filePath+line+column to disambiguate.',
     navigationParams,
     withToolLogging('implementations', async (args) => {
       const targets = await resolveTargets(args, symbolResolver, fileManager);

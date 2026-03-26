@@ -11,8 +11,8 @@ export function registerWorkspaceTools(
 ): void {
   mcp.tool(
     'workspace_symbols',
-    'Search for symbols (classes, methods, vals, etc.) across the entire project.',
-    { query: z.string().describe('Search query (e.g. "MyClass", "process")') },
+    'Search for symbols (classes, traits, methods, objects, vals, etc.) by name across the entire project. Returns kind, container, file path, and line. Use for discovery when you don\'t know the exact location.',
+    { query: z.string().describe('Search query (e.g. "MyClass", "process") — fuzzy matched against symbol names') },
     withToolLogging('workspace_symbols', async ({ query }) => {
       const result = await lsp.request<SymbolInformation[]>(
         'workspace/symbol',
