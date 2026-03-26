@@ -2,8 +2,8 @@ import org.jetbrains.sbtidea.Keys._
 import org.jetbrains.sbtidea.packaging.PackagingKeys._
 
 // IntelliJ Platform settings (must be ThisBuild-scoped for sbt-idea-plugin)
+// intellijBuild is defined in version.sbt
 ThisBuild / intellijPluginName := "intellij-scala-lsp"
-ThisBuild / intellijBuild := "253.32098.37"
 ThisBuild / intellijPlatform := IntelliJPlatform.IdeaCommunity
 
 Global / excludeLintKeys ++= Set(intellijPlugins)
@@ -47,9 +47,16 @@ lazy val `lsp-server` = project.in(file("lsp-server"))
       "dev.zio" %% "zio" % "2.1.14" % Test,
     ),
 
-    // Add testFramework.jar to compile classpath (IntellijBootstrap uses TestApplicationManager)
-    Compile / unmanagedJars += {
-      (ThisBuild / intellijBaseDirectory).value / "lib" / "testFramework.jar"
+    // IntelliJ test framework JARs (TestApplicationManager for headless bootstrap, LoggedErrorProcessor).
+    // Since 2026.1, these are no longer bundled with the SDK and must be fetched from JetBrains Maven.
+    resolvers += "JetBrains Releases" at "https://www.jetbrains.com/intellij-repository/releases",
+    libraryDependencies ++= {
+      val ijBuild = (ThisBuild / intellijBuild).value
+      Seq(
+        "com.jetbrains.intellij.platform" % "test-framework" % ijBuild intransitive(),
+        "com.jetbrains.intellij.platform" % "test-framework-core" % ijBuild intransitive(),
+        "com.jetbrains.intellij.platform" % "test-framework-common" % ijBuild intransitive(),
+      )
     },
 
     // Add Java plugin JARs to compile+test classpath (PsiClass etc. live here; also needed by Scala plugin)

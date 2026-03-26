@@ -1,1 +1,1 @@
-addSbtPlugin("org.jetbrains.scala" % "sbt-idea-plugin" % "5.1.3")
+addSbtPlugin("org.jetbrains.scala" % "sbt-idea-plugin" % "5.1.4")

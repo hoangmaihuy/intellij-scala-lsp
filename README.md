@@ -97,7 +97,7 @@ sbt "lsp-server/runLsp --daemon"                   # Build and run
 
 | Component | Version |
 |---|---|
-| IntelliJ Platform | 253.32098.37 (2025.3.4) |
+| IntelliJ Platform | 261.22158.277 (2026.1) |
 | Scala Plugin | auto-resolved by sbt-idea-plugin |
 | Scala (build) | 3.8.2 |
 | sbt | 1.11.7 |
