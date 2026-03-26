@@ -18,6 +18,8 @@ import java.nio.file.Path
  */
 class ProjectImporter extends ApplicationStarter:
 
+  override def getRequiredModality: Int = ApplicationStarter.NOT_IN_EDT
+
   override def main(args: java.util.List[String]): Unit =
     // args = ["scala-lsp-import", projectPath]
     val projectPath = if args.size() > 1 then args.get(1) else

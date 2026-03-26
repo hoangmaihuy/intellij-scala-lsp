@@ -12,6 +12,10 @@ import java.io.PrintStream
 //   scala-lsp [projectPath]           Stdio LSP mode (default)
 class ScalaLspApplicationStarter extends ApplicationStarter:
 
+  // Run off EDT so blocking operations (ServerSocket.accept, LSP listener)
+  // don't starve background write actions.
+  override def getRequiredModality: Int = ApplicationStarter.NOT_IN_EDT
+
   override def main(args: java.util.List[String]): Unit =
     // args = ["scala-lsp", ...rest]
     val restArgs = if args.size() > 1 then
