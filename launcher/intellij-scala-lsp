@@ -346,11 +346,14 @@ assemble_classpath_and_flags() {
     fi
   done
 
-  # Java plugin JARs
+  # Java plugin JARs (PsiClass, PsiAnnotationOwner, etc. live here)
+  # Must be on boot classpath since our code references them directly.
   local java_plugin_dir=""
   if [ -d "$IDEA_HOME/plugins/java/lib" ]; then
     java_plugin_dir="$IDEA_HOME/plugins/java"
-    CLASSPATH="${CLASSPATH:+$CLASSPATH:}$IDEA_HOME/plugins/java/lib/java-impl-frontend.jar"
+    for jar in "$IDEA_HOME/plugins/java/lib/"*.jar; do
+      [ -f "$jar" ] && CLASSPATH="${CLASSPATH:+$CLASSPATH:}$jar"
+    done
   fi
 
   # --- JVM flags ---
