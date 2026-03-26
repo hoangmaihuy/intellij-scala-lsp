@@ -265,8 +265,9 @@ class InlayHintProvider(projectManager: IntellijProjectManager):
           val tptModule = tptCompanion.getField("MODULE$").get(null)
 
           // Find the apply method on TypeParameterType companion
-          val scTypeParamClass = cl.loadClass("org.jetbrains.plugins.scala.lang.psi.api.statements.params.ScTypeParam")
-          val tptApply = tptCompanion.getMethod("apply", scTypeParamClass)
+          // In 2026.1+, apply takes PsiTypeParameter instead of ScTypeParam
+          val psiTypeParamClass = cl.loadClass("com.intellij.psi.PsiTypeParameter")
+          val tptApply = tptCompanion.getMethod("apply", psiTypeParamClass)
 
           // Get the substitutor's apply method — takes a ScType
           val scTypeClass = cl.loadClass("org.jetbrains.plugins.scala.lang.psi.types.ScType")
