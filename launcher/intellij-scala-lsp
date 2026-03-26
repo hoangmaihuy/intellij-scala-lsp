@@ -58,8 +58,13 @@ find_intellij_home() {
   fi
   # Check cached/downloaded SDK
   local sdk_dir="$CACHE_DIR/sdk/$INTELLIJ_BUILD"
-  if [ -d "$sdk_dir/lib" ]; then
+  if [ -d "$sdk_dir/lib" ] && [ ! -L "$sdk_dir" ]; then
     echo "$sdk_dir"; return 0
+  fi
+  # Check sbt-idea-plugin SDK (Community Edition, used during development)
+  local sbt_sdk="$HOME/.intellij-scala-lspPluginIC/sdk/$INTELLIJ_BUILD"
+  if [ -d "$sbt_sdk/lib" ]; then
+    echo "$sbt_sdk"; return 0
   fi
   # Scan standard install locations
   local candidates=()
@@ -93,6 +98,13 @@ find_intellij_home() {
       local build_num="${build_txt#*-}"
       local found_prefix="${build_num%%.*}"
       if [ "$found_prefix" = "$required_prefix" ]; then
+        # IU's test framework bootstrap has classloader conflicts with content modules
+        # (e.g. intellij.rd.platform). Use IC SDK instead — download if needed.
+        local product_code="${build_txt%%-*}"
+        if [ "$product_code" = "IU" ]; then
+          log "Found $app ($build_txt) — skipping Ultimate (classloader incompatibility); will use Community Edition SDK"
+          continue
+        fi
         # Symlink into cache for consistent paths
         mkdir -p "$CACHE_DIR/sdk"
         ln -sfn "$app" "$CACHE_DIR/sdk/$INTELLIJ_BUILD"
@@ -316,6 +328,20 @@ assemble_classpath_and_flags() {
   # Build classpath: all lib/*.jar
   CLASSPATH=""
   for jar in "$IDEA_HOME/lib/"*.jar; do
+    [ -f "$jar" ] && CLASSPATH="${CLASSPATH:+$CLASSPATH:}$jar"
+  done
+
+  # Test framework JARs (needed for TestApplicationManager headless bootstrap).
+  # Since 2026.1 these are no longer bundled with the SDK; download from JetBrains Maven.
+  local tf_dir="$CACHE_DIR/test-framework/$INTELLIJ_BUILD"
+  if [ ! -d "$tf_dir" ]; then
+    mkdir -p "$tf_dir"
+    local base_url="https://www.jetbrains.com/intellij-repository/releases/com/jetbrains/intellij/platform"
+    for artifact in test-framework test-framework-core test-framework-common; do
+      curl -fsSL "$base_url/$artifact/$INTELLIJ_BUILD/$artifact-$INTELLIJ_BUILD.jar" -o "$tf_dir/$artifact.jar" 2>/dev/null || true
+    done
+  fi
+  for jar in "$tf_dir/"*.jar; do
     [ -f "$jar" ] && CLASSPATH="${CLASSPATH:+$CLASSPATH:}$jar"
   done
 

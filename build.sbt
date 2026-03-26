@@ -27,6 +27,14 @@ lazy val `lsp-server` = project.in(file("lsp-server"))
 
     // Packaging
     packageMethod := PackagingMethod.Standalone(),
+    // Exclude test framework JARs from packaged plugin — loaded separately at runtime
+    // to avoid classloader conflicts with IU-specific content modules (e.g. intellij.rd.platform)
+    packageArtifact := {
+      val result = packageArtifact.value
+      val libDir = packageOutputDir.value / "lib"
+      IO.listFiles(libDir).filter(_.getName.startsWith("test-framework")).foreach(IO.delete)
+      result
+    },
 
     // Depend on the Scala plugin
     intellijPlugins += "org.intellij.scala".toPlugin,
