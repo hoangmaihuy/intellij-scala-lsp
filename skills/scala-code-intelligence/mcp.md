@@ -6,81 +6,159 @@ description: >
   implementations, or exploring codebase structure. ALWAYS prefer these MCP tools
   over Grep/Glob/Read for Scala code navigation — they understand Scala's type system,
   implicits, and cross-file references. Use this skill whenever you encounter .scala
-  files, even if the user doesn't explicitly mention code intelligence.
+  files, even if the user doesn't explicitly mention code intelligence. This includes:
+  reading Scala source files (use `definition` instead of `Read`), finding where something
+  is defined or used, understanding type hierarchies, renaming symbols, checking for
+  compile errors, formatting code, exploring what's in a file, or tracing how code flows
+  through a Scala codebase. If the task involves .scala files in ANY way — even just
+  "look at this file" or "what does this class do" — use these tools.
 user-invocable: true
 ---
 
 # Scala Code Intelligence (MCP)
 
-You have IntelliJ-powered MCP tools for Scala. These resolve symbols through
-the type system — they follow implicits, type aliases, and inheritance chains
-that text search cannot see. A grep for `process` might find 200 string matches;
-`references` with symbolName `MyService.process` finds only the actual call sites.
+You have IntelliJ-powered MCP tools for Scala. These resolve symbols through the
+type system — they follow implicits, type aliases, and inheritance chains that text
+search cannot see. A grep for `process` might find 200 string matches; `references`
+with `symbolName: "MyService.process"` finds only the actual call sites.
 
-## Choosing between MCP tools and Grep/Glob
+## When to use MCP tools vs Grep/Glob/Read
 
-**Use MCP tools** whenever you need to understand Scala code structure:
+**Default to MCP tools** for anything involving Scala code:
+- Reading a .scala file → `definition` (returns source with line numbers, understands symbol boundaries)
 - "Where is X defined?" → `definition`
-- "Who calls X?" / "Where is X used?" / "Find X usages" → `references`
-- "What classes implement trait X?" → `implementations`
-- "What type is X?" / "What does X extend?" → `hover`
-- "What symbols exist matching X?" → `workspace_symbols`
+- "Who calls X?" / "Find usages" → `references`
+- "What implements trait X?" → `implementations`
+- "What type is this?" / "What does X extend?" → `hover`
+- "Find classes/methods matching X" → `workspace_symbols`
 - "What's in this file?" → `document_symbols`
 - "Rename X everywhere" → `rename_symbol`
 - "Are there compile errors?" → `diagnostics`
+- "Format this file" → `format`
+- "Clean up imports" → `organize_imports`
 
-**Use Grep/Glob** only for text that isn't a Scala symbol:
-- String literals, comments, log messages
+**Fall back to Grep/Glob only** for non-symbol text:
+- String literals, comments, log messages, config values
 - File name patterns (`*.scala`, `*.conf`)
-- Non-Scala files (build.sbt, application.conf, YAML)
-- Regex patterns in code content
+- Non-Scala files (build.sbt, application.conf, YAML, XML)
+- Regex patterns within code content
 
-## Tool quick reference
+## symbolName resolution
 
-### Navigation (prefer `symbolName` — no need to know file paths)
+The `symbolName` parameter accepts several formats and uses smart matching:
 
-| Tool | What it does | Example input |
-|------|-------------|---------------|
-| `definition` | Read source where a symbol is defined | `symbolName: "UserService.findById"` |
-| `references` | Find all usages across the codebase | `symbolName: "UserService"` |
-| `implementations` | Find trait/class implementations | `symbolName: "Repository"` |
-| `hover` | Type signature, docs, supertypes, subtypes | `symbolName: "Config.dbUrl"` |
-| `workspace_symbols` | Search symbols by name pattern | `query: "Service"` |
-| `document_symbols` | List all symbols in a file | `filePath: "/path/to/File.scala"` |
+| Format | Example | When to use |
+|--------|---------|-------------|
+| Simple name | `"UserService"` | When the name is unique enough |
+| Qualified name | `"UserService.findById"` | To target a specific member |
+| Package-qualified | `"io.circe.Json"` | To disambiguate common names |
 
-Use `filePath` + `line` + `column` instead of `symbolName` when:
-- You already have a cursor position (e.g., from a diagnostics error)
-- The symbol name is ambiguous (overloaded methods)
+**Matching priority:** exact match > companion object > qualified match > suffix match.
+If an exact match exists, suffix matches are dropped automatically. If only suffix
+matches exist, the tool includes a hint suggesting `filePath+line+column` for precision.
+
+**Use `filePath` + `line` + `column` instead of `symbolName` when:**
+- You have a cursor position (e.g., from a diagnostics error location)
+- The symbol name is ambiguous (overloaded methods, common names)
 - Targeting an external/library symbol
+- `symbolName` returned too many or wrong matches
 
-### Editing
+All line/column parameters are **1-indexed**.
 
-| Tool | What it does | Required params |
-|------|-------------|-----------------|
-| `rename_symbol` | Rename across all files | `filePath`, `line`, `column`, `newName` |
-| `code_actions` | Get quick fixes / refactorings for a range | `filePath`, `startLine`, `startColumn`, `endLine`, `endColumn` |
-| `apply_code_action` | Apply a fix from `code_actions` result | `filePath`, `actionIndex` |
+## Tool reference
 
-### Maintenance
+### Navigation tools
 
-| Tool | What it does | Required params |
-|------|-------------|-----------------|
-| `diagnostics` | Errors and warnings from the Scala compiler | `filePath` |
-| `format` | Format code (whole file or line range) | `filePath` (optional `startLine`, `endLine`) |
-| `organize_imports` | Remove unused imports, sort remaining | `filePath` |
+**`definition`** — Read the full source code where a symbol is defined.
+- Params: `symbolName` OR `filePath` + `line` + `column`
+- Returns: full source with line numbers (up to 3 results shown in full; extras listed as summaries)
+- Use this instead of `Read` for Scala files — it understands symbol boundaries and returns the enclosing class/method body
 
-## Workflow guidelines
+**`references`** — Find all usages of a symbol across the codebase.
+- Params: `symbolName` OR `filePath` + `line` + `column`
+- Returns: all usage locations grouped by file, with 2 lines of context around each reference
+- Does NOT include the declaration itself — only call sites and usages
 
-**After every Scala edit**, check `diagnostics` on the changed file. Scala's type
-system catches errors that look fine textually — a missing implicit, a wrong type
-parameter, an ambiguous overload. Catching these immediately avoids cascading failures.
+**`implementations`** — Find all implementations of a trait, abstract class, or abstract method.
+- Params: `symbolName` OR `filePath` + `line` + `column`
+- Returns: full source of each implementation (up to 10 in full; beyond 10 shows location + first line only)
 
-**Before renaming or changing a signature**, call `references` first. This shows
-every call site so you know the blast radius before making the change.
+### Info tools
 
-**After adding or removing code**, run `organize_imports` to clean up. Stale imports
-cause compiler warnings and clutter.
+**`hover`** — Get type signature, documentation, supertypes, and subtypes for a symbol.
+- Params: `symbolName` OR `filePath` + `line` + `column`
+- Returns: type info, docs, type definition location, supertype list, subtype list
+- All type hierarchy info is best-effort — may be partial if the LSP can't resolve everything
 
-**When exploring unfamiliar code**, start with `workspace_symbols` to find the
-entry point, then `definition` to read it, then `references` or `implementations`
-to trace the flow. This is faster and more reliable than grepping through files.
+**`workspace_symbols`** — Search for symbols by name across the entire project.
+- Params: `query` (required)
+- Returns: list of matching symbols with kind, container, file path, and line number
+- Good for discovery — use when you don't know the exact name or location
+
+**`document_symbols`** — List all symbols in a single file as a hierarchical outline.
+- Params: `filePath` (required)
+- Returns: nested tree of classes, methods, fields, etc. with line numbers
+
+**`diagnostics`** — Get compiler errors and warnings for a file.
+- Params: `filePath` (required)
+- Returns: each diagnostic with severity (ERROR/WARNING/INFO/HINT), location, message, and the actual source line
+
+### Editing tools
+
+**`rename_symbol`** — Rename a symbol and update all references across the codebase.
+- Params: `filePath` + `line` + `column` + `newName` (all required)
+- Applies changes to disk immediately
+- Returns: count of occurrences changed and list of modified files
+
+**`code_actions`** — Get available quick fixes and refactorings for a code range.
+- Params: `filePath` + `startLine` + `startColumn` + `endLine` + `endColumn` (all required)
+- Returns: numbered list of available actions (e.g., "Add explicit type", "Extract to method")
+- Results are cached for `apply_code_action` — each new call replaces the cache
+
+**`apply_code_action`** — Apply one of the actions from the most recent `code_actions` call.
+- Params: `filePath` + `actionIndex` (1-indexed, from code_actions output)
+- The `filePath` must match the file used in the `code_actions` call
+- Applies changes to disk immediately
+
+### Formatting tools
+
+**`format`** — Format Scala code using IntelliJ code style.
+- Params: `filePath` (required), `startLine` + `endLine` (optional, for range formatting)
+- Applies formatting to disk immediately
+
+**`organize_imports`** — Remove unused imports and sort remaining imports.
+- Params: `filePath` (required)
+
+## Workflow patterns
+
+### After editing Scala code
+Always run `diagnostics` on changed files. Scala's type system catches errors that
+look correct textually — missing implicits, wrong type parameters, ambiguous overloads.
+Catching these immediately prevents cascading failures.
+
+### Before renaming or changing a signature
+Call `references` first to see every call site. This shows the blast radius before
+you make the change. Then use `rename_symbol` for the actual rename — it updates all
+references atomically.
+
+### After adding or removing code
+Run `organize_imports` to clean up. Then `format` if the indentation is off.
+
+### Exploring unfamiliar code
+1. `workspace_symbols` with a query to find entry points
+2. `definition` to read the source
+3. `hover` to understand types and inheritance
+4. `references` or `implementations` to trace the flow
+
+This is faster and more reliable than grepping through files because it follows the
+type system rather than matching text.
+
+### Fixing compile errors
+1. `diagnostics` to get the error with its exact location
+2. Use the `line` and `column` from the diagnostic with `hover` or `definition` to understand the context
+3. Fix the code, then `diagnostics` again to verify
+
+### Using code actions for quick fixes
+1. `diagnostics` to find the error location
+2. `code_actions` with a range covering the error
+3. `apply_code_action` with the index of the desired fix
