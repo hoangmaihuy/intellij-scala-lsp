@@ -5,9 +5,9 @@ set -euo pipefail
 
 # --- Version constants (substituted by CI on release) ---
 LSP_VERSION="dev"
-INTELLIJ_BUILD="253.32098.37"
-INTELLIJ_VERSION="2025.3.4"  # Marketing version for download URLs
-SCALA_PLUGIN_VERSION="2025.3.26"
+INTELLIJ_BUILD="261.22158.277"
+INTELLIJ_VERSION="2026.1"  # Marketing version for download URLs
+SCALA_PLUGIN_VERSION="2026.1.16"
 GITHUB_REPO="hoangmaihuy/intellij-scala-lsp"
 
 # --- Paths ---
@@ -79,7 +79,7 @@ find_intellij_home() {
       /snap/intellij-idea-ultimate/current
     )
   fi
-  local required_prefix="${INTELLIJ_BUILD%%.*}"  # e.g. "253"
+  local required_prefix="${INTELLIJ_BUILD%%.*}"  # e.g. "261"
   for app in "${candidates[@]}"; do
     if [ -d "$app/lib" ]; then
       # Version check: read build number and compare prefix
@@ -89,7 +89,7 @@ find_intellij_home() {
       elif [ -f "$app/build.txt" ]; then
         build_txt=$(cat "$app/build.txt")
       fi
-      # Strip product prefix (e.g. "IU-253.32098.37" -> "253.32098.37")
+      # Strip product prefix (e.g. "IU-261.22158.277" -> "261.22158.277")
       local build_num="${build_txt#*-}"
       local found_prefix="${build_num%%.*}"
       if [ "$found_prefix" = "$required_prefix" ]; then
