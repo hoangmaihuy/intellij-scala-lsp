@@ -18,7 +18,7 @@ export function registerEditingTools(
 
   mcp.tool(
     'rename_symbol',
-    'Rename a symbol at the specified position and update all references across the codebase.',
+    'Rename a symbol and update all references across the entire codebase atomically. Applies changes to disk immediately. Call references first to check blast radius.',
     {
       filePath: z.string().describe('Absolute path to the file'),
       line: z.number().describe('Line number (1-indexed)'),
@@ -66,7 +66,7 @@ export function registerEditingTools(
 
   mcp.tool(
     'code_actions',
-    'Get available quick fixes, refactorings, and code actions for a range in a file.',
+    'Get available quick fixes, refactorings, and code actions for a code range. Returns a numbered list; use apply_code_action with the index to apply. Results are cached until the next code_actions call.',
     {
       filePath: z.string().describe('Absolute path to the file'),
       startLine: z.number().describe('Start line (1-indexed)'),
@@ -106,7 +106,7 @@ export function registerEditingTools(
 
   mcp.tool(
     'apply_code_action',
-    'Apply a code action from the most recent code_actions result.',
+    'Apply a code action from the most recent code_actions result. The actionIndex is 1-indexed from the code_actions output. Applies changes to disk immediately.',
     {
       filePath: z.string().describe('Absolute path to the file (must match the file from code_actions)'),
       actionIndex: z.number().describe('Index of the action to apply (1-indexed, from code_actions output)'),

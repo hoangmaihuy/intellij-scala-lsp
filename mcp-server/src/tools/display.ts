@@ -21,7 +21,7 @@ export function registerDisplayTools(
 
   mcp.tool(
     'hover',
-    'Get complete info about a symbol: type signature, documentation, supertypes, subtypes, and type definition location. Prefer symbolName; use filePath+line+column for positional context.',
+    'Get type signature, documentation, supertypes, subtypes, and type definition location for a symbol. Use to understand what a symbol is without reading its full source. Prefer symbolName; use filePath+line+column for positional context.',
     {
       symbolName: z.string().optional().describe('Symbol name (e.g. "MyClass", "MyClass.myMethod")'),
       filePath: z.string().optional().describe('Absolute path to the file (use with line+column)'),
@@ -121,7 +121,7 @@ export function registerDisplayTools(
 
   mcp.tool(
     'diagnostics',
-    'Get errors and warnings for a file from the Scala analysis engine.',
+    'Get compiler errors and warnings for a file. Returns each diagnostic with severity (ERROR/WARNING/INFO/HINT), location, message, and the source line. Run after every edit to catch type errors early.',
     {
       filePath: z.string().describe('Absolute path to the file'),
     },
@@ -158,7 +158,7 @@ export function registerDisplayTools(
 
   mcp.tool(
     'document_symbols',
-    'List all symbols (classes, methods, vals, etc.) in a file.',
+    'List all symbols in a file as a hierarchical outline (classes, methods, fields, traits with nesting). Use to understand file structure before navigating into specific symbols.',
     {
       filePath: z.string().describe('Absolute path to the file'),
     },

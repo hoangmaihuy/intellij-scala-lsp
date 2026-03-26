@@ -8,7 +8,7 @@ import { toPosition } from '../utils.js';
 import { DocumentFormattingParams, DocumentRangeFormattingParams, TextEdit, ExecuteCommandParams } from 'vscode-languageserver-protocol';
 
 export function registerFormattingTools(mcp: McpServer, lsp: LspClient, fileManager: FileManager): void {
-  mcp.tool('format', 'Format Scala code using IntelliJ code style. Formats the entire file, or a specific line range if startLine and endLine are provided.',
+  mcp.tool('format', 'Format Scala code using IntelliJ code style. Formats the entire file, or a specific line range if startLine and endLine are provided. Applies changes to disk immediately.',
     {
       filePath: z.string().describe('Absolute path to the file'),
       startLine: z.number().optional().describe('Start line (1-indexed, optional)'),
@@ -43,7 +43,7 @@ export function registerFormattingTools(mcp: McpServer, lsp: LspClient, fileMana
     }),
   );
 
-  mcp.tool('organize_imports', 'Remove unused imports and sort remaining imports in a Scala file.',
+  mcp.tool('organize_imports', 'Remove unused imports and sort remaining imports in a Scala file. Run after adding or removing code to keep imports clean.',
     { filePath: z.string().describe('Absolute path to the file') },
     withToolLogging('organize_imports', async ({ filePath }) => {
       const uri = await fileManager.ensureOpen(filePath);
