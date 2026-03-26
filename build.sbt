@@ -29,7 +29,9 @@ lazy val `lsp-server` = project.in(file("lsp-server"))
     packageMethod := PackagingMethod.Standalone(),
 
     // Depend on the Scala plugin
-    intellijPlugins += "org.intellij.scala".toPlugin,
+    // intellij.java.backend is a content module bundled in the Java plugin, not a standalone
+    // plugin on JetBrains Marketplace — exclude it from transitive resolution to avoid 404.
+    intellijPlugins += "org.intellij.scala".toPlugin(excludedIds = Set("intellij.java.backend")),
 
     // lsp4j dependency
     libraryDependencies ++= Seq(
