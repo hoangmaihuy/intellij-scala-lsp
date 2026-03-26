@@ -54,7 +54,7 @@ jobs:
       - name: Stamp version constants in launcher
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          IJ_BUILD=$(grep 'intellijBuild' build.sbt | grep -o '"[^"]*"' | tr -d '"')
+          IJ_BUILD=$(grep 'intellijBuild' version.sbt | grep -o '"[^"]*"' | tr -d '"')
           sed -i "s/^LSP_VERSION=\"dev\"/LSP_VERSION=\"${VERSION}\"/" launcher/intellij-scala-lsp
           sed -i "s/^INTELLIJ_BUILD=\"[^\"]*\"/INTELLIJ_BUILD=\"${IJ_BUILD}\"/" launcher/intellij-scala-lsp
 
