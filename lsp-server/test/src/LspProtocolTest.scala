@@ -8,7 +8,7 @@ import org.eclipse.lsp4j.services.LanguageClient
 import java.util.concurrent.{CompletableFuture, TimeUnit}
 
 class LspProtocolTest:
-  ScalaLspMain.bootstrapComplete.countDown()
+  BootstrapState.bootstrapComplete.countDown()
 
   @Test def testGetTextDocumentServiceReturnsNonNull(): Unit =
     val server = new ScalaLspServer("/tmp/test")

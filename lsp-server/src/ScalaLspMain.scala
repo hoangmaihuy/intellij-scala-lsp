@@ -1,100 +1,23 @@
 package org.jetbrains.scalalsP
 
-import com.intellij.testFramework.LoggedErrorProcessor
-import java.io.PrintStream
-import java.util.EnumSet
-
 /**
- * Entry point for the IntelliJ Scala LSP server.
+ * Lightweight entry point for non-IntelliJ operations.
+ * Used for --stop and --list-projects which only talk to a running daemon.
  *
- * Supports these modes:
- *   --daemon [project...]    Bootstrap IntelliJ, pre-warm projects, start TCP server
- *   --stop                   Send shutdown signal to running daemon, exit
- *   --list-projects          List projects open in the running daemon
- *   (default)                Stdio LSP mode (original behavior)
+ * The main LSP server (daemon and stdio modes) is started via
+ * com.intellij.idea.Main -> ScalaLspApplicationStarter.
  */
 object ScalaLspMain:
-
-  /** Latch that the initialize handler waits on before opening the project */
-  val bootstrapComplete = BootstrapState.bootstrapComplete
 
   private val CACHE_DIR = s"${System.getProperty("user.home")}/.cache/intellij-scala-lsp"
 
   def main(args: Array[String]): Unit =
     args.toList match
-      case "--daemon" :: projects  => daemonMode(projects)
       case "--stop" :: _           => stopMode()
       case "--list-projects" :: _  => listProjectsMode()
-      case other                   => stdioMode(other.headOption.getOrElse(""))
-
-  private def daemonMode(projectPaths: List[String]): Unit =
-    System.err.println("[ScalaLsp] Starting daemon mode...")
-    val port = Option(System.getenv("LSP_PORT")).map(_.toInt).getOrElse(5007)
-
-    System.setOut(new PrintStream(System.err, true))
-
-    // Install global lenient error processor via reflection
-    // (executeWith is thread-local; daemon needs it on all threads)
-    try
-      val field = classOf[LoggedErrorProcessor].getDeclaredField("ourInstance")
-      field.setAccessible(true)
-      field.set(null, new LoggedErrorProcessor:
-        override def processError(category: String, message: String, details: Array[String], t: Throwable): java.util.Set[LoggedErrorProcessor.Action] =
-          EnumSet.of(LoggedErrorProcessor.Action.STDERR)
-      )
-    catch case e: Exception =>
-      System.err.println(s"[ScalaLsp] Warning: could not install global error processor: ${e.getMessage}")
-      // Fall back to thread-local
-      LoggedErrorProcessor.executeWith(new LoggedErrorProcessor:
-        override def processError(category: String, message: String, details: Array[String], t: Throwable): java.util.Set[LoggedErrorProcessor.Action] =
-          EnumSet.of(LoggedErrorProcessor.Action.STDERR)
-      )
-
-    // Bootstrap IntelliJ
-    try
-      IntellijBootstrap.initialize()
-      System.err.println("[ScalaLsp] IntelliJ platform initialized")
-      BootstrapState.bootstrapComplete.countDown()
-    catch
-      case e: Exception =>
-        System.err.println(s"[ScalaLsp] Bootstrap failed: ${e.getMessage}")
-        e.printStackTrace(System.err)
-        System.exit(1)
-
-    // Start TCP server — bind port before indexing so clients can connect early
-    val registry = ProjectRegistry()
-    val daemon = DaemonServer(registry)
-
-    try
-      val boundPort = daemon.bind(port)
-      java.nio.file.Files.createDirectories(java.nio.file.Path.of(CACHE_DIR))
-      java.nio.file.Files.writeString(java.nio.file.Path.of(s"$CACHE_DIR/daemon.pid"), ProcessHandle.current().pid().toString)
-      java.nio.file.Files.writeString(java.nio.file.Path.of(s"$CACHE_DIR/daemon.port"), boundPort.toString)
-
-      Runtime.getRuntime.addShutdownHook(new Thread(() => {
-        java.io.File(s"$CACHE_DIR/daemon.pid").delete()
-        java.io.File(s"$CACHE_DIR/daemon.port").delete()
-        ()
-      }))
-
-      System.err.println(s"[ScalaLsp] Daemon ready on port $boundPort")
-
-      // Pre-warm projects in background — clients can connect while indexing
-      val warmupThread = new Thread(() =>
-        for path <- projectPaths do
-          try
-            System.err.println(s"[ScalaLsp] Pre-warming project: $path")
-            registry.openProject(path)
-          catch case e: Exception =>
-            System.err.println(s"[ScalaLsp] Failed to pre-warm $path: ${e.getMessage}")
-      , "project-warmup")
-      warmupThread.setDaemon(true)
-      warmupThread.start()
-
-      daemon.acceptLoop() // blocks
-    catch
-      case e: java.net.BindException =>
-        System.err.println(s"[ScalaLsp] Port $port already in use. Set LSP_PORT env var to use a different port.")
+      case _ =>
+        System.err.println("Usage: ScalaLspMain --stop | --list-projects")
+        System.err.println("For LSP server, use: com.intellij.idea.Main scala-lsp [--daemon] [args]")
         System.exit(1)
 
   private def stopMode(): Unit =
@@ -147,47 +70,3 @@ object ScalaLspMain:
       System.err.println(s"Open projects:")
       for line <- projects.split("\n") if line.nonEmpty do
         System.err.println(s"  $line")
-
-  private def stdioMode(projectPath: String): Unit =
-    System.err.println("[ScalaLsp] Starting IntelliJ Scala LSP server...")
-
-    // CRITICAL: Save raw stdout for JSON-RPC, then redirect System.out to stderr.
-    // IntelliJ's bootstrap (TestApplicationManager, plugins, etc.) may print to
-    // System.out, which would corrupt the JSON-RPC protocol stream.
-    val jsonRpcOut = System.out
-    System.setOut(new PrintStream(System.err, true))
-
-    // Start bootstrap in background so the LSP listener can accept connections immediately
-    val bootstrapThread = new Thread(() =>
-      try
-        // Install lenient error processor BEFORE bootstrap.
-        // TestApplicationManager installs TestLoggerFactory which converts LOG.error() into
-        // thrown exceptions. Non-critical errors (stale indexes, missing SDKs) should be
-        // logged, not crash the LSP server.
-        LoggedErrorProcessor.executeWith(new LoggedErrorProcessor:
-          override def processError(category: String, message: String, details: Array[String], t: Throwable): java.util.Set[LoggedErrorProcessor.Action] =
-            EnumSet.of(LoggedErrorProcessor.Action.STDERR)
-        )
-        IntellijBootstrap.initialize()
-        System.err.println("[ScalaLsp] IntelliJ platform initialized")
-      catch
-        case e: Exception =>
-          System.err.println(s"[ScalaLsp] Bootstrap failed: ${e.getMessage}")
-          e.printStackTrace(System.err)
-      finally
-        BootstrapState.bootstrapComplete.countDown()
-    , "intellij-bootstrap")
-    bootstrapThread.setDaemon(true)
-    bootstrapThread.start()
-
-    try
-      // Start LSP listener on the saved raw stdout (not the redirected System.out)
-      val server = new ScalaLspServer(projectPath)
-      LspLauncher.startAndAwait(server, System.in, jsonRpcOut)
-      System.err.println("[ScalaLsp] LSP connection closed")
-      System.exit(0)
-    catch
-      case e: Exception =>
-        System.err.println(s"[ScalaLsp] Fatal error: ${e.getMessage}")
-        e.printStackTrace(System.err)
-        System.exit(1)

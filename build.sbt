@@ -27,14 +27,6 @@ lazy val `lsp-server` = project.in(file("lsp-server"))
 
     // Packaging
     packageMethod := PackagingMethod.Standalone(),
-    // Exclude test framework JARs from packaged plugin — loaded separately at runtime
-    // to avoid classloader conflicts with IU-specific content modules (e.g. intellij.rd.platform)
-    packageArtifact := {
-      val result = packageArtifact.value
-      val libDir = packageOutputDir.value / "lib"
-      IO.listFiles(libDir).filter(_.getName.startsWith("test-framework")).foreach(IO.delete)
-      result
-    },
 
     // Depend on the Scala plugin
     intellijPlugins += "org.intellij.scala".toPlugin,
@@ -55,15 +47,16 @@ lazy val `lsp-server` = project.in(file("lsp-server"))
       "dev.zio" %% "zio" % "2.1.14" % Test,
     ),
 
-    // IntelliJ test framework JARs (TestApplicationManager for headless bootstrap, LoggedErrorProcessor).
+    // IntelliJ test framework JARs (TestApplicationManager for test infrastructure).
     // Since 2026.1, these are no longer bundled with the SDK and must be fetched from JetBrains Maven.
+    // Only needed for tests — the runtime uses production com.intellij.idea.Main bootstrap.
     resolvers += "JetBrains Releases" at "https://www.jetbrains.com/intellij-repository/releases",
     libraryDependencies ++= {
       val ijBuild = (ThisBuild / intellijBuild).value
       Seq(
-        "com.jetbrains.intellij.platform" % "test-framework" % ijBuild intransitive(),
-        "com.jetbrains.intellij.platform" % "test-framework-core" % ijBuild intransitive(),
-        "com.jetbrains.intellij.platform" % "test-framework-common" % ijBuild intransitive(),
+        "com.jetbrains.intellij.platform" % "test-framework" % ijBuild % Test intransitive(),
+        "com.jetbrains.intellij.platform" % "test-framework-core" % ijBuild % Test intransitive(),
+        "com.jetbrains.intellij.platform" % "test-framework-common" % ijBuild % Test intransitive(),
       )
     },
 
