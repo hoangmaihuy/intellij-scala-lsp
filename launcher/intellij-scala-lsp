@@ -98,13 +98,6 @@ find_intellij_home() {
       local build_num="${build_txt#*-}"
       local found_prefix="${build_num%%.*}"
       if [ "$found_prefix" = "$required_prefix" ]; then
-        # IU's test framework bootstrap has classloader conflicts with content modules
-        # (e.g. intellij.rd.platform). Use IC SDK instead — download if needed.
-        local product_code="${build_txt%%-*}"
-        if [ "$product_code" = "IU" ]; then
-          log "Found $app ($build_txt) — skipping Ultimate (classloader incompatibility); will use Community Edition SDK"
-          continue
-        fi
         # Symlink into cache for consistent paths
         mkdir -p "$CACHE_DIR/sdk"
         ln -sfn "$app" "$CACHE_DIR/sdk/$INTELLIJ_BUILD"
@@ -256,11 +249,20 @@ machine = platform.machine()
 arch_map = {"arm64": "aarch64", "x86_64": "amd64", "aarch64": "aarch64"}
 current_arch = arch_map.get(machine, machine)
 
+current_os = {"Darwin": "macOS", "Linux": "Linux", "Windows": "Windows"}.get(platform.system(), platform.system())
+
 launch = None
+# Match both OS and arch for correct platform-specific JVM args
 for l in info.get("launch", []):
-    if l.get("arch") == current_arch:
+    if l.get("os") == current_os and l.get("arch") == current_arch:
         launch = l
         break
+# Fallback: match arch only, then any
+if launch is None:
+    for l in info.get("launch", []):
+        if l.get("arch") == current_arch:
+            launch = l
+            break
 if launch is None and info.get("launch"):
     launch = info["launch"][0]
 if launch is None:
@@ -277,7 +279,8 @@ def resolve(s):
         .replace("$APP_PACKAGE/Contents", idea_home)
         .replace("$APP_PACKAGE", app_package)
         .replace("%IDE_HOME%", idea_home)
-        .replace("$IDE_HOME", idea_home))
+        .replace("$IDE_HOME", idea_home)
+        .replace("\\", "/"))  # normalize Windows backslashes
 
 jvm_args = []
 for arg in launch.get("additionalJvmArguments", []):
@@ -331,48 +334,9 @@ assemble_classpath_and_flags() {
     [ -f "$jar" ] && CLASSPATH="${CLASSPATH:+$CLASSPATH:}$jar"
   done
 
-  # Test framework JARs (needed for TestApplicationManager headless bootstrap).
-  # Since 2026.1 these are no longer bundled with the SDK; download from JetBrains Maven.
-  local tf_dir="$CACHE_DIR/test-framework/$INTELLIJ_BUILD"
-  if [ ! -d "$tf_dir" ]; then
-    mkdir -p "$tf_dir"
-    local base_url="https://www.jetbrains.com/intellij-repository/releases/com/jetbrains/intellij/platform"
-    for artifact in test-framework test-framework-core test-framework-common; do
-      curl -fsSL "$base_url/$artifact/$INTELLIJ_BUILD/$artifact-$INTELLIJ_BUILD.jar" -o "$tf_dir/$artifact.jar" 2>/dev/null || true
-    done
-  fi
-  for jar in "$tf_dir/"*.jar; do
-    [ -f "$jar" ] && CLASSPATH="${CLASSPATH:+$CLASSPATH:}$jar"
-  done
-
-  # Stripped lsp-server.jar (remove plugin.xml to avoid "jarFiles is not set" assertion)
-  # Use jar from the same JDK as $JAVA (JBR ships jar alongside java)
-  local jar_cmd="$(dirname "$JAVA")/jar"
-  [ -x "$jar_cmd" ] || jar_cmd="jar"
-  local stripped_jar="$CACHE_DIR/lsp-server-stripped.jar"
-  # In dev mode, always rebuild to avoid stale code issues.
-  # In installed mode, only rebuild when source jar is newer.
-  local need_strip=false
-  if [ "$DEV_MODE" = true ]; then
-    need_strip=true
-  elif [ "$LSP_LIB_DIR/lsp-server.jar" -nt "$stripped_jar" ] 2>/dev/null; then
-    need_strip=true
-  fi
-  if [ "$need_strip" = true ]; then
-    local strip_tmp="$CACHE_DIR/strip-tmp"
-    rm -rf "$strip_tmp"
-    mkdir -p "$strip_tmp"
-    (cd "$strip_tmp" && "$jar_cmd" xf "$LSP_LIB_DIR/lsp-server.jar" && rm -f META-INF/plugin.xml && "$jar_cmd" cf "$stripped_jar" .)
-    rm -rf "$strip_tmp"
-  fi
-
-  # Add LSP JARs (stripped lsp-server.jar, others as-is)
+  # Add LSP JARs (including plugin.xml for extension point registration)
   for jar in "$LSP_LIB_DIR/"*.jar; do
-    if [ "$(basename "$jar")" = "lsp-server.jar" ]; then
-      CLASSPATH="${CLASSPATH:+$CLASSPATH:}$stripped_jar"
-    else
-      CLASSPATH="${CLASSPATH:+$CLASSPATH:}$jar"
-    fi
+    [ -f "$jar" ] && CLASSPATH="${CLASSPATH:+$CLASSPATH:}$jar"
   done
 
   # Scala plugin JARs
@@ -591,7 +555,7 @@ wait_for_port_file() {
 start_daemon_background() {
   log "Starting daemon in background..."
   "$JAVA" "${JVM_ARGS[@]}" -cp "$CLASSPATH" \
-    org.jetbrains.scalalsP.ScalaLspMain --daemon "$@" \
+    com.intellij.idea.Main scala-lsp --daemon "$@" \
     >> "$LSP_LOG" 2>&1 &
   log "Daemon PID: $!"
 }
@@ -1490,15 +1454,15 @@ case "${1:-}" in
     fi
     # Fallback: find orphaned daemon via jps if pid file is missing or stale
     if [ -z "$pid" ] || ! kill -0 "$pid" 2>/dev/null; then
-      pid=$(jps 2>/dev/null | grep ScalaLspMain | awk '{print $1}' | head -1)
+      pid=$(jps 2>/dev/null | grep 'Main' | awk '{print $1}' | head -1)
     fi
     if [ -z "$pid" ]; then
       echo "[ScalaLsp] No daemon running."
       rm -f "$CACHE_DIR/daemon.pid" "$CACHE_DIR/daemon.port" "$CACHE_DIR/daemon.projects"
       exit 0
     fi
-    # Kill ALL ScalaLspMain processes (VS Code/MCP may spawn multiple)
-    all_pids=$(jps 2>/dev/null | grep ScalaLspMain | awk '{print $1}')
+    # Kill ALL LSP daemon processes (VS Code/MCP may spawn multiple)
+    all_pids=$(jps 2>/dev/null | grep 'Main' | awk '{print $1}')
     if [ -z "$all_pids" ]; then
       all_pids="$pid"
     fi
@@ -1506,11 +1470,11 @@ case "${1:-}" in
     echo "$all_pids" | xargs kill 2>/dev/null || true
     # Wait up to 10 seconds for all to die
     for i in $(seq 1 20); do
-      remaining=$(jps 2>/dev/null | grep ScalaLspMain | awk '{print $1}')
+      remaining=$(jps 2>/dev/null | grep 'Main' | awk '{print $1}')
       [ -z "$remaining" ] && break
       sleep 0.5
     done
-    remaining=$(jps 2>/dev/null | grep ScalaLspMain | awk '{print $1}')
+    remaining=$(jps 2>/dev/null | grep 'Main' | awk '{print $1}')
     if [ -n "$remaining" ]; then
       echo "[ScalaLsp] Force killing: $remaining"
       echo "$remaining" | xargs kill -9 2>/dev/null || true
@@ -1548,7 +1512,7 @@ case "${1:-}" in
     assemble_classpath_and_flags
     check_for_updates
     exec "$JAVA" "${JVM_ARGS[@]}" -cp "$CLASSPATH" \
-      org.jetbrains.scalalsP.ScalaLspMain --daemon "$@"
+      com.intellij.idea.Main scala-lsp --daemon "$@"
     ;;
   --daemon)
     shift
@@ -1556,14 +1520,14 @@ case "${1:-}" in
     assemble_classpath_and_flags
     check_for_updates
     exec "$JAVA" "${JVM_ARGS[@]}" -cp "$CLASSPATH" \
-      org.jetbrains.scalalsP.ScalaLspMain --daemon "$@"
+      com.intellij.idea.Main scala-lsp --daemon "$@"
     ;;
   --import)
     # sbt import — we only reach here for sbt projects (Mill handled above)
     resolve_sdk
     assemble_classpath_and_flags
     exec "$JAVA" "${JVM_ARGS[@]}" -cp "$CLASSPATH" \
-      org.jetbrains.scalalsP.ProjectImporter "$PROJECT_PATH"
+      com.intellij.idea.Main scala-lsp-import "$PROJECT_PATH"
     ;;
   *)
     # Connect mode: proxy to daemon, auto-start if needed
@@ -1579,8 +1543,8 @@ case "${1:-}" in
           local old_pid
           old_pid=$(cat "$pidfile" 2>/dev/null)
           [ -n "$old_pid" ] && kill "$old_pid" 2>/dev/null || true
-          # Also kill any stray ScalaLspMain processes
-          jps 2>/dev/null | grep ScalaLspMain | awk '{print $1}' | xargs kill 2>/dev/null || true
+          # Also kill any stray LSP daemon processes
+          jps 2>/dev/null | grep 'Main' | awk '{print $1}' | xargs kill 2>/dev/null || true
           rm -f "$CACHE_DIR/daemon.pid" "$CACHE_DIR/daemon.port" "$CACHE_DIR/daemon.projects"
           sleep 2
           start_daemon_background "$@"

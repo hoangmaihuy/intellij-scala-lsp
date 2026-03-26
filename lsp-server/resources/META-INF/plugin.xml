@@ -9,7 +9,10 @@
   <depends>org.intellij.scala</depends>
 
   <extensions defaultExtensionNs="com.intellij">
-    <appStarter implementation="org.jetbrains.scalalsP.ScalaLspApplicationStarter"
-                commandName="scala-lsp"/>
+    <appStarter id="scala-lsp"
+                implementation="org.jetbrains.scalalsP.ScalaLspApplicationStarter"/>
+    <appStarter id="scala-lsp-import"
+                implementation="org.jetbrains.scalalsP.ProjectImporter"
+                internal="true"/>
   </extensions>
 </idea-plugin>

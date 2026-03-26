@@ -1,69 +1,40 @@
 package org.jetbrains.scalalsP
 
-import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.{ApplicationManager, ApplicationStarter}
 import com.intellij.openapi.externalSystem.importing.ImportSpecBuilder
 import com.intellij.openapi.externalSystem.model.ProjectSystemId
 import com.intellij.openapi.externalSystem.service.execution.ProgressExecutionMode
 import com.intellij.openapi.externalSystem.util.ExternalSystemUtil
 import com.intellij.openapi.project.{DumbService, Project, ProjectManager}
 import com.intellij.openapi.vfs.LocalFileSystem
-import com.intellij.testFramework.LoggedErrorProcessor
-import java.io.PrintStream
-import java.lang.reflect.InvocationTargetException
 import java.nio.file.Path
-import java.util.EnumSet
 
 /**
- * Imports an sbt project by bootstrapping IntelliJ and using the Scala plugin's
- * SbtOpenProjectProvider to generate .idea project files, then exits.
+ * Imports an sbt project by using the Scala plugin's SbtOpenProjectProvider
+ * to generate .idea project files, then exits.
  *
- * Usage: ProjectImporter <project-path>
+ * Registered as ApplicationStarter with id="scala-lsp-import" in plugin.xml.
+ * Invoked via: com.intellij.idea.Main scala-lsp-import <project-path>
  */
-object ProjectImporter:
+class ProjectImporter extends ApplicationStarter:
 
-  def main(args: Array[String]): Unit =
-    if args.isEmpty then
-      System.err.println("Usage: ProjectImporter <project-path>")
+  override def main(args: java.util.List[String]): Unit =
+    // args = ["scala-lsp-import", projectPath]
+    val projectPath = if args.size() > 1 then args.get(1) else
+      System.err.println("Usage: com.intellij.idea.Main scala-lsp-import <project-path>")
       System.exit(1)
+      return
 
-    val projectPath = args.head
+    // Platform is fully initialized
+    BootstrapState.bootstrapComplete.countDown()
+
     val path = Path.of(projectPath).toAbsolutePath.normalize
     if !path.toFile.isDirectory then
       System.err.println(s"ERROR: Not a directory: $path")
       System.exit(1)
 
-    System.setOut(new PrintStream(System.err, true))
-
-    // Install lenient error processor before bootstrap
     try
-      val field = classOf[LoggedErrorProcessor].getDeclaredField("ourInstance")
-      field.setAccessible(true)
-      field.set(null, new LoggedErrorProcessor:
-        override def processError(category: String, message: String, details: Array[String], t: Throwable): java.util.Set[LoggedErrorProcessor.Action] =
-          EnumSet.of(LoggedErrorProcessor.Action.STDERR)
-      )
-    catch case e: Exception =>
-      System.err.println(s"Warning: could not install global error processor: ${e.getMessage}")
-      LoggedErrorProcessor.executeWith(new LoggedErrorProcessor:
-        override def processError(category: String, message: String, details: Array[String], t: Throwable): java.util.Set[LoggedErrorProcessor.Action] =
-          EnumSet.of(LoggedErrorProcessor.Action.STDERR)
-      )
-
-    // Bootstrap IntelliJ platform
-    try
-      System.err.println("[Import] Initializing IntelliJ platform...")
-      IntellijBootstrap.initialize()
-      System.err.println("[Import] IntelliJ platform initialized")
-      BootstrapState.bootstrapComplete.countDown()
-    catch
-      case e: Exception =>
-        System.err.println(s"[Import] Bootstrap failed: ${e.getMessage}")
-        e.printStackTrace(System.err)
-        System.exit(1)
-
-    // Import the sbt project
-    try
-      importSbtProject(path)
+      ProjectImporter.importSbtProject(path)
       System.err.println("Import complete.")
       System.exit(0)
     catch
@@ -72,24 +43,20 @@ object ProjectImporter:
         e.printStackTrace(System.err)
         System.exit(1)
 
+object ProjectImporter:
+
   private def importSbtProject(projectPath: Path): Unit =
     System.err.println(s"[Import] Opening project at: $projectPath")
 
-    // Open (or create) the IDEA project
     val project = ProjectManager.getInstance().loadAndOpenProject(projectPath.toString)
     if project == null then
       throw RuntimeException(s"Failed to open project at $projectPath")
 
     try
-      // Register a JDK before sbt resolution — sbt needs a JVM executable.
-      // Without this, sbt import fails with "Cannot determine Java VM executable in selected JDK".
       ensureJdkRegistered()
 
       // Use reflection to call SbtOpenProjectProvider.doLinkProject()
-      // IMPORTANT: Must load via the Scala plugin's classloader, not the LSP server's.
-      // The LSP server's PathClassLoader has its own copy of sbt-api classes, but IntelliJ
-      // services (like SbtSettings) are registered by the plugin's PluginClassLoader.
-      // Using the wrong classloader causes ClassCastException at runtime.
+      // Must load via Scala plugin's classloader for proper service registration.
       System.err.println("[Import] Linking sbt project via Scala plugin...")
       val pluginId = com.intellij.openapi.extensions.PluginId.getId("org.intellij.scala")
       val plugin = com.intellij.ide.plugins.PluginManagerCore.getPlugin(pluginId)
@@ -118,16 +85,9 @@ object ProjectImporter:
       else
         System.err.println("[Import] sbt project linked")
 
-      // doLinkProject triggers async sbt resolution. Wait for it to complete
-      // before running our own synchronous refresh. The async one runs on a
-      // background thread via ExternalSystemUtil — we wait for smart mode first,
-      // then do an explicit synchronous refresh to ensure modules are fully resolved.
       System.err.println("[Import] Waiting for initial indexing...")
       DumbService.getInstance(project).waitForSmartMode()
 
-      // Now do a synchronous refresh to ensure the sbt model is fully resolved.
-      // The initial async resolution may have completed or failed — this ensures
-      // we get a clean synchronous resolution with proper error reporting.
       System.err.println("[Import] Resolving sbt project model (synchronous)...")
       val sbtSystemId = new ProjectSystemId("SBT")
       ExternalSystemUtil.refreshProject(
@@ -140,19 +100,13 @@ object ProjectImporter:
       DumbService.getInstance(project).waitForSmartMode()
       System.err.println("[Import] Indexing complete")
 
-      // Save all project files to disk
       ApplicationManager.getApplication.invokeAndWait: () =>
         ApplicationManager.getApplication.saveAll()
         project.save()
     finally
-      // Close and dispose the project
       ApplicationManager.getApplication.invokeAndWait: () =>
         ProjectManager.getInstance().closeAndDispose(project)
 
-  /**
-   * Register a JDK in IntelliJ's table so sbt resolution can find a Java VM executable.
-   * Uses IntelliJ's bundled JBR (already in allowed VFS roots) to avoid VfsRootAccess issues.
-   */
   private def ensureJdkRegistered(): Unit =
     import com.intellij.openapi.application.WriteAction
     import com.intellij.openapi.projectRoots.{ProjectJdkTable, SdkType}
@@ -166,21 +120,18 @@ object ProjectImporter:
         System.err.println("[Import] Warning: JavaSDK type not found")
         return
 
-      // If there's already a JDK registered, we're good
       if jdkTable.getAllJdks.exists(_.getSdkType.getName == "JavaSDK") then
         System.err.println("[Import] JDK already registered")
         return
 
-      // Use IntelliJ's bundled JBR — it's in the allowed VFS roots
       val homePath = com.intellij.openapi.application.PathManager.getHomePath
       val jbrCandidates = Seq(
-        homePath + "/jbr/Contents/Home", // macOS
-        homePath + "/jbr",               // Linux
+        homePath + "/jbr/Contents/Home",
+        homePath + "/jbr",
       )
       val jbrHome = jbrCandidates.find(p => java.io.File(p + "/bin/java").exists())
 
       if jbrHome.isEmpty then
-        // Fallback: try JAVA_HOME and system JDKs
         val systemCandidates = Seq(
           Option(System.getenv("JAVA_HOME")),
           Some("/opt/homebrew/opt/openjdk/libexec/openjdk.jdk/Contents/Home"),
@@ -189,7 +140,6 @@ object ProjectImporter:
         if systemCandidates.isEmpty then
           System.err.println("[Import] Warning: No JDK found. Set JAVA_HOME to fix sbt resolution.")
           return
-        // For system JDKs, allow VFS access first
         val home = systemCandidates.head
         try
           val vfsRootAccessClass = Class.forName("com.intellij.openapi.vfs.newvfs.impl.VfsRootAccess")
@@ -223,7 +173,6 @@ object ProjectImporter:
           System.err.println(s"[Import] JDK createJdk failed: ${e.getMessage}")
           e.printStackTrace(System.err)
 
-  /** Traverse the exception cause chain looking for AlreadyImportedProjectException */
   private def hasAlreadyImportedException(e: Throwable): Boolean =
     var cause: Throwable = e
     while cause != null do
