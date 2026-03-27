@@ -1,5 +1,5 @@
 #!/bin/bash
-# intellij-scala-lsp — smart launcher for IntelliJ Scala LSP server
+# scallij — smart launcher for IntelliJ Scala LSP server
 # Handles: install, run, update, stop, and SDK resolution
 set -euo pipefail
 
@@ -29,7 +29,7 @@ fi
 mkdir -p "$CACHE_DIR"
 
 # --- Logging ---
-log() { echo "[intellij-scala-lsp] $*" >&2; }
+log() { echo "[scallij] $*" >&2; }
 
 # --- Platform detection ---
 detect_platform() {
@@ -321,9 +321,9 @@ assemble_classpath_and_flags() {
   if [ ! -d "$LSP_LIB_DIR" ] || [ -z "$(ls "$LSP_LIB_DIR"/*.jar 2>/dev/null)" ]; then
     if [ "$DEV_MODE" = true ]; then
       log "ERROR: LSP server JARs not found at $LSP_LIB_DIR"
-      log "Run: intellij-scala-lsp --dev  OR  cd $PROJECT_ROOT && sbt 'lsp-server/packageArtifact'"
+      log "Run: scallij --dev  OR  cd $PROJECT_ROOT && sbt 'lsp-server/packageArtifact'"
     else
-      log "ERROR: LSP server JARs not found. Run: intellij-scala-lsp --install"
+      log "ERROR: LSP server JARs not found. Run: scallij --install"
     fi
     exit 1
   fi
@@ -429,7 +429,7 @@ download_lsp_jars() {
 }
 
 do_install() {
-  log "Installing intellij-scala-lsp..."
+  log "Installing scallij..."
   download_lsp_jars
   resolve_sdk
   # Check socat
@@ -444,10 +444,10 @@ do_install() {
   log "Installation complete!"
   log ""
   log "Set up your editor:"
-  log "  Claude Code:  intellij-scala-lsp --setup-claude-code-mcp"
-  log "  VS Code:      intellij-scala-lsp --setup-vscode"
-  log "  Zed:          intellij-scala-lsp --setup-zed"
-  log "  Neovim:       cmd = { \"intellij-scala-lsp\" }"
+  log "  Claude Code:  scallij --setup-claude-code-mcp"
+  log "  VS Code:      scallij --setup-vscode"
+  log "  Zed:          scallij --setup-zed"
+  log "  Neovim:       cmd = { \"scallij\" }"
 }
 
 # --- Update ---
@@ -474,7 +474,7 @@ check_for_updates() {
       | python3 -c "import json,sys; print(json.load(sys.stdin).get('tag_name','').lstrip('v'))" 2>/dev/null) || return
     if [ -n "$latest" ] && [ "$latest" != "$LSP_VERSION" ]; then
       log "Update available: v${LSP_VERSION} -> v${latest}"
-      log "Run: intellij-scala-lsp --update"
+      log "Run: scallij --update"
     fi
   ) &
 }
@@ -503,7 +503,7 @@ do_update() {
   local self_path
   self_path="$(realpath "$0")"
   local tmp_path="${self_path}.tmp.$$"
-  curl -fsSL -o "$tmp_path" "https://github.com/${GITHUB_REPO}/releases/download/v${latest}/intellij-scala-lsp"
+  curl -fsSL -o "$tmp_path" "https://github.com/${GITHUB_REPO}/releases/download/v${latest}/scallij"
   chmod +x "$tmp_path"
   mv -f "$tmp_path" "$self_path"
   # Download new JARs
@@ -723,7 +723,7 @@ setup_mcp() {
     if [ "$DEV_MODE" = true ]; then
       echo "Run: cd $mcp_dir && npm install && npm run build"
     else
-      echo "Run: intellij-scala-lsp --install"
+      echo "Run: scallij --install"
     fi
     exit 1
   fi
@@ -960,7 +960,7 @@ const net = require("net");
 const fs = require("fs");
 const vscode = require("vscode");
 
-const LAUNCHER = "$SCRIPT_DIR/intellij-scala-lsp";
+const LAUNCHER = "$SCRIPT_DIR/scallij";
 let client, outputChannel, statusBarItem;
 
 function log(msg) {
@@ -1310,11 +1310,11 @@ LANGTOML
 # Handle --version and --help before setting up logging (they should be quiet)
 case "${1:-}" in
   --version)
-    echo "intellij-scala-lsp $LSP_VERSION (IntelliJ $INTELLIJ_BUILD)"
+    echo "scallij $LSP_VERSION (IntelliJ $INTELLIJ_BUILD)"
     exit 0
     ;;
   --help)
-    echo "Usage: intellij-scala-lsp [OPTIONS]"
+    echo "Usage: scallij [OPTIONS]"
     echo ""
     echo "Options:"
     echo "  --dev [projects...]       Rebuild LSP server and start daemon (local dev)"
@@ -1352,7 +1352,7 @@ case "${1:-}" in
     exit 0
     ;;
   --setup-claude-code-lsp)
-    setup_claude_code "intellij-scala-lsp"
+    setup_claude_code "scallij"
     exit 0
     ;;
   --setup-claude-code-lsp-dev)
@@ -1361,11 +1361,11 @@ case "${1:-}" in
       echo "Use --setup-claude-code-lsp for installed users."
       exit 1
     fi
-    setup_claude_code "$SCRIPT_DIR/intellij-scala-lsp"
+    setup_claude_code "$SCRIPT_DIR/scallij"
     exit 0
     ;;
   --setup-vscode)
-    setup_vscode "intellij-scala-lsp"
+    setup_vscode "scallij"
     exit 0
     ;;
   --setup-vscode-dev)
@@ -1378,7 +1378,7 @@ case "${1:-}" in
     exit 0
     ;;
   --setup-zed)
-    setup_zed "intellij-scala-lsp" ""
+    setup_zed "scallij" ""
     exit 0
     ;;
   --setup-zed-dev)
@@ -1387,14 +1387,14 @@ case "${1:-}" in
       echo "Use --setup-zed for installed users."
       exit 1
     fi
-    setup_zed "$SCRIPT_DIR/intellij-scala-lsp" "$PROJECT_ROOT/zed-extension"
+    setup_zed "$SCRIPT_DIR/scallij" "$PROJECT_ROOT/zed-extension"
     exit 0
     ;;
   --import)
     PROJECT_PATH="${2:-}"
     if [ -z "$PROJECT_PATH" ]; then
       echo "ERROR: --import requires a project path argument."
-      echo "Usage: intellij-scala-lsp --import <project-path>"
+      echo "Usage: scallij --import <project-path>"
       exit 1
     fi
     # Resolve to absolute path
