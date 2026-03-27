@@ -43,13 +43,13 @@ jobs:
           # --stop should not crash when no daemon is running
           ./launcher/scallij --stop 2>&1 || true
 
-      - name: 'Test: default mode fails without SDK'
+      - name: 'Test: default mode fails without SDK with helpful error'
         run: |
-          # Running without args (connect mode) should fail because no SDK is available
-          if ./launcher/scallij 2>/dev/null; then
-            echo "FAIL: should fail without SDK"
-            exit 1
-          fi
+          # Running without args (connect mode) should fail with install instructions
+          stderr=$(./launcher/scallij 2>&1 || true)
+          echo "$stderr"
+          echo "$stderr" | grep -q "No IntelliJ IDEA installation found"
+          echo "$stderr" | grep -q "jetbrains.com/idea/download"
 
   test-provided-sdk:
     strategy:

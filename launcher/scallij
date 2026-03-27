@@ -153,39 +153,15 @@ find_scala_plugin() {
   return 1
 }
 
-download_sdk() {
-  log "Downloading IntelliJ Community Edition (build $INTELLIJ_BUILD)..."
-  local sdk_dir="$CACHE_DIR/sdk/$INTELLIJ_BUILD"
-  mkdir -p "$sdk_dir"
-  local tmp_dir="$CACHE_DIR/sdk-download-tmp"
-  rm -rf "$tmp_dir"
-  mkdir -p "$tmp_dir"
-
-  # Determine download URL using marketing version (e.g. "2025.3.4")
-  # JetBrains URLs use marketing versions, NOT build numbers
-  local url=""
-  if [ "$PLATFORM" = "macos" ]; then
-    if [ "$ARCH" = "aarch64" ]; then
-      url="https://download.jetbrains.com/idea/ideaIC-${INTELLIJ_VERSION}-aarch64.tar.gz"
-    else
-      url="https://download.jetbrains.com/idea/ideaIC-${INTELLIJ_VERSION}.tar.gz"
-    fi
-  else
-    if [ "$ARCH" = "aarch64" ]; then
-      url="https://download.jetbrains.com/idea/ideaIC-${INTELLIJ_VERSION}-aarch64.tar.gz"
-    else
-      url="https://download.jetbrains.com/idea/ideaIC-${INTELLIJ_VERSION}.tar.gz"
-    fi
-  fi
-
-  log "Downloading from: $url"
-  curl -fSL --progress-bar -o "$tmp_dir/idea.tar.gz" "$url"
-  log "Extracting..."
-  tar xzf "$tmp_dir/idea.tar.gz" -C "$tmp_dir" --strip-components=1
-  # Move to final location
-  rm -rf "$sdk_dir"
-  mv "$tmp_dir" "$sdk_dir"
-  log "IntelliJ SDK installed to $sdk_dir"
+sdk_not_found() {
+  log "ERROR: No IntelliJ IDEA installation found (need build $INTELLIJ_BUILD / $INTELLIJ_VERSION)."
+  log ""
+  log "Install IntelliJ IDEA Community Edition $INTELLIJ_VERSION:"
+  log "  https://www.jetbrains.com/idea/download/"
+  log ""
+  log "Or set INTELLIJ_HOME to an existing installation:"
+  log "  export INTELLIJ_HOME=/path/to/idea"
+  exit 1
 }
 
 download_scala_plugin() {
@@ -207,10 +183,7 @@ download_scala_plugin() {
 }
 
 resolve_sdk() {
-  IDEA_HOME=$(find_intellij_home) || {
-    download_sdk
-    IDEA_HOME="$CACHE_DIR/sdk/$INTELLIJ_BUILD"
-  }
+  IDEA_HOME=$(find_intellij_home) || sdk_not_found
   log "IntelliJ: $IDEA_HOME"
 
   SCALA_PLUGIN_DIR=$(find_scala_plugin "$IDEA_HOME") || {
@@ -1327,7 +1300,7 @@ case "${1:-}" in
     echo "  --daemon [projects...]    Start daemon, optionally pre-warm projects"
     echo "  --stop                    Stop the daemon"
     echo "  --list-projects           List projects open in the daemon"
-    echo "  --install                 Download LSP JARs and SDK"
+    echo "  --install                 Download LSP server JARs and verify SDK"
     echo "  --update                  Update to latest version"
     echo "  --setup-claude-code-mcp       Set up Claude Code MCP server (recommended)"
     echo "  --setup-claude-code-mcp-dev   Set up Claude Code MCP server (local dev)"
