@@ -1,12 +1,12 @@
 #!/bin/bash
-# One-line installer for intellij-scala-lsp
+# One-line installer for scallij
 # Usage: curl -fsSL https://github.com/hoangmaihuy/intellij-scala-lsp/releases/latest/download/install.sh | bash
 set -euo pipefail
 
 GITHUB_REPO="hoangmaihuy/intellij-scala-lsp"
 INSTALL_DIR="${HOME}/.local/bin"
 
-echo "=== Installing intellij-scala-lsp ==="
+echo "=== Installing scallij ==="
 echo ""
 
 # Platform check
@@ -18,9 +18,9 @@ esac
 # Download launcher script
 echo "[1/2] Downloading launcher..."
 mkdir -p "$INSTALL_DIR"
-LAUNCHER_URL="https://github.com/${GITHUB_REPO}/releases/latest/download/intellij-scala-lsp"
-curl -fSL --progress-bar -o "$INSTALL_DIR/intellij-scala-lsp" "$LAUNCHER_URL"
-chmod +x "$INSTALL_DIR/intellij-scala-lsp"
+LAUNCHER_URL="https://github.com/${GITHUB_REPO}/releases/latest/download/scallij"
+curl -fSL --progress-bar -o "$INSTALL_DIR/scallij" "$LAUNCHER_URL"
+chmod +x "$INSTALL_DIR/scallij"
 
 # Check if in PATH
 case ":$PATH:" in
@@ -36,9 +36,9 @@ esac
 
 # Run install
 echo "[2/2] Setting up SDK and downloading LSP server..."
-"$INSTALL_DIR/intellij-scala-lsp" --install
+"$INSTALL_DIR/scallij" --install
 
 echo ""
 echo "=== Installation complete ==="
 echo ""
-echo "Run 'intellij-scala-lsp --help' to get started."
+echo "Run 'scallij --help' to get started."
