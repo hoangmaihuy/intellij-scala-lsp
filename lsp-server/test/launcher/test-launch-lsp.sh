@@ -5,7 +5,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-LAUNCH_SCRIPT="$PROJECT_ROOT/launcher/launch-lsp.sh"
+LAUNCH_SCRIPT="$PROJECT_ROOT/launcher/scallij"
 PASS=0
 FAIL=0
 SKIP=0
