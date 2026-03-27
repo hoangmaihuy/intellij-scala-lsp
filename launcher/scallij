@@ -1532,6 +1532,11 @@ case "${1:-}" in
     exec "$JAVA" "${JVM_ARGS[@]}" -cp "$CLASSPATH" \
       com.intellij.idea.Main scala-lsp-import "$PROJECT_PATH"
     ;;
+  --*)
+    log "ERROR: Unknown option: $1"
+    log "Run: scallij --help"
+    exit 1
+    ;;
   *)
     # Connect mode: proxy to daemon, auto-start if needed
     resolve_sdk
