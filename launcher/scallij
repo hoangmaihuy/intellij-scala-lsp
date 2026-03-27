@@ -430,7 +430,13 @@ download_lsp_jars() {
 
 do_install() {
   log "Installing scallij..."
-  download_lsp_jars
+  if [ -f "$CACHE_DIR/version" ] && [ -d "$CACHE_DIR/lsp-server/lib" ]; then
+    local cached_version
+    cached_version=$(cat "$CACHE_DIR/version")
+    log "LSP server v${cached_version} already installed, skipping JAR download."
+  else
+    download_lsp_jars
+  fi
   resolve_sdk
   # Check socat
   if ! command -v socat >/dev/null 2>&1; then
