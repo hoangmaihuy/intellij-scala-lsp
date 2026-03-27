@@ -18,8 +18,8 @@ class ProjectImportLauncherTest:
   /** Resolve launcher path — works whether CWD is project root or lsp-server/ */
   private val launcherPath: String =
     val candidates = Seq(
-      Path.of("launcher/intellij-scala-lsp").toAbsolutePath,
-      Path.of("../launcher/intellij-scala-lsp").toAbsolutePath.normalize
+      Path.of("launcher/scallij").toAbsolutePath,
+      Path.of("../launcher/scallij").toAbsolutePath.normalize
     )
     candidates.find(Files.exists(_)) match
       case Some(p) => p.toString
