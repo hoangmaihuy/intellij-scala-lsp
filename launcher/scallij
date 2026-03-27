@@ -1436,7 +1436,7 @@ case "${1:-}" in
     fi
     # Fallback: find orphaned daemon via jps if pid file is missing or stale
     if [ -z "$pid" ] || ! kill -0 "$pid" 2>/dev/null; then
-      pid=$(jps 2>/dev/null | grep 'Main' | awk '{print $1}' | head -1)
+      pid=$(jps 2>/dev/null | grep 'Main' | awk '{print $1}' | head -1 || true)
     fi
     if [ -z "$pid" ]; then
       echo "[ScalaLsp] No daemon running."
@@ -1444,7 +1444,7 @@ case "${1:-}" in
       exit 0
     fi
     # Kill ALL LSP daemon processes (VS Code/MCP may spawn multiple)
-    all_pids=$(jps 2>/dev/null | grep 'Main' | awk '{print $1}')
+    all_pids=$(jps 2>/dev/null | grep 'Main' | awk '{print $1}' || true)
     if [ -z "$all_pids" ]; then
       all_pids="$pid"
     fi
@@ -1452,11 +1452,11 @@ case "${1:-}" in
     echo "$all_pids" | xargs kill 2>/dev/null || true
     # Wait up to 10 seconds for all to die
     for i in $(seq 1 20); do
-      remaining=$(jps 2>/dev/null | grep 'Main' | awk '{print $1}')
+      remaining=$(jps 2>/dev/null | grep 'Main' | awk '{print $1}' || true)
       [ -z "$remaining" ] && break
       sleep 0.5
     done
-    remaining=$(jps 2>/dev/null | grep 'Main' | awk '{print $1}')
+    remaining=$(jps 2>/dev/null | grep 'Main' | awk '{print $1}' || true)
     if [ -n "$remaining" ]; then
       echo "[ScalaLsp] Force killing: $remaining"
       echo "$remaining" | xargs kill -9 2>/dev/null || true
