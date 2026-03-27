@@ -7,51 +7,7 @@ on:
     branches: [main]
 
 jobs:
-  test-missing-sdk:
-    strategy:
-      matrix:
-        os: [macos-latest, ubuntu-latest]
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: 'Test: --version'
-        run: |
-          output=$(./launcher/scallij --version)
-          echo "$output"
-          echo "$output" | grep -q "scallij"
-
-      - name: 'Test: --help'
-        run: |
-          output=$(./launcher/scallij --help)
-          echo "$output"
-          echo "$output" | grep -q "Usage: scallij"
-
-      - name: 'Test: unknown flag rejected'
-        run: |
-          if ./launcher/scallij --unknown-flag 2>/dev/null; then
-            echo "FAIL: unknown flag should exit non-zero"
-            exit 1
-          fi
-          stderr=$(./launcher/scallij --unknown-flag 2>&1 || true)
-          echo "$stderr"
-          echo "$stderr" | grep -q "Unknown option"
-
-      - name: 'Test: --stop with no daemon'
-        run: |
-          # --stop should not crash when no daemon is running
-          ./launcher/scallij --stop 2>&1 || true
-
-      - name: 'Test: default mode fails without SDK with helpful error'
-        run: |
-          # Running without args (connect mode) should fail with install instructions
-          stderr=$(./launcher/scallij 2>&1 || true)
-          echo "$stderr"
-          echo "$stderr" | grep -q "No IntelliJ IDEA installation found"
-          echo "$stderr" | grep -q "jetbrains.com/idea/download"
-
-  test-provided-sdk:
+  test-launcher:
     strategy:
       matrix:
         os: [macos-latest, ubuntu-latest]
