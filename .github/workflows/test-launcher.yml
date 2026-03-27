@@ -170,6 +170,11 @@ jobs:
 
       - name: 'Test: --stop'
         run: |
-          output=$(./launcher/scallij --stop 2>&1)
-          echo "$output"
-          echo "$output" | grep -q "Daemon stopped"
+          # --stop exits 0 when daemon is running and gets killed
+          ./launcher/scallij --stop
+          # Verify daemon is actually gone
+          sleep 2
+          if [ -f "$HOME/.cache/intellij-scala-lsp/daemon.port" ]; then
+            echo "FAIL: daemon.port still exists after --stop"
+            exit 1
+          fi
