@@ -83,14 +83,14 @@ async function main() {
 
     // --- Test 2: workspace_symbols ---
     console.log('Test 2: workspace_symbols');
-    let result = await client.callTool({ name: 'workspace_symbols', arguments: { query: 'HoverProvider' } });
+    let result = await client.callTool({ name: 'workspace_symbols', arguments: { projectPath: WORKSPACE, query: 'HoverProvider' } });
     let text = result.content[0]?.text || '';
     check('finds HoverProvider', text.includes('HoverProvider'));
     check('shows file location', text.includes('.scala'));
 
     // --- Test 3: definition ---
     console.log('Test 3: definition');
-    result = await client.callTool({ name: 'definition', arguments: { symbolName: 'HoverProvider' } });
+    result = await client.callTool({ name: 'definition', arguments: { projectPath: WORKSPACE, symbolName: 'HoverProvider' } });
     text = result.content[0]?.text || '';
     check('returns source code', text.includes('class') || text.includes('HoverProvider'));
     check('includes line numbers', /\d+\|/.test(text));
@@ -98,46 +98,46 @@ async function main() {
 
     // --- Test 4: hover ---
     console.log('Test 4: hover');
-    result = await client.callTool({ name: 'hover', arguments: { filePath: TEST_FILE, line: 1, column: 10 } });
+    result = await client.callTool({ name: 'hover', arguments: { projectPath: WORKSPACE, filePath: TEST_FILE, line: 1, column: 10 } });
     text = result.content[0]?.text || '';
     check('returns hover info', text.length > 0, text.substring(0, 100));
 
     // --- Test 5: document_symbols ---
     console.log('Test 5: document_symbols');
-    result = await client.callTool({ name: 'document_symbols', arguments: { filePath: TEST_FILE } });
+    result = await client.callTool({ name: 'document_symbols', arguments: { projectPath: WORKSPACE, filePath: TEST_FILE } });
     text = result.content[0]?.text || '';
     check('lists symbols', text.includes('class') || text.includes('method') || text.includes('object'));
     check('shows line numbers', /L\d+/.test(text));
 
     // --- Test 6: references ---
     console.log('Test 6: references');
-    result = await client.callTool({ name: 'references', arguments: { symbolName: 'DefinitionProvider' } });
+    result = await client.callTool({ name: 'references', arguments: { projectPath: WORKSPACE, symbolName: 'DefinitionProvider' } });
     text = result.content[0]?.text || '';
     check('finds references', text.includes('References') || text.includes('DefinitionProvider'));
 
     // --- Test 7: implementations ---
     console.log('Test 7: implementations');
-    result = await client.callTool({ name: 'implementations', arguments: { symbolName: 'ScalaLspServer' } });
+    result = await client.callTool({ name: 'implementations', arguments: { projectPath: WORKSPACE, symbolName: 'ScalaLspServer' } });
     text = result.content[0]?.text || '';
     check('returns result', text.length > 0, text.substring(0, 100));
 
     // --- Test 8: diagnostics ---
     console.log('Test 8: diagnostics');
-    result = await client.callTool({ name: 'diagnostics', arguments: { filePath: TEST_FILE } });
+    result = await client.callTool({ name: 'diagnostics', arguments: { projectPath: WORKSPACE, filePath: TEST_FILE } });
     text = result.content[0]?.text || '';
     check('returns diagnostics result', text.includes('diagnostic') || text.includes('No diagnostics'));
 
     // --- Test 9: code_actions ---
     console.log('Test 9: code_actions');
     result = await client.callTool({ name: 'code_actions', arguments: {
-      filePath: TEST_FILE, startLine: 1, startColumn: 1, endLine: 1, endColumn: 1
+      projectPath: WORKSPACE, filePath: TEST_FILE, startLine: 1, startColumn: 1, endLine: 1, endColumn: 1
     }});
     text = result.content[0]?.text || '';
     check('returns code actions result', text.includes('code action') || text.includes('No code actions'));
 
     // --- Test 10: Phase 2 - incoming_calls ---
     console.log('Test 10: incoming_calls');
-    result = await client.callTool({ name: 'incoming_calls', arguments: { symbolName: 'HoverProvider' } });
+    result = await client.callTool({ name: 'incoming_calls', arguments: { projectPath: WORKSPACE, symbolName: 'HoverProvider' } });
     text = result.content[0]?.text || '';
     check('returns callers result', text.length > 0, text.substring(0, 100));
 
