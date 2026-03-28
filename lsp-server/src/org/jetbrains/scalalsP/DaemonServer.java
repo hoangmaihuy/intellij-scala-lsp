@@ -10,6 +10,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import java.nio.file.Path;
 
 public final class DaemonServer {
     private final ProjectRegistry registry;
@@ -82,6 +83,12 @@ public final class DaemonServer {
                 return;
             }
 
+            // Check if this is an import request (from --import mode)
+            if ("import".equals(method)) {
+                handleImport(firstMessage, socket);
+                return;
+            }
+
             String projectPath = extractProjectPath(firstMessage);
             System.err.println("[DaemonServer] Session for project: " + projectPath);
 
@@ -115,6 +122,51 @@ public final class DaemonServer {
             activeSessions.decrementAndGet();
             try { socket.close(); } catch (IOException ignored) {}
         }
+    }
+
+    private void handleImport(byte[] messageBytes, Socket socket) {
+        String projectPath = extractImportPath(messageBytes);
+        System.err.println("[DaemonServer] Import request for: " + projectPath);
+        try {
+            OutputStream out = socket.getOutputStream();
+            try {
+                // Reuse existing project from registry, or open a new one
+                var project = registry.openProject(projectPath);
+                ProjectImporter.importSbtProjectWithExisting(project, Path.of(projectPath));
+                String result = "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"success\":true}}";
+                writeJsonRpcMessage(out, result);
+                System.err.println("[DaemonServer] Import complete for: " + projectPath);
+            } catch (Exception e) {
+                System.err.println("[DaemonServer] Import failed: " + e.getMessage());
+                e.printStackTrace(System.err);
+                String error = "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-1,\"message\":" +
+                    JsonParser.parseString("\"" + e.getMessage().replace("\\", "\\\\").replace("\"", "\\\"") + "\"") + "}}";
+                writeJsonRpcMessage(out, error);
+            }
+        } catch (IOException e) {
+            System.err.println("[DaemonServer] IO error during import: " + e.getMessage());
+        } finally {
+            try { socket.close(); } catch (IOException ignored) {}
+        }
+    }
+
+    private void writeJsonRpcMessage(OutputStream out, String json) throws IOException {
+        byte[] body = json.getBytes(StandardCharsets.UTF_8);
+        String header = "Content-Length: " + body.length + "\r\n\r\n";
+        out.write(header.getBytes(StandardCharsets.UTF_8));
+        out.write(body);
+        out.flush();
+    }
+
+    private String extractImportPath(byte[] messageBytes) {
+        String raw = new String(messageBytes, StandardCharsets.UTF_8);
+        int jsonStart = raw.indexOf("{");
+        if (jsonStart < 0) return "";
+        String json = raw.substring(jsonStart);
+        JsonObject msg = JsonParser.parseString(json).getAsJsonObject();
+        JsonObject params = msg.has("params") ? msg.getAsJsonObject("params") : null;
+        if (params == null) return "";
+        return params.has("projectPath") ? params.get("projectPath").getAsString() : "";
     }
 
     private byte[] readFirstMessage(InputStream in) throws IOException {

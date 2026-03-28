@@ -1506,10 +1506,43 @@ case "${1:-}" in
     ;;
   --import)
     # sbt import — we only reach here for sbt projects (Mill handled above)
-    resolve_sdk
-    assemble_classpath_and_flags
-    exec "$JAVA" "${JVM_ARGS[@]}" -cp "$CLASSPATH" \
-      com.intellij.idea.Main scala-lsp-import "$PROJECT_PATH"
+    if daemon_running; then
+      # Reuse the running daemon to import via daemon's TCP socket
+      DAEMON_PORT=$(cat "$CACHE_DIR/daemon.port")
+      log "Sending import request to daemon on port $DAEMON_PORT for: $PROJECT_PATH"
+      JSON_BODY="{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"import\",\"params\":{\"projectPath\":\"$PROJECT_PATH\"}}"
+      CONTENT_LENGTH=${#JSON_BODY}
+      # Use python to send request and read response (keeps connection open after writing)
+      RESPONSE=$(python3 -c "
+import socket, sys
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.connect(('127.0.0.1', $DAEMON_PORT))
+msg = 'Content-Length: $CONTENT_LENGTH\r\n\r\n$JSON_BODY'
+s.sendall(msg.encode())
+s.shutdown(socket.SHUT_WR)
+data = b''
+while True:
+    chunk = s.recv(4096)
+    if not chunk: break
+    data += chunk
+s.close()
+sys.stdout.write(data.decode())
+")
+      if echo "$RESPONSE" | grep -q '"success"'; then
+        echo "Import complete."
+        exit 0
+      else
+        echo "Import failed. Daemon response:"
+        echo "$RESPONSE" | grep -o '{.*}'
+        exit 1
+      fi
+    else
+      # No daemon running — start IDEA just for import
+      resolve_sdk
+      assemble_classpath_and_flags
+      exec "$JAVA" "${JVM_ARGS[@]}" -cp "$CLASSPATH" \
+        com.intellij.idea.Main scala-lsp-import "$PROJECT_PATH"
+    fi
     ;;
   --*)
     log "ERROR: Unknown option: $1"
