@@ -32,13 +32,15 @@ class ScalaTextDocumentService(projectManager: IntellijProjectManager, val diagn
     val id = requestCounter.incrementAndGet()
     val start = System.currentTimeMillis()
     System.err.println(s"[LSP] --> $method #$id $params")
-    f.whenComplete: (_, error) =>
+    val future = f
+    future.whenComplete: (_, error) =>
       val elapsed = System.currentTimeMillis() - start
       if error != null then
         val msg = Option(error.getCause).map(_.getMessage).getOrElse(error.getMessage)
         System.err.println(s"[LSP] <-- $method #$id ERROR ${elapsed}ms: $msg")
       else
         System.err.println(s"[LSP] <-- $method #$id ${elapsed}ms")
+    future
 
   private def shortUri(uri: String): String =
     val idx = uri.lastIndexOf('/')
