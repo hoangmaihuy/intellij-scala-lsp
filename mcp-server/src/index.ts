@@ -5,13 +5,9 @@ import { execSync, spawn } from 'child_process';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { LspClient } from './lsp-client.js';
-import { FileManager } from './file-manager.js';
-import { SymbolResolver } from './symbol-resolver.js';
-import { applyWorkspaceEdit } from './workspace-edit.js';
+import { SessionManager } from './session-manager.js';
 import { registerTools } from './tools/register.js';
 import { logger } from './logger.js';
-import { pathToUri } from './utils.js';
-import { WorkspaceEdit } from 'vscode-languageserver-protocol';
 
 const CACHE_DIR = path.join(os.homedir(), '.cache', 'intellij-scala-lsp');
 const PORT_FILE = path.join(CACHE_DIR, 'daemon.port');
@@ -72,44 +68,21 @@ async function ensureDaemonRunning(): Promise<number> {
 
 async function main(): Promise<void> {
   const projectRoot = process.env.CLAUDE_WORKING_DIR || process.cwd();
-  const rootUri = pathToUri(projectRoot);
   logger.info(`Starting MCP server for workspace: ${projectRoot}`);
 
   const port = await ensureDaemonRunning();
 
-  const lsp = new LspClient();
-  await lsp.connect(port);
+  const sessionManager = new SessionManager(port);
 
-  const fileManager = new FileManager(lsp);
-  lsp.onRequest('workspace/applyEdit', async (params: unknown) => {
-    const p = params as { edit: WorkspaceEdit };
-    const modifiedUris = applyWorkspaceEdit(p.edit);
-    for (const uri of modifiedUris) {
-      fileManager.notifySaved(uri);
-    }
-    return { applied: true };
-  });
-  lsp.onRequest('workspace/configuration', async () => [{}]);
-  lsp.onRequest('client/registerCapability', async () => null);
-  lsp.onNotification('window/showMessage', (params) => {
-    const p = params as { type: number; message: string };
-    logger.info(`[LSP] ${p.message}`);
-  });
-  lsp.onNotification('window/logMessage', (params) => {
-    const p = params as { type: number; message: string };
-    logger.debug(`[LSP] ${p.message}`);
-  });
-
-  await lsp.initialize(rootUri);
-
-  const symbolResolver = new SymbolResolver(lsp, fileManager);
+  // Pre-connect primary project
+  await sessionManager.getSession(projectRoot);
 
   const mcp = new McpServer({
     name: 'intellij-scala-lsp',
     version: '0.1.0',
   });
 
-  registerTools(mcp, lsp, fileManager, symbolResolver);
+  registerTools(mcp, sessionManager);
 
   const transport = new StdioServerTransport();
   await mcp.connect(transport);
@@ -117,8 +90,7 @@ async function main(): Promise<void> {
 
   const shutdown = async () => {
     logger.info('Shutting down...');
-    fileManager.closeAll();
-    await lsp.shutdown();
+    sessionManager.closeAll();
     process.exit(0);
   };
   process.on('SIGINT', shutdown);

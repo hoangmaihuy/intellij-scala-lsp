@@ -1,6 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { LspClient } from '../lsp-client.js';
+import { SessionManager } from '../session-manager.js';
 import { FileManager } from '../file-manager.js';
 import { SymbolResolver } from '../symbol-resolver.js';
 import { uriToPath, addLineNumbers, toPosition } from '../utils.js';
@@ -43,6 +43,7 @@ async function resolveTargets(
 }
 
 const navigationParams = {
+  projectPath: z.string().describe('Absolute path to the project root'),
   symbolName: z.string().optional().describe('Symbol name (e.g. "MyClass", "MyClass.myMethod")'),
   filePath: z.string().optional().describe('Absolute path to the file (use with line+column)'),
   line: z.number().optional().describe('Line number, 1-indexed (use with filePath+column)'),
@@ -51,9 +52,7 @@ const navigationParams = {
 
 export function registerNavigationTools(
   mcp: McpServer,
-  lsp: LspClient,
-  fileManager: FileManager,
-  symbolResolver: SymbolResolver,
+  sessionManager: SessionManager,
 ): void {
 
   mcp.tool(
@@ -61,6 +60,7 @@ export function registerNavigationTools(
     'Read the full source code where a symbol is defined (returns the enclosing class/method body with line numbers, up to 3 matches). Use this instead of Read for Scala files. Prefer symbolName (e.g. "MyClass", "pkg.MyClass.method"); use filePath+line+column to disambiguate overloads or resolve from a usage site.',
     navigationParams,
     withToolLogging('definition', async (args) => {
+      const { lsp, fileManager, symbolResolver } = await sessionManager.getSession(args.projectPath);
       const targets = await resolveTargets(args, symbolResolver, fileManager);
       if (targets.length === 0) {
         return { content: [{ type: 'text' as const, text: `No symbol found matching '${args.symbolName}'. Try with filePath+line+column instead to resolve from a usage site.` }] };
@@ -132,6 +132,7 @@ export function registerNavigationTools(
     'Find all usages of a symbol across the codebase (excludes the declaration). Returns locations grouped by file with 2 lines of surrounding context. Prefer symbolName; use filePath+line+column to disambiguate overloads or resolve from a usage site.',
     navigationParams,
     withToolLogging('references', async (args) => {
+      const { lsp, fileManager, symbolResolver } = await sessionManager.getSession(args.projectPath);
       const targets = await resolveTargets(args, symbolResolver, fileManager);
       if (targets.length === 0) {
         return { content: [{ type: 'text' as const, text: `No symbol found matching '${args.symbolName}'. Try with filePath+line+column instead.` }] };
@@ -199,6 +200,7 @@ export function registerNavigationTools(
     'Find all implementations of a trait, abstract class, or abstract method. Returns full source code of each implementation (up to 10 in full, then summaries). Prefer symbolName; use filePath+line+column to disambiguate.',
     navigationParams,
     withToolLogging('implementations', async (args) => {
+      const { lsp, fileManager, symbolResolver } = await sessionManager.getSession(args.projectPath);
       const targets = await resolveTargets(args, symbolResolver, fileManager);
       if (targets.length === 0) {
         return { content: [{ type: 'text' as const, text: `No symbol found matching '${args.symbolName}'. Try with filePath+line+column instead.` }] };

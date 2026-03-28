@@ -1,7 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { LspClient } from '../lsp-client.js';
-import { FileManager } from '../file-manager.js';
+import { SessionManager } from '../session-manager.js';
 import { toPosition, uriToPath } from '../utils.js';
 import { withToolLogging } from '../tool-logging.js';
 import { applyWorkspaceEdit } from '../workspace-edit.js';
@@ -11,21 +10,22 @@ import {
 
 export function registerEditingTools(
   mcp: McpServer,
-  lsp: LspClient,
-  fileManager: FileManager,
+  sessionManager: SessionManager,
 ): void {
-  let cachedCodeActions: CodeAction[] = [];
+  const cachedCodeActions = new Map<string, { filePath: string; actions: CodeAction[] }>();
 
   mcp.tool(
     'rename_symbol',
     'Rename a symbol and update all references across the entire codebase atomically. Applies changes to disk immediately. Call references first to check blast radius.',
     {
+      projectPath: z.string().describe('Absolute path to the project root'),
       filePath: z.string().describe('Absolute path to the file'),
       line: z.number().describe('Line number (1-indexed)'),
       column: z.number().describe('Column number (1-indexed)'),
       newName: z.string().describe('New name for the symbol'),
     },
-    withToolLogging('rename_symbol', async ({ filePath, line, column, newName }) => {
+    withToolLogging('rename_symbol', async ({ projectPath, filePath, line, column, newName }) => {
+      const { lsp, fileManager } = await sessionManager.getSession(projectPath);
       const uri = await fileManager.ensureOpen(filePath);
       const edit = await lsp.request<WorkspaceEdit>('textDocument/rename', {
         textDocument: { uri },
@@ -68,13 +68,15 @@ export function registerEditingTools(
     'code_actions',
     'Get available quick fixes, refactorings, and code actions for a code range. Returns a numbered list; use apply_code_action with the index to apply. Results are cached until the next code_actions call.',
     {
+      projectPath: z.string().describe('Absolute path to the project root'),
       filePath: z.string().describe('Absolute path to the file'),
       startLine: z.number().describe('Start line (1-indexed)'),
       startColumn: z.number().describe('Start column (1-indexed)'),
       endLine: z.number().describe('End line (1-indexed)'),
       endColumn: z.number().describe('End column (1-indexed)'),
     },
-    withToolLogging('code_actions', async ({ filePath, startLine, startColumn, endLine, endColumn }) => {
+    withToolLogging('code_actions', async ({ projectPath, filePath, startLine, startColumn, endLine, endColumn }) => {
+      const { lsp, fileManager } = await sessionManager.getSession(projectPath);
       const uri = await fileManager.ensureOpen(filePath);
       const result = await lsp.request<(CodeAction | Command)[]>('textDocument/codeAction', {
         textDocument: { uri },
@@ -86,15 +88,16 @@ export function registerEditingTools(
       } as CodeActionParams);
 
       if (!result || result.length === 0) {
-        cachedCodeActions = [];
+        cachedCodeActions.delete(projectPath);
         return { content: [{ type: 'text' as const, text: 'No code actions available at this location.' }] };
       }
 
-      cachedCodeActions = result.filter((r): r is CodeAction => 'kind' in r || 'edit' in r || 'diagnostics' in r);
+      const actions = result.filter((r): r is CodeAction => 'kind' in r || 'edit' in r || 'diagnostics' in r);
+      cachedCodeActions.set(projectPath, { filePath, actions });
 
-      const output: string[] = [`${cachedCodeActions.length} code action(s) available:\n`];
-      for (let i = 0; i < cachedCodeActions.length; i++) {
-        const action = cachedCodeActions[i];
+      const output: string[] = [`${actions.length} code action(s) available:\n`];
+      for (let i = 0; i < actions.length; i++) {
+        const action = actions[i];
         const kind = action.kind || 'unknown';
         output.push(`[${i + 1}] ${action.title} (${kind})`);
       }
@@ -108,18 +111,21 @@ export function registerEditingTools(
     'apply_code_action',
     'Apply a code action from the most recent code_actions result. The actionIndex is 1-indexed from the code_actions output. Applies changes to disk immediately.',
     {
+      projectPath: z.string().describe('Absolute path to the project root'),
       filePath: z.string().describe('Absolute path to the file (must match the file from code_actions)'),
       actionIndex: z.number().describe('Index of the action to apply (1-indexed, from code_actions output)'),
     },
-    withToolLogging('apply_code_action', async ({ filePath, actionIndex }) => {
-      if (cachedCodeActions.length === 0) {
+    withToolLogging('apply_code_action', async ({ projectPath, actionIndex }) => {
+      const { lsp, fileManager } = await sessionManager.getSession(projectPath);
+      const cached = cachedCodeActions.get(projectPath);
+      if (!cached || cached.actions.length === 0) {
         return { content: [{ type: 'text' as const, text: 'No cached code actions. Call code_actions first.' }] };
       }
-      if (actionIndex < 1 || actionIndex > cachedCodeActions.length) {
-        return { content: [{ type: 'text' as const, text: `Invalid index ${actionIndex}. Range: 1-${cachedCodeActions.length}` }] };
+      if (actionIndex < 1 || actionIndex > cached.actions.length) {
+        return { content: [{ type: 'text' as const, text: `Invalid index ${actionIndex}. Range: 1-${cached.actions.length}` }] };
       }
 
-      const action = cachedCodeActions[actionIndex - 1];
+      const action = cached.actions[actionIndex - 1];
 
       let resolved = action;
       if (!action.edit) {
