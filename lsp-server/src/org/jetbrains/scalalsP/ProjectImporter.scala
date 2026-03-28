@@ -47,7 +47,7 @@ class ProjectImporter extends ApplicationStarter:
 
 object ProjectImporter:
 
-  private def importSbtProject(projectPath: Path): Unit =
+  def importSbtProject(projectPath: Path): Unit =
     System.err.println(s"[Import] Opening project at: $projectPath")
 
     val project = ProjectManager.getInstance().loadAndOpenProject(projectPath.toString)
@@ -55,59 +55,67 @@ object ProjectImporter:
       throw RuntimeException(s"Failed to open project at $projectPath")
 
     try
-      ensureJdkRegistered()
-
-      // Use reflection to call SbtOpenProjectProvider.doLinkProject()
-      // Must load via Scala plugin's classloader for proper service registration.
-      System.err.println("[Import] Linking sbt project via Scala plugin...")
-      val pluginId = com.intellij.openapi.extensions.PluginId.getId("org.intellij.scala")
-      val plugin = com.intellij.ide.plugins.PluginManagerCore.getPlugin(pluginId)
-      if plugin == null then
-        throw RuntimeException("Scala plugin not found. Ensure the Scala plugin is installed.")
-      val pluginClassLoader = plugin.getPluginClassLoader
-      val sbtProviderClass = Class.forName("org.jetbrains.sbt.project.SbtOpenProjectProvider", true, pluginClassLoader)
-      val provider = sbtProviderClass.getDeclaredConstructor().newInstance()
-
-      val vf = LocalFileSystem.getInstance().refreshAndFindFileByPath(projectPath.toString)
-      if vf == null then
-        throw RuntimeException(s"Cannot find virtual file for $projectPath")
-
-      val doLinkMethod = sbtProviderClass.getMethod("doLinkProject",
-        classOf[com.intellij.openapi.vfs.VirtualFile], classOf[Project])
-      var alreadyLinked = false
-      try
-        ApplicationManager.getApplication.invokeAndWait: () =>
-          doLinkMethod.invoke(provider, vf, project)
-      catch
-        case e: Exception if hasAlreadyImportedException(e) =>
-          alreadyLinked = true
-
-      if alreadyLinked then
-        System.err.println("[Import] Project already linked, refreshing...")
-      else
-        System.err.println("[Import] sbt project linked")
-
-      System.err.println("[Import] Waiting for initial indexing...")
-      DumbService.getInstance(project).waitForSmartMode()
-
-      System.err.println("[Import] Resolving sbt project model (synchronous)...")
-      val sbtSystemId = new ProjectSystemId("SBT")
-      ExternalSystemUtil.refreshProject(
-        projectPath.toString,
-        new ImportSpecBuilder(project, sbtSystemId)
-          .use(ProgressExecutionMode.MODAL_SYNC)
-      )
-
-      System.err.println("[Import] Waiting for indexing...")
-      DumbService.getInstance(project).waitForSmartMode()
-      System.err.println("[Import] Indexing complete")
-
-      ApplicationManager.getApplication.invokeAndWait: () =>
-        ApplicationManager.getApplication.saveAll()
-        project.save()
+      doImport(project, projectPath)
     finally
       ApplicationManager.getApplication.invokeAndWait: () =>
         ProjectManager.getInstance().closeAndDispose(project)
+
+  /** Import using an already-open project (e.g. from daemon's ProjectRegistry). */
+  def importSbtProjectWithExisting(project: Project, projectPath: Path): Unit =
+    System.err.println(s"[Import] Importing with existing project at: $projectPath")
+    doImport(project, projectPath)
+
+  private def doImport(project: Project, projectPath: Path): Unit =
+    ensureJdkRegistered()
+
+    // Use reflection to call SbtOpenProjectProvider.doLinkProject()
+    // Must load via Scala plugin's classloader for proper service registration.
+    System.err.println("[Import] Linking sbt project via Scala plugin...")
+    val pluginId = com.intellij.openapi.extensions.PluginId.getId("org.intellij.scala")
+    val plugin = com.intellij.ide.plugins.PluginManagerCore.getPlugin(pluginId)
+    if plugin == null then
+      throw RuntimeException("Scala plugin not found. Ensure the Scala plugin is installed.")
+    val pluginClassLoader = plugin.getPluginClassLoader
+    val sbtProviderClass = Class.forName("org.jetbrains.sbt.project.SbtOpenProjectProvider", true, pluginClassLoader)
+    val provider = sbtProviderClass.getDeclaredConstructor().newInstance()
+
+    val vf = LocalFileSystem.getInstance().refreshAndFindFileByPath(projectPath.toString)
+    if vf == null then
+      throw RuntimeException(s"Cannot find virtual file for $projectPath")
+
+    val doLinkMethod = sbtProviderClass.getMethod("doLinkProject",
+      classOf[com.intellij.openapi.vfs.VirtualFile], classOf[Project])
+    var alreadyLinked = false
+    try
+      ApplicationManager.getApplication.invokeAndWait: () =>
+        doLinkMethod.invoke(provider, vf, project)
+    catch
+      case e: Exception if hasAlreadyImportedException(e) =>
+        alreadyLinked = true
+
+    if alreadyLinked then
+      System.err.println("[Import] Project already linked, refreshing...")
+    else
+      System.err.println("[Import] sbt project linked")
+
+    System.err.println("[Import] Waiting for initial indexing...")
+    DumbService.getInstance(project).waitForSmartMode()
+
+    System.err.println("[Import] Resolving sbt project model (synchronous)...")
+    val sbtSystemId = new ProjectSystemId("SBT")
+    ExternalSystemUtil.refreshProject(
+      projectPath.toString,
+      new ImportSpecBuilder(project, sbtSystemId)
+        .use(ProgressExecutionMode.MODAL_SYNC)
+    )
+
+    System.err.println("[Import] Waiting for indexing...")
+    DumbService.getInstance(project).waitForSmartMode()
+    System.err.println("[Import] Indexing complete")
+
+    ApplicationManager.getApplication.invokeAndWait: () =>
+      ApplicationManager.getApplication.saveAll()
+      project.save()
 
   private def ensureJdkRegistered(): Unit =
     import com.intellij.openapi.application.WriteAction
