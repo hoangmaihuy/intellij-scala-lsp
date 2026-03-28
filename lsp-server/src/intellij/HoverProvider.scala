@@ -87,10 +87,10 @@ object HoverProvider:
     // Remove <script> blocks
     s = s.replaceAll("(?si)<script[^>]*>.*?</script>", "")
 
-    // Convert <pre><code> blocks to markdown code blocks
-    s = s.replaceAll("(?si)<pre[^>]*><code[^>]*>(.*?)</code></pre>", "\n```scala\n$1\n```\n")
-    s = s.replaceAll("(?si)<pre[^>]*>(.*?)</pre>", "\n```\n$1\n```\n")
-    // Convert inline <code> to backticks
+    // Convert <pre> blocks to markdown code blocks, stripping all inner HTML tags
+    // (IntelliJ wraps type names in <a><code>TypeName</code></a> inside <pre> definition sections)
+    s = replacePreBlocks(s)
+    // Convert inline <code> to backticks (only for content outside code blocks)
     s = s.replaceAll("(?si)<code[^>]*>(.*?)</code>", "`$1`")
 
     // Convert <b>/<strong> to bold
@@ -131,3 +131,16 @@ object HoverProvider:
     s = s.replaceAll("\n{3,}", "\n\n")
     s = s.trim
     s
+
+  /** Replace <pre>...</pre> blocks with markdown code blocks, stripping all inner HTML tags.
+    * IntelliJ's definition sections use <pre> containing <a href="..."><code>TypeName</code></a>
+    * for type links — we need to strip those to produce clean code blocks. */
+  private def replacePreBlocks(html: String): String =
+    val pattern = java.util.regex.Pattern.compile("(?si)<pre[^>]*>(.*?)</pre>")
+    val matcher = pattern.matcher(html)
+    val sb = new StringBuffer()
+    while matcher.find() do
+      val inner = matcher.group(1).replaceAll("<[^>]+>", "")
+      matcher.appendReplacement(sb, java.util.regex.Matcher.quoteReplacement(s"\n```scala\n$inner\n```\n"))
+    matcher.appendTail(sb)
+    sb.toString
