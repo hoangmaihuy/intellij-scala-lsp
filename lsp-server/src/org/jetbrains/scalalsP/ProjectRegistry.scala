@@ -97,6 +97,9 @@ class ProjectRegistry:
   private def doOpenProject(projectPath: String): Project =
     System.err.println(s"[ProjectRegistry] Opening project at: $projectPath")
     VfsRootAccess.allowRootAccess(ApplicationManager.getApplication, projectPath)
+    // Suppress "Where would you like to open the project?" dialog when opening multiple projects
+    com.intellij.ide.GeneralSettings.getInstance().setConfirmOpenNewProject(
+      com.intellij.ide.GeneralSettings.OPEN_PROJECT_NEW_WINDOW)
     val project = ProjectManager.getInstance().loadAndOpenProject(projectPath)
     if project == null then throw RuntimeException(s"Failed to open project at $projectPath")
     System.err.println(s"[ProjectRegistry] Project opened: ${project.getName}")
