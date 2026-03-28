@@ -58,7 +58,8 @@ class ExternalSymbolIntegrationTest extends ExternalLibraryTestBase:
   def testWorkspaceSymbolFqnCatsMonad(): Unit =
     configureScalaFile("object Dummy:\n  val x = 1\n")
     val result = workspaceSymbols("cats.Monad")
-    val monad = result.find(_.getName == "Monad")
+    // For dotted queries, result names include container prefix (e.g., "cats.Monad")
+    val monad = result.find(s => s.getName == "Monad" || s.getName == "cats.Monad")
     assertTrue("FQN query 'cats.Monad' should find Monad",
       monad.isDefined)
     if monad.isDefined then
@@ -70,7 +71,8 @@ class ExternalSymbolIntegrationTest extends ExternalLibraryTestBase:
   def testWorkspaceSymbolFqnZioZIO(): Unit =
     configureScalaFile("object Dummy:\n  val x = 1\n")
     val result = workspaceSymbols("zio.ZIO")
-    val zio = result.find(_.getName == "ZIO")
+    // For dotted queries, result names include container prefix (e.g., "zio.ZIO")
+    val zio = result.find(s => s.getName == "ZIO" || s.getName == "zio.ZIO")
     assertTrue("FQN query 'zio.ZIO' should find ZIO",
       zio.isDefined)
 
