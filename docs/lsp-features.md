@@ -1,6 +1,6 @@
 # LSP Features
 
-intellij-scala-lsp implements 30+ LSP methods, all backed by IntelliJ IDEA's Scala analysis engine.
+scallij implements 30+ LSP methods, all backed by IntelliJ IDEA's Scala analysis engine.
 
 ## Navigation
 

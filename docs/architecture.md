@@ -63,7 +63,7 @@ Claude Code
 
 #### MCP Startup Sequence
 
-1. **Daemon detection.** Read port from `~/.cache/intellij-scala-lsp/daemon.port`, try TCP probe. If daemon isn't running, spawn `intellij-scala-lsp --daemon` and poll (up to 60s).
+1. **Daemon detection.** Read port from `~/.cache/intellij-scala-lsp/daemon.port`, try TCP probe. If daemon isn't running, spawn `scallij --daemon` and poll (up to 60s).
 2. **TCP connect.** Open persistent TCP socket to daemon port.
 3. **Register handlers.** Set up `publishDiagnostics`, `workspace/applyEdit`, `window/showMessage`, etc.
 4. **LSP initialize.** Send `initialize` with `rootUri` from `process.cwd()`.
@@ -94,7 +94,7 @@ The MCP server maintains a map of open files (`URI → { version, mtime }`). Bef
 
 ### Startup
 
-1. `intellij-scala-lsp --daemon [projects...]` starts the JVM via `com.intellij.idea.Main scala-lsp --daemon`
+1. `scallij --daemon [projects...]` starts the JVM via `com.intellij.idea.Main scala-lsp --daemon`
 2. IntelliJ's production startup pipeline initializes the platform: plugin loading, kernel, EDT, VFS, services
 3. `ScalaLspApplicationStarter.main()` is invoked after full platform initialization — registered as `com.intellij.appStarter` extension with `id="scala-lsp"` in `plugin.xml`
 4. Pre-warm projects are opened via `ProjectRegistry.openProject()` — each waits for `DumbService.waitForSmartMode()`
@@ -116,13 +116,13 @@ The MCP server maintains a map of open files (`URI → { version, mtime }`). Bef
 
 ### Shutdown
 
-- `intellij-scala-lsp --stop` sends a `shutdown` JSON-RPC message to the daemon port
+- `scallij --stop` sends a `shutdown` JSON-RPC message to the daemon port
 - `DaemonServer.stop()` closes the `ServerSocket`, calls `ProjectRegistry.closeAll()`
 - JVM shutdown hook deletes state files
 
 ### Auto-Start (connect mode)
 
-When `intellij-scala-lsp` is called without `--daemon`:
+When `scallij` is called without `--daemon`:
 1. Checks `daemon.pid` + `daemon.port` — if daemon alive, proxies via `socat`
 2. If not running, starts daemon in background, waits for `daemon.port` file (up to 60s), then proxies
 
@@ -284,7 +284,7 @@ JVM flags (including `--add-opens`, `-Djava.system.class.loader=PathClassLoader`
 
 ## Launcher Script
 
-`intellij-scala-lsp` handles:
+`scallij` handles:
 - IntelliJ installation detection (installed app or sbt-idea-plugin SDK, both IC and IU)
 - Scala plugin version matching (extracts IDE build number, picks compatible plugin)
 - JVM args from `product-info.json` (boot classpath, `--add-opens`, PathClassLoader, JNA, etc.) with OS+arch matching
