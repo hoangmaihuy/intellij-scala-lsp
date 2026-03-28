@@ -23,7 +23,7 @@ Review of each LSP provider to identify ad-hoc reimplementations that could be d
 | SelectionRangeProvider | Investigate | Could use `ExtendWordSelectionHandler` EP |
 | InlayHintProvider | Investigate | Scala plugin has custom hint passes, but uses internal API |
 | SemanticTokensProvider | Investigate | Could use `HighlightVisitor` / `Annotator` pipeline |
-| CallHierarchyProvider | **Delegate** | Scala plugin has `ScalaCallHierarchyProvider` |
+| CallHierarchyProvider | Good | Already uses `ReferencesSearch` + `DefinitionsScopedSearch` (HierarchyProvider EP is UI-oriented) |
 | TypeHierarchyProvider | Investigate | IntelliJ has `HierarchyProvider` EP |
 | DocumentLinkProvider | Low priority | Regex-based, no standard EP |
 | OnTypeFormattingProvider | Investigate | Could use `TypedHandlerDelegate` / `EnterHandlerDelegate` |
@@ -108,15 +108,15 @@ Review of each LSP provider to identify ad-hoc reimplementations that could be d
 
 ---
 
-### 6. CallHierarchyProvider — DELEGATE to HierarchyProvider EP
+### 6. CallHierarchyProvider — KEEP (already uses correct APIs)
 
 **Current**: 217 lines using `ReferencesSearch` + `DefinitionsScopedSearch` with manual tree walking for outgoing references, reflection for case class synthetic methods.
 
-**IntelliJ provides**: `HierarchyProvider` EP (`com.intellij.callHierarchyProvider`) with `CallHierarchyBrowserBase` that has `getCallerElements()` and `getCalleeElements()`.
+**IntelliJ provides**: `HierarchyProvider` EP (`com.intellij.callHierarchyProvider`) with `CallHierarchyBrowserBase`. **However**, this EP is UI-oriented — it creates `HierarchyBrowser` objects with `JTree` views, not a data-extraction API.
 
-**Scala plugin provides**: `ScalaCallHierarchyProvider` (extends `JavaCallHierarchyProvider`) with `ScalaCallHierarchyBrowser`. This is a confirmed, registered implementation.
+**Scala plugin provides**: `ScalaCallHierarchyProvider` (extends `JavaCallHierarchyProvider`) with `ScalaCallHierarchyBrowser`.
 
-**Delegation approach**: Use `LanguageCallHierarchy.INSTANCE.forLanguage(ScalaLanguage)` to get the provider, call `createHierarchyBrowser()`, then traverse the tree structure for callers/callees. This eliminates manual tree walking and reflection for case class synthetic methods.
+**Verdict**: The current implementation already uses correct IntelliJ APIs for core search (`ReferencesSearch`, `DefinitionsScopedSearch`, `PsiMethod.findSuperMethods()`). The only ad-hoc part is case class synthetic methods (15 lines of reflection). Delegating to the UI-oriented `HierarchyProvider` EP would be more complex, not simpler.
 
 ---
 
@@ -171,10 +171,10 @@ Several utilities in PsiUtils are used across providers:
 
 1. **SignatureHelpProvider** → `ParameterInfoHandler` EP (high value, eliminates most complex reflection)
 2. **DocumentHighlightProvider** → `HighlightUsagesHandlerFactory` EP (medium value, gains Scala-specific highlighting)
-3. **CallHierarchyProvider** → `ScalaCallHierarchyProvider` (medium value, confirmed Scala provider exists)
-4. **SemanticTokensProvider** → `HighlightVisitor` pipeline (high value but high effort)
-5. **TypeHierarchyProvider** → supertypes resolution only (low-medium value, subtypes already correct)
-6. **SelectionRangeProvider** → `ExtendWordSelectionHandler` EP (low value, current approach is clean)
+3. **SemanticTokensProvider** → `HighlightVisitor` pipeline (high value but high effort)
+4. **TypeHierarchyProvider** → supertypes resolution only (low-medium value, subtypes already correct)
+5. **SelectionRangeProvider** → `ExtendWordSelectionHandler` EP (low value, current approach is clean)
+6. ~~**CallHierarchyProvider**~~ → Skipped: already uses correct APIs; `HierarchyProvider` EP is UI-oriented
 
 ## IntelliJ API Reference
 
