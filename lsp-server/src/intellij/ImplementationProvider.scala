@@ -8,8 +8,12 @@ import org.eclipse.lsp4j.{Location, Position}
 
 import scala.jdk.CollectionConverters.*
 
-// Implements textDocument/implementation.
-// Finds all implementations/subclasses of a trait, class, or abstract method.
+/**
+ * Implements textDocument/implementation.
+ * Uses DefinitionsScopedSearch (the core search API that IntelliJ's
+ * GotoImplementationHandler delegates to) to find all implementations
+ * of traits, classes, and abstract methods.
+ */
 class ImplementationProvider(projectManager: IntellijProjectManager):
 
   def getImplementations(uri: String, position: Position): Seq[Location] =
@@ -40,7 +44,9 @@ class ImplementationProvider(projectManager: IntellijProjectManager):
         val scope = GlobalSearchScope.allScope(project)
 
         try
-          // First try DefinitionsScopedSearch on the target directly
+          // DefinitionsScopedSearch is the core API that IntelliJ's
+          // GotoImplementationHandler and ImplementationSearcher delegate to.
+          // It handles classes, traits, and abstract methods via registered searchers.
           val directResults = DefinitionsScopedSearch.search(target, scope)
             .findAll().asScala.toSet
 
