@@ -2,11 +2,7 @@ package org.jetbrains.scalalsP.intellij
 
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.psi.{PsiElement, PsiNamedElement}
-import com.intellij.psi.search.GlobalSearchScope
-import com.intellij.psi.search.searches.ReferencesSearch
 import org.eclipse.lsp4j.{Location, Position}
-
-import scala.jdk.CollectionConverters.*
 
 /**
  * Wraps DefinitionProvider and ReferencesProvider to provide Metals-like navigation:
@@ -44,31 +40,34 @@ class DefinitionOrReferencesProvider(
             case _ => None
 
   def getDefinitionOrReferences(uri: String, position: Position): Seq[Location] =
-    // Check if cursor is on a definition and search for references in one read action
-    val refsFromDefinition: Option[Seq[Location]] = projectManager.smartReadAction: () =>
+    // Check if cursor is on a definition
+    val isOnDefinition: Option[Boolean] = projectManager.smartReadAction: () =>
       val result = for
         psiFile <- projectManager.findPsiFile(uri)
         vf <- projectManager.findVirtualFile(uri)
         document <- Option(FileDocumentManager.getInstance().getDocument(vf))
       yield
         val offset = PsiUtils.positionToOffset(document, position)
-        findDeclarationAt(psiFile, offset).map: declaration =>
-          // Found a declaration — search for references directly
-          // Use forEach instead of findAll to collect partial results if search crashes partway
-          val project = projectManager.getProject
-          val scope = GlobalSearchScope.projectScope(project)
-          val refsBuffer = scala.collection.mutable.ArrayBuffer[Location]()
-          try
-            ReferencesSearch.search(declaration, scope, false).forEach: (ref: com.intellij.psi.PsiReference) =>
-              PsiUtils.elementToLocation(ref.getElement).foreach(refsBuffer += _)
-              true
-          catch
-            case e: Exception =>
-              System.err.println(s"[DefOrRefs] ReferencesSearch partially failed: ${e.getClass.getSimpleName}: ${e.getMessage}")
-          if refsBuffer.nonEmpty then refsBuffer.toSeq
-          else PsiUtils.elementToLocation(declaration).toSeq // fallback: return self
-      result.flatten // Option[Option[Seq]] -> Option[Seq]
+        findDeclarationAt(psiFile, offset).isDefined
+      result
 
-    refsFromDefinition match
-      case Some(locations) => locations
-      case None => definitionProvider.getDefinition(uri, position) // not a definition — normal flow
+    isOnDefinition match
+      case Some(true) =>
+        // Cursor is on a declaration — return references
+        val refs = referencesProvider.findReferences(uri, position, includeDeclaration = false)
+        if refs.nonEmpty then refs
+        else
+          // No references found — fall back to returning self-location
+          projectManager.smartReadAction: () =>
+            val result = for
+              psiFile <- projectManager.findPsiFile(uri)
+              vf <- projectManager.findVirtualFile(uri)
+              document <- Option(FileDocumentManager.getInstance().getDocument(vf))
+              offset = PsiUtils.positionToOffset(document, position)
+              decl <- findDeclarationAt(psiFile, offset)
+              loc <- PsiUtils.elementToLocation(decl)
+            yield Seq(loc)
+            result.getOrElse(Seq.empty)
+      case _ =>
+        // Cursor is on a reference or detection failed — normal definition flow
+        definitionProvider.getDefinition(uri, position)
