@@ -77,11 +77,11 @@ export class SessionManager {
     return session;
   }
 
-  closeAll(): void {
+  async closeAll(): Promise<void> {
     for (const [projectPath, session] of this.sessions) {
       logger.info(`Closing session for: ${projectPath}`);
       session.fileManager.closeAll();
-      session.lsp.shutdown().catch(() => {});
+      await session.lsp.shutdown().catch(() => {});
     }
     this.sessions.clear();
   }
