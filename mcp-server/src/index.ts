@@ -90,7 +90,7 @@ async function main(): Promise<void> {
 
   const shutdown = async () => {
     logger.info('Shutting down...');
-    sessionManager.closeAll();
+    await sessionManager.closeAll();
     process.exit(0);
   };
   process.on('SIGINT', shutdown);

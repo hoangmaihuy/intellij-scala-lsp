@@ -1,3 +1,4 @@
+import * as path from 'path';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { SessionManager } from '../session-manager.js';
@@ -76,6 +77,7 @@ export function registerEditingTools(
       endColumn: z.number().describe('End column (1-indexed)'),
     },
     withToolLogging('code_actions', async ({ projectPath, filePath, startLine, startColumn, endLine, endColumn }) => {
+      const normalizedProject = path.resolve(projectPath);
       const { lsp, fileManager } = await sessionManager.getSession(projectPath);
       const uri = await fileManager.ensureOpen(filePath);
       const result = await lsp.request<(CodeAction | Command)[]>('textDocument/codeAction', {
@@ -88,12 +90,12 @@ export function registerEditingTools(
       } as CodeActionParams);
 
       if (!result || result.length === 0) {
-        cachedCodeActions.delete(projectPath);
+        cachedCodeActions.delete(normalizedProject);
         return { content: [{ type: 'text' as const, text: 'No code actions available at this location.' }] };
       }
 
       const actions = result.filter((r): r is CodeAction => 'kind' in r || 'edit' in r || 'diagnostics' in r);
-      cachedCodeActions.set(projectPath, { filePath, actions });
+      cachedCodeActions.set(normalizedProject, { filePath, actions });
 
       const output: string[] = [`${actions.length} code action(s) available:\n`];
       for (let i = 0; i < actions.length; i++) {
@@ -115,9 +117,10 @@ export function registerEditingTools(
       filePath: z.string().describe('Absolute path to the file (must match the file from code_actions)'),
       actionIndex: z.number().describe('Index of the action to apply (1-indexed, from code_actions output)'),
     },
-    withToolLogging('apply_code_action', async ({ projectPath, actionIndex }) => {
+    withToolLogging('apply_code_action', async ({ projectPath, filePath, actionIndex }) => {
+      const normalizedProject = path.resolve(projectPath);
       const { lsp, fileManager } = await sessionManager.getSession(projectPath);
-      const cached = cachedCodeActions.get(projectPath);
+      const cached = cachedCodeActions.get(normalizedProject);
       if (!cached || cached.actions.length === 0) {
         return { content: [{ type: 'text' as const, text: 'No cached code actions. Call code_actions first.' }] };
       }
