@@ -104,7 +104,7 @@ class SymbolProvider(projectManager: IntellijProjectManager):
       val provider = DefaultChooseByNameItemProvider(null)
 
       var processedCount = 0
-      val processor: com.intellij.util.Processor[Any] = (element => {
+      def makeProcessor(model: ChooseByNameModel): com.intellij.util.Processor[Any] = (element => {
         processedCount += 1
         if cancelled.get() || results.size >= MaxResults then false
         else
@@ -119,7 +119,20 @@ class SymbolProvider(projectManager: IntellijProjectManager):
                   if rawName != null then
                     // Strip JVM companion class suffix (e.g., MyService$ → MyService)
                     val symbolName = if rawName.endsWith("$") then rawName.stripSuffix("$") else rawName
-                    val containerName = getContainerName(named)
+                    val containerName =
+                      val fromPsi = getContainerName(named)
+                      if fromPsi != null then fromPsi
+                      else
+                        // Fallback: derive container from model's full name (e.g., "pkg.MyClass.method" → "pkg.MyClass")
+                        val fullName = try Option(model.getFullName(nav)).filter(_.nonEmpty) catch case _: Exception => None
+                        fullName.flatMap: fqn =>
+                          val idx = fqn.lastIndexOf('.')
+                          if idx > 0 then Some(fqn.substring(0, idx)) else None
+                        .orElse:
+                          // Fallback: use NavigationItem presentation's location string
+                          try Option(nav.getPresentation).flatMap(p => Option(p.getLocationString)).filter(_.nonEmpty)
+                          catch case _: Exception => None
+                        .orNull
                     val qualKey = Option(containerName).filter(_.nonEmpty)
                       .map(c => s"$c.$symbolName").getOrElse(symbolName)
                       .stripSuffix("$")
@@ -135,7 +148,7 @@ class SymbolProvider(projectManager: IntellijProjectManager):
       for (model, label) <- Seq((classModel, "class"), (symbolModel, "symbol")) if !cancelled.get() && results.size < MaxResults do
         val indicator = createIndicator()
         try
-          provider.filterElements(makeViewModel(project, model), query, true, indicator, processor)
+          provider.filterElements(makeViewModel(project, model), query, true, indicator, makeProcessor(model))
         catch
           case _: com.intellij.openapi.progress.ProcessCanceledException => ()
           case e: Exception =>
