@@ -1,211 +1,270 @@
 package org.jetbrains.scalalsP.intellij
 
-import com.intellij.lang.LanguageDocumentation
+import com.intellij.codeInsight.hint.ShowParameterInfoContext
+import com.intellij.lang.parameterInfo.{LanguageParameterInfo, ParameterInfoHandler, ParameterInfoUIContext, UpdateParameterInfoContext}
+import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.editor.{Editor, EditorFactory}
 import com.intellij.openapi.fileEditor.FileDocumentManager
-import com.intellij.psi.{PsiElement, PsiMethod, PsiNamedElement}
-import org.eclipse.lsp4j.{MarkupContent, MarkupKind, ParameterInformation, Position, SignatureHelp, SignatureInformation}
+import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.UserDataHolderEx
+import com.intellij.psi.{PsiElement, PsiFile, PsiMethod, PsiNamedElement}
+import org.eclipse.lsp4j.{ParameterInformation, Position, SignatureHelp, SignatureInformation}
 
+import java.awt.Color
 import scala.jdk.CollectionConverters.*
 
 class SignatureHelpProvider(projectManager: IntellijProjectManager):
 
   def getSignatureHelp(uri: String, position: Position): Option[SignatureHelp] =
     try
-      projectManager.smartReadAction: () =>
-        for
-          psiFile <- projectManager.findPsiFile(uri)
+      // Resolve file references in a read action first
+      val (psiFile, document) = projectManager.smartReadAction: () =>
+        (for
+          pf <- projectManager.findPsiFile(uri)
           vf <- projectManager.findVirtualFile(uri)
-          document <- Option(FileDocumentManager.getInstance().getDocument(vf))
-          result <- computeSignatureHelp(psiFile, document, position)
-        yield result
+          doc <- Option(FileDocumentManager.getInstance().getDocument(vf))
+        yield (pf, doc)).getOrElse(return None)
+      computeSignatureHelp(psiFile, document, position)
     catch
       case e: Exception =>
         System.err.println(s"[SignatureHelp] Error: ${e.getMessage}")
         None
 
   private def computeSignatureHelp(
-    psiFile: com.intellij.psi.PsiFile,
+    psiFile: PsiFile,
     document: com.intellij.openapi.editor.Document,
     position: Position
   ): Option[SignatureHelp] =
     val offset = PsiUtils.positionToOffset(document, position)
-    val text = document.getText
+    val project = psiFile.getProject
+    val language = psiFile.getLanguage
+    val handlers = LanguageParameterInfo.INSTANCE.allForLanguage(language)
+    if handlers == null || handlers.isEmpty then return None
 
-    // Walk backwards from cursor to find the opening '(' of the argument list
-    val parenInfo = findArgListStart(text, offset)
-    parenInfo.flatMap: (parenOffset, commaCount) =>
-      // Find the method reference just before the '('
-      findMethodElement(psiFile, text, parenOffset).flatMap: methodElement =>
-        val signatures = extractSignatures(methodElement)
-        if signatures.isEmpty then None
+    var editor: Editor = null
+    try
+      val createEditor: Runnable = () =>
+        editor = EditorFactory.getInstance().createEditor(document, project)
+        editor.getCaretModel.moveToOffset(offset)
+      if ApplicationManager.getApplication.isDispatchThread then
+        createEditor.run()
+      else
+        ApplicationManager.getApplication.invokeAndWait(createEditor)
+
+      val ed = editor
+      // Try at current offset first, then offset-1 (handles cursor right after '(')
+      val offsets = if offset > 0 then Seq(offset, offset - 1) else Seq(offset)
+      var result: Option[SignatureHelp] = None
+      for off <- offsets if result.isEmpty do
+        // moveToOffset must happen on EDT
+        val moveCaret: Runnable = () => ed.getCaretModel.moveToOffset(off)
+        if ApplicationManager.getApplication.isDispatchThread then moveCaret.run()
+        else ApplicationManager.getApplication.invokeAndWait(moveCaret)
+        result = projectManager.smartReadAction: () =>
+          handlers.asScala.iterator.flatMap: handler =>
+            tryHandler(handler.asInstanceOf[ParameterInfoHandler[PsiElement, Any]], psiFile, ed, project, off, offset)
+          .nextOption()
+      result
+    finally
+      if editor != null then
+        val editorToRelease = editor
+        val releaseEditor: Runnable = () =>
+          EditorFactory.getInstance().releaseEditor(editorToRelease)
+        if ApplicationManager.getApplication.isDispatchThread then
+          releaseEditor.run()
         else
-          val help = SignatureHelp()
-          help.setSignatures(signatures.asJava)
-          help.setActiveSignature(0)
-          help.setActiveParameter(commaCount)
-          Some(help)
+          ApplicationManager.getApplication.invokeAndWait(releaseEditor)
 
-  /** Walk backwards from offset to find the opening '(' that starts the argument list.
-    * Returns (offset of '(', number of commas between '(' and cursor). */
-  private def findArgListStart(text: String, offset: Int): Option[(Int, Int)] =
-    var depth = 0
-    var commas = 0
-    var i = math.min(offset - 1, text.length - 1)
-    while i >= 0 do
-      val ch = text.charAt(i)
-      ch match
-        case ')' | ']' | '}' => depth += 1
-        case '(' =>
-          if depth == 0 then return Some((i, commas))
-          else depth -= 1
-        case '[' | '{' =>
-          if depth > 0 then depth -= 1
-        case ',' =>
-          if depth == 0 then commas += 1
-        case _ => ()
-      i -= 1
+  private def tryHandler(
+    handler: ParameterInfoHandler[PsiElement, Any],
+    psiFile: PsiFile,
+    editor: Editor,
+    project: Project,
+    findOffset: Int,
+    originalOffset: Int
+  ): Option[SignatureHelp] =
+    // Step 1: Find the parameter owner and collect signature descriptors
+    val createCtx = new ShowParameterInfoContext(editor, project, psiFile, findOffset, -1)
+    val parameterOwner = try
+      handler.findElementForParameterInfo(createCtx)
+    catch
+      case _: Exception => return None
+    if parameterOwner == null then return None
+
+    val items = createCtx.getItemsToShow
+    if items == null || items.isEmpty then return None
+
+    // Step 2: Determine active parameter index using the ORIGINAL offset (not the fallback)
+    // Note: moveToOffset is safe here because the handler's updateParameterInfo reads getOffset()
+    // from the context, not the editor caret. We set getOffset to return originalOffset directly.
+    val activeParamHolder = new Array[Int](1)
+    val compEnabled = new Array[Boolean](items.length)
+    val updateCtx = new UpdateParameterInfoContext:
+      private var paramOwner: PsiElement = null
+      private var highlightedParam: Any = null
+      override def removeHint(): Unit = ()
+      override def setParameterOwner(o: PsiElement): Unit = paramOwner = o
+      override def getParameterOwner: PsiElement = paramOwner
+      override def setHighlightedParameter(parameter: Any): Unit = highlightedParam = parameter
+      override def getHighlightedParameter: Any = highlightedParam
+      override def setCurrentParameter(index: Int): Unit = activeParamHolder(0) = index
+      override def isUIComponentEnabled(index: Int): Boolean = if index >= 0 && index < compEnabled.length then compEnabled(index) else false
+      override def setUIComponentEnabled(index: Int, b: Boolean): Unit = if index >= 0 && index < compEnabled.length then compEnabled(index) = b
+      override def getParameterListStart: Int = originalOffset
+      override def getObjectsToView: Array[Object] = items
+      override def isPreservedOnHintHidden: Boolean = false
+      override def setPreservedOnHintHidden(value: Boolean): Unit = ()
+      override def isInnermostContext: Boolean = false
+      override def isSingleParameterInfo: Boolean = false
+      override def getCustomContext: UserDataHolderEx = null
+      override def getProject: Project = psiFile.getProject
+      override def getFile: PsiFile = psiFile
+      override def getOffset: Int = originalOffset
+      override def getEditor: Editor = editor
+    updateCtx.setParameterOwner(parameterOwner)
+    try handler.updateParameterInfo(parameterOwner, updateCtx)
+    catch case _: Exception => ()
+    val activeParam = activeParamHolder(0)
+
+    // Step 3: Resolve method name from the parameter owner's parent (the method call expression)
+    val methodName = resolveMethodName(parameterOwner)
+
+    // Step 4: Render each signature via updateUI
+    val signatures = items.toList.flatMap: item =>
+      val textHolder = new Array[String](1)
+      val rawHolder = new Array[Boolean](1)
+      val uiCtx = new ParameterInfoUIContext:
+        private var enabled: Boolean = true
+        override def setupUIComponentPresentation(
+          text: String, highlightStartOffset: Int, highlightEndOffset: Int,
+          isDisabled: Boolean, strikeout: Boolean, isDisabledBeforeHighlight: Boolean, background: Color
+        ): String =
+          textHolder(0) = text
+          rawHolder(0) = false
+          text
+        override def setupRawUIComponentPresentation(htmlText: String): Unit =
+          textHolder(0) = htmlText
+          rawHolder(0) = true
+        override def isUIComponentEnabled: Boolean = enabled
+        override def setUIComponentEnabled(e: Boolean): Unit = enabled = e
+        override def getCurrentParameterIndex: Int = activeParam
+        override def getParameterOwner: PsiElement = parameterOwner
+        override def isSingleOverload: Boolean = false
+        override def isSingleParameterInfo: Boolean = false
+        override def getDefaultParameterColor: Color = null
+
+      try
+        handler.updateUI(item, uiCtx)
+        val text = textHolder(0)
+        if text != null && text.nonEmpty then
+          val paramText = if rawHolder(0) then stripHtml(text) else text
+          if paramText.nonEmpty then
+            // Build full signature: methodName(params)
+            val label = methodName match
+              case Some(name) =>
+                if paramText.contains('(') then s"$name$paramText"
+                else s"$name($paramText)"
+              case None =>
+                if paramText.contains('(') then paramText
+                else s"($paramText)"
+            val sig = SignatureInformation(label)
+            val params = extractParameters(label)
+            if params.nonEmpty then sig.setParameters(params.asJava)
+            Some(sig)
+          else None
+        else None
+      catch
+        case _: Exception => None
+
+    if signatures.isEmpty then return None
+
+    val help = SignatureHelp()
+    help.setSignatures(signatures.asJava)
+    help.setActiveSignature(0)
+    help.setActiveParameter(activeParam)
+    Some(help)
+
+  /** Resolve the method name from the argument list element's parent chain. */
+  private def resolveMethodName(parameterOwner: PsiElement): Option[String] =
+    // Walk up from the argument list to find the method call, then resolve the method name
+    var elem = parameterOwner.getParent
+    while elem != null do
+      // Try to get the method reference from the call expression
+      val ref = try
+        val m = elem.getClass.getMethod("getInvokedExpr")
+        Option(m.invoke(elem)).map(_.asInstanceOf[PsiElement])
+      catch case _: Exception =>
+        try
+          val m = elem.getClass.getMethod("getMethodExpression")
+          Option(m.invoke(elem)).map(_.asInstanceOf[PsiElement])
+        catch case _: Exception => None
+
+      ref match
+        case Some(refElem) =>
+          // Try to get the reference name
+          return try
+            val nameMethod = refElem.getClass.getMethod("refName")
+            Option(nameMethod.invoke(refElem)).map(_.toString)
+          catch case _: Exception =>
+            refElem match
+              case named: PsiNamedElement => Option(named.getName)
+              case _ => Some(refElem.getText.split("\\.").last.trim)
+        case None =>
+          // Check if the parent itself is a named element (e.g., constructor invocation)
+          elem match
+            case named: PsiNamedElement =>
+              return Option(named.getName)
+            case _ =>
+
+      elem = elem.getParent
     None
 
-  /** Find the method/function PSI element just before the opening parenthesis. */
-  private def findMethodElement(
-    psiFile: com.intellij.psi.PsiFile,
-    text: String,
-    parenOffset: Int
-  ): Option[PsiElement] =
-    // Scan backwards from just before '(' to find the identifier end
-    var i = parenOffset - 1
-    while i >= 0 && text.charAt(i).isWhitespace do i -= 1
-    if i < 0 then return None
+  private def extractParameters(text: String): List[ParameterInformation] =
+    val hasParens = text.contains('(')
+    if hasParens then
+      val params = scala.collection.mutable.ListBuffer.empty[ParameterInformation]
+      var i = 0
+      while i < text.length do
+        if text.charAt(i) == '(' then
+          val start = i + 1
+          var depth = 1
+          var j = start
+          while j < text.length && depth > 0 do
+            text.charAt(j) match
+              case '(' => depth += 1
+              case ')' => depth -= 1
+              case _ =>
+            if depth > 0 then j += 1
+          val inner = text.substring(start, j)
+          splitParams(inner).foreach: p =>
+            val trimmed = p.trim
+            if trimmed.nonEmpty then params += ParameterInformation(trimmed)
+          i = j + 1
+        else
+          i += 1
+      params.toList
+    else
+      splitParams(text).flatMap: p =>
+        val trimmed = p.trim
+        if trimmed.nonEmpty && trimmed != "<no parameters>" then Some(ParameterInformation(trimmed))
+        else None
 
-    // Now find the reference at this position
-    PsiUtils.findReferenceElementAt(psiFile, i).flatMap: elem =>
-      val ref = elem.getReference
-      if ref != null then
-        Option(ref.resolve())
-      else
-        Some(elem)
+  private def splitParams(s: String): List[String] =
+    val parts = scala.collection.mutable.ListBuffer.empty[String]
+    var depth = 0
+    var start = 0
+    var i = 0
+    while i < s.length do
+      s.charAt(i) match
+        case '(' | '[' | '{' => depth += 1
+        case ')' | ']' | '}' => depth -= 1
+        case ',' if depth == 0 =>
+          parts += s.substring(start, i)
+          start = i + 1
+        case _ =>
+      i += 1
+    if start < s.length then parts += s.substring(start)
+    parts.toList
 
-  /** Extract signature information from a resolved PSI element.
-    * Tries Scala plugin's ScFunction first via reflection, falls back to PsiMethod, then NavigationItem. */
-  private def extractSignatures(element: PsiElement): List[SignatureInformation] =
-    // Try to get overloaded methods — look for siblings with the same name
-    val allMethods = findOverloads(element)
-    val methods = if allMethods.nonEmpty then allMethods else List(element)
-    methods.flatMap(extractSingleSignature)
-
-  private def findOverloads(element: PsiElement): List[PsiElement] =
-    try
-      element match
-        case named: PsiNamedElement =>
-          val name = named.getName
-          if name == null then return List(element)
-          val parent = element.getParent
-          if parent == null then return List(element)
-          val siblings = parent.getChildren.toList
-          siblings.filter: child =>
-            child.isInstanceOf[PsiNamedElement] &&
-              child.asInstanceOf[PsiNamedElement].getName == name
-        case _ => List(element)
-    catch
-      case _: Exception => List(element)
-
-  private def extractSingleSignature(element: PsiElement): Option[SignatureInformation] =
-    // Try ScFunction reflection first
-    val sigOpt = tryScFunction(element)
-      .orElse(tryPsiMethod(element))
-      .orElse(tryNavigationItem(element))
-
-    sigOpt.map: sig =>
-      // Attach ScalaDoc documentation if available
-      try
-        val docProvider = LanguageDocumentation.INSTANCE.forLanguage(element.getLanguage)
-        if docProvider != null then
-          val docText = docProvider.generateDoc(element, null)
-          if docText != null && docText.nonEmpty then
-            sig.setDocumentation(MarkupContent(MarkupKind.MARKDOWN, HoverProvider.htmlToMarkdown(docText)))
-      catch
-        case _: Exception => () // ignore documentation errors
-      sig
-
-  /** Try to extract signature from Scala plugin's ScFunction using reflection. */
-  private def tryScFunction(element: PsiElement): Option[SignatureInformation] =
-    if !ScalaTypes.isFunction(element) then return None
-    try
-      val name = element.asInstanceOf[PsiNamedElement].getName
-      val clausesRaw = ScalaTypes.invokeMethod(element, "effectiveParameterClauses")
-        .getOrElse(return None)
-      val clauses = clausesRaw.asInstanceOf[scala.collection.Seq[?]]
-
-      // Collect all parameters across all clauses for ParameterInformation
-      val allParams = scala.collection.mutable.ListBuffer.empty[(String, String)]
-
-      // Build label from all parameter clauses
-      val clauseStrings = clauses.map: clause =>
-        val clauseParamsRaw = clause.getClass.getMethod("parameters").invoke(clause)
-        val clauseParams = clauseParamsRaw.asInstanceOf[scala.collection.Seq[?]].map: param =>
-          val pName = param.asInstanceOf[PsiNamedElement].getName
-          val pTypeOpt = try
-            param.getClass.getMethod("typeElement").invoke(param) match
-              case opt: Option[?] => opt.map(te => te.asInstanceOf[PsiElement].getText)
-              case _ => None
-          catch case _: Exception => None
-          val pType = pTypeOpt.getOrElse("Any")
-          allParams += ((pName, pType))
-          s"$pName: $pType"
-        .toList
-        val paramsStr = clauseParams.mkString(", ")
-
-        // Check if this clause is implicit or using
-        val hasImplicit = try clause.getClass.getMethod("hasImplicitKeyword").invoke(clause).asInstanceOf[Boolean]
-          catch case _: Exception => false
-        val hasUsing = try clause.getClass.getMethod("hasUsingKeyword").invoke(clause).asInstanceOf[Boolean]
-          catch case _: Exception => false
-
-        if hasImplicit then s"(implicit $paramsStr)"
-        else if hasUsing then s"(using $paramsStr)"
-        else s"($paramsStr)"
-      .toList
-
-      val returnTypeStr = try
-        ScalaTypes.invokeMethod(element, "returnTypeElement") match
-          case Some(rte) => rte.asInstanceOf[PsiElement].getText
-          case None => "Unit"
-      catch case _: Exception => "Unit"
-      val label = s"$name${clauseStrings.mkString}: $returnTypeStr"
-
-      val sig = SignatureInformation(label)
-      sig.setParameters(allParams.map((pName, pType) => ParameterInformation(s"$pName: $pType")).asJava)
-      Some(sig)
-    catch
-      case _: Exception => None
-
-  /** Try to extract signature from a standard Java PsiMethod. */
-  private def tryPsiMethod(element: PsiElement): Option[SignatureInformation] =
-    element match
-      case method: PsiMethod =>
-        val name = method.getName
-        val params = method.getParameterList.getParameters.toList
-        val paramInfos = params.map: p =>
-          val pName = Option(p.getName).getOrElse("?")
-          val pType = Option(p.getType).map(_.getPresentableText).getOrElse("Any")
-          (pName, pType)
-        val paramStr = paramInfos.map(p => s"${p._1}: ${p._2}").mkString(", ")
-        val returnTypeStr = Option(method.getReturnType).map(_.getPresentableText).getOrElse("Unit")
-        val label = s"$name($paramStr): $returnTypeStr"
-        val sig = SignatureInformation(label)
-        sig.setParameters(paramInfos.map: (pName, pType) =>
-          ParameterInformation(s"$pName: $pType")
-        .asJava)
-        Some(sig)
-      case _ => None
-
-  /** Last resort: use NavigationItem presentation for a basic signature. */
-  private def tryNavigationItem(element: PsiElement): Option[SignatureInformation] =
-    element match
-      case nav: com.intellij.navigation.NavigationItem =>
-        Option(nav.getPresentation).map: pres =>
-          val text = Option(pres.getPresentableText).getOrElse("unknown")
-          val sig = SignatureInformation(text)
-          sig.setParameters(java.util.List.of())
-          sig
-      case _ => None
+  private def stripHtml(html: String): String =
+    html.replaceAll("<[^>]+>", "").trim
