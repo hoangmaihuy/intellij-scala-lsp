@@ -326,28 +326,6 @@ object PsiUtils:
           parent = parent.getParent
         if parent != null then Seq(parent) else Seq(element)
 
-  /** Classify a reference element's usage type by checking ancestors. */
-  def getUsageType(element: PsiElement): String =
-    var current = element.getParent
-    var depth = 0
-    while current != null && depth < 15 do
-      val className = current.getClass.getName
-      if className.contains("ImportStatement") || className.contains("ScImportExpr") then
-        return ReferenceResult.Import
-      if className.contains("ScAssignment") then
-        val children = current.getChildren
-        if children.nonEmpty && children.head.getTextRange.contains(element.getTextRange) then
-          return ReferenceResult.Write
-      if className.contains("ScVariableDefinition") then
-        return ReferenceResult.Write
-      if className.contains("ScSimpleTypeElement") || className.contains("ScParameterizedTypeElement") then
-        return ReferenceResult.TypeRef
-      if className.contains("ScPattern") || className.contains("ScCaseClause") then
-        return ReferenceResult.Pattern
-      current = current.getParent
-      depth += 1
-    ReferenceResult.Read
-
   /** Unwrap IntelliJ synthetic wrappers to get the real Scala element.
     * Handles PsiClassWrapper, PsiMethodWrapper, FakePsiMethod. */
   def unwrapSyntheticElement(element: PsiElement): PsiElement =
