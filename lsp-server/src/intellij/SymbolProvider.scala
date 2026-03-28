@@ -91,15 +91,15 @@ class SymbolProvider(projectManager: IntellijProjectManager):
 
   // --- workspace/symbol ---
 
-  def workspaceSymbols(query: String): Seq[SymbolInformation] =
-    if query.isEmpty then return Seq.empty
+  def workspaceSymbols(query: String, cancelled: java.util.concurrent.atomic.AtomicBoolean = new java.util.concurrent.atomic.AtomicBoolean(false)): Seq[SymbolInformation] =
+    if query.isEmpty || cancelled.get() then return Seq.empty
 
     projectManager.smartReadAction: () =>
-      searchViaContributors(projectManager.getProject, query)
+      searchViaContributors(projectManager.getProject, query, cancelled)
 
   // Use IntelliJ's GotoClassContributor and GotoSymbolContributor extension points.
   // These support prefix/fuzzy matching via processNames + processElementsWithName.
-  private def searchViaContributors(project: com.intellij.openapi.project.Project, query: String): Seq[SymbolInformation] =
+  private def searchViaContributors(project: com.intellij.openapi.project.Project, query: String, cancelled: java.util.concurrent.atomic.AtomicBoolean = new java.util.concurrent.atomic.AtomicBoolean(false)): Seq[SymbolInformation] =
     try
       val results = ArrayBuffer[(SymbolInformation, MatchRelevance)]()
       val seen = new java.util.concurrent.ConcurrentHashMap[String, MatchRelevance]()
@@ -118,62 +118,66 @@ class SymbolProvider(projectManager: IntellijProjectManager):
         ChooseByNameContributor.CLASS_EP_NAME.getExtensionList.asScala ++
         ChooseByNameContributor.SYMBOL_EP_NAME.getExtensionList.asScala
 
-      for contributor <- contributors do
+      for contributor <- contributors if !cancelled.get() do
         contributor match
           case ex: ChooseByNameContributorEx =>
             // Collect names that match the simple name
             val matchingNames = ArrayBuffer[String]()
             ex.processNames(
               ((name: String) => {
-                if name != null && name.toLowerCase.contains(lowerSimpleName) then
-                  matchingNames += name
-                true
+                if cancelled.get() then false
+                else
+                  if name != null && name.toLowerCase.contains(lowerSimpleName) then
+                    matchingNames += name
+                  true
               }): com.intellij.util.Processor[String],
               scope,
               null
             )
 
             // For each matching name, collect the navigation items
-            for name <- matchingNames.take(100) do // limit to avoid overwhelming results
+            for name <- matchingNames.take(100) if !cancelled.get() do // limit to avoid overwhelming results
               val params = FindSymbolParameters.wrap(name, project, true)
               ex.processElementsWithName(
                 name,
                 ((item: NavigationItem) => {
-                  item match
-                    case psi: PsiElement =>
-                      val unwrapped = PsiUtils.unwrapSyntheticElement(psi)
-                      unwrapped match
-                        case named: PsiNamedElement if isSignificantElement(named) =>
-                          val container = getContainerName(named, item, contributor)
-                          // If query was FQN, verify the element's FQN matches
-                          val fqnMatch = fqnPrefix match
-                            case Some(prefix) =>
-                              container != null && (
-                                container == prefix ||
-                                container.endsWith("." + prefix) ||
-                                prefix.endsWith("." + container)
-                              )
-                            case None => true
+                  if cancelled.get() then false
+                  else
+                    item match
+                      case psi: PsiElement =>
+                        val unwrapped = PsiUtils.unwrapSyntheticElement(psi)
+                        unwrapped match
+                          case named: PsiNamedElement if isSignificantElement(named) =>
+                            val container = getContainerName(named, item, contributor)
+                            // If query was FQN, verify the element's FQN matches
+                            val fqnMatch = fqnPrefix match
+                              case Some(prefix) =>
+                                container != null && (
+                                  container == prefix ||
+                                  container.endsWith("." + prefix) ||
+                                  prefix.endsWith("." + container)
+                                )
+                              case None => true
 
-                          if fqnMatch then
-                            scoreMatch(named.getName, simpleName).foreach: relevance =>
-                              val containerName = if container != null then container else getContainerName(unwrapped, item, contributor)
-                              val rawQualKey = Option(containerName).filter(_.nonEmpty).map(c => s"$c.${named.getName}").getOrElse(named.getName)
-                              val qualKey = if rawQualKey.endsWith("$") then rawQualKey.stripSuffix("$") else rawQualKey
-                              val existing = seen.get(qualKey)
-                              if existing == null || relevance.rank < existing.rank then
-                                PsiUtils.elementToLocation(unwrapped).foreach: loc =>
-                                  seen.put(qualKey, relevance)
-                                  val idx = results.indexWhere: (sym, _) =>
-                                    val storedKey = Option(sym.getContainerName).filter(_.nonEmpty)
-                                      .map(c => s"$c.${sym.getName}").getOrElse(sym.getName).stripSuffix("$")
-                                    storedKey == qualKey
-                                  if idx >= 0 then results.remove(idx)
-                                  val kind = PsiUtils.getSymbolKind(named)
-                                  results += ((new SymbolInformation(named.getName, kind, loc, containerName), relevance))
-                        case _ => ()
-                    case _ => ()
-                  true
+                            if fqnMatch then
+                              scoreMatch(named.getName, simpleName).foreach: relevance =>
+                                val containerName = if container != null then container else getContainerName(unwrapped, item, contributor)
+                                val rawQualKey = Option(containerName).filter(_.nonEmpty).map(c => s"$c.${named.getName}").getOrElse(named.getName)
+                                val qualKey = if rawQualKey.endsWith("$") then rawQualKey.stripSuffix("$") else rawQualKey
+                                val existing = seen.get(qualKey)
+                                if existing == null || relevance.rank < existing.rank then
+                                  PsiUtils.elementToLocation(unwrapped).foreach: loc =>
+                                    seen.put(qualKey, relevance)
+                                    val idx = results.indexWhere: (sym, _) =>
+                                      val storedKey = Option(sym.getContainerName).filter(_.nonEmpty)
+                                        .map(c => s"$c.${sym.getName}").getOrElse(sym.getName).stripSuffix("$")
+                                      storedKey == qualKey
+                                    if idx >= 0 then results.remove(idx)
+                                    val kind = PsiUtils.getSymbolKind(named)
+                                    results += ((new SymbolInformation(named.getName, kind, loc, containerName), relevance))
+                          case _ => ()
+                      case _ => ()
+                    true
                 }): com.intellij.util.Processor[NavigationItem],
                 params
               )
@@ -221,6 +225,8 @@ class SymbolProvider(projectManager: IntellijProjectManager):
                         case _ => ()
             catch
               case _: Exception => ()
+
+      if cancelled.get() then return Seq.empty
 
       // Sort by relevance, then project-first, then name
       val projectFileIndex = ProjectFileIndex.getInstance(project)

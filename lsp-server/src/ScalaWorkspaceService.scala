@@ -29,19 +29,28 @@ class ScalaWorkspaceService(projectManager: IntellijProjectManager, diagnosticsP
   private def supplyAsync[T](f: => T): CompletableFuture[T] =
     CompletableFuture.supplyAsync((() => f): java.util.function.Supplier[T], lspExecutor)
 
+  private def cancellableAsync[T](f: java.util.concurrent.atomic.AtomicBoolean => T): CompletableFuture[T] =
+    CancellableAsync(lspExecutor)(f)
+
   private val requestCounter = new java.util.concurrent.atomic.AtomicLong(0)
 
   private def logged[T](method: String, params: => String)(f: => CompletableFuture[T]): CompletableFuture[T] =
     val id = requestCounter.incrementAndGet()
     val start = System.currentTimeMillis()
     System.err.println(s"[LSP] --> $method #$id $params")
-    f.whenComplete: (_, error) =>
+    val future = f
+    // Use the original future as a side-effect callback target, but return the original.
+    // Returning whenComplete's derived future would break cancellation propagation:
+    // lsp4j cancels the returned future, but whenComplete returns a NEW future,
+    // so cancel() wouldn't reach the original (e.g. from CancellableAsync).
+    future.whenComplete: (_, error) =>
       val elapsed = System.currentTimeMillis() - start
       if error != null then
         val msg = Option(error.getCause).map(_.getMessage).getOrElse(error.getMessage)
         System.err.println(s"[LSP] <-- $method #$id ERROR ${elapsed}ms: $msg")
       else
         System.err.println(s"[LSP] <-- $method #$id ${elapsed}ms")
+    future
 
   private def shortUri(uri: String): String =
     val idx = uri.lastIndexOf('/')
@@ -52,8 +61,8 @@ class ScalaWorkspaceService(projectManager: IntellijProjectManager, diagnosticsP
 
   override def symbol(params: WorkspaceSymbolParams): CompletableFuture[org.eclipse.lsp4j.jsonrpc.messages.Either[util.List[? <: SymbolInformation], util.List[? <: WorkspaceSymbol]]] =
     logged("workspace/symbol", s"query=${params.getQuery}"):
-      supplyAsync:
-        val symbols = symbolProvider.workspaceSymbols(params.getQuery)
+      cancellableAsync: cancelled =>
+        val symbols = symbolProvider.workspaceSymbols(params.getQuery, cancelled)
         org.eclipse.lsp4j.jsonrpc.messages.Either.forLeft(symbols.asJava)
 
   override def executeCommand(params: ExecuteCommandParams): CompletableFuture[AnyRef] =

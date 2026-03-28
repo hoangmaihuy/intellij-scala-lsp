@@ -11,8 +11,8 @@ class SymbolProviderIntegrationTest extends ScalaLspTestBase:
   private def documentSymbols(uri: String) =
     SymbolProvider(projectManager).documentSymbols(uri)
 
-  private def workspaceSymbols(query: String) =
-    SymbolProvider(projectManager).workspaceSymbols(query)
+  private def workspaceSymbols(query: String, cancelled: java.util.concurrent.atomic.AtomicBoolean = new java.util.concurrent.atomic.AtomicBoolean(false)) =
+    SymbolProvider(projectManager).workspaceSymbols(query, cancelled)
 
   private def flattenNames(symbols: Seq[DocumentSymbol]): Seq[String] =
     symbols.flatMap: s =>
@@ -229,6 +229,27 @@ class SymbolProviderIntegrationTest extends ScalaLspTestBase:
       val prefixIdx = result.indexWhere(_.getName == "MyExactClassHelper")
       if exactIdx >= 0 && prefixIdx >= 0 then
         assertTrue("Exact match should rank before prefix match", exactIdx < prefixIdx)
+
+  def testWorkspaceSymbolCancellationReturnsEmpty(): Unit =
+    configureScalaFile(
+      """object HeavyService:
+        |  def process(x: Int) = x * 2
+        |""".stripMargin
+    )
+    // Pre-cancel the token before searching
+    val cancelled = new java.util.concurrent.atomic.AtomicBoolean(true)
+    val result = workspaceSymbols("HeavyService", cancelled)
+    assertTrue("Cancelled search should return empty results", result.isEmpty)
+
+  def testWorkspaceSymbolNonCancelledReturnsResults(): Unit =
+    configureScalaFile(
+      """object ActiveService:
+        |  def run() = 42
+        |""".stripMargin
+    )
+    val cancelled = new java.util.concurrent.atomic.AtomicBoolean(false)
+    val result = workspaceSymbols("ActiveService", cancelled)
+    assertFalse("Non-cancelled search should return results", result.isEmpty)
 
   def testWorkspaceSymbolCompanionDedup(): Unit =
     addScalaFile("dedup/Widget.scala",
