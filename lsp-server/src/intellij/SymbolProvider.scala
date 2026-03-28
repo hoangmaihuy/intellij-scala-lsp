@@ -119,20 +119,7 @@ class SymbolProvider(projectManager: IntellijProjectManager):
                   if rawName != null then
                     // Strip JVM companion class suffix (e.g., MyService$ → MyService)
                     val symbolName = if rawName.endsWith("$") then rawName.stripSuffix("$") else rawName
-                    val containerName =
-                      val fromPsi = getContainerName(named)
-                      if fromPsi != null then fromPsi
-                      else
-                        // Fallback: derive container from model's full name (e.g., "pkg.MyClass.method" → "pkg.MyClass")
-                        val fullName = try Option(model.getFullName(nav)).filter(_.nonEmpty) catch case _: Exception => None
-                        fullName.flatMap: fqn =>
-                          val idx = fqn.lastIndexOf('.')
-                          if idx > 0 then Some(fqn.substring(0, idx)) else None
-                        .orElse:
-                          // Fallback: use NavigationItem presentation's location string
-                          try Option(nav.getPresentation).flatMap(p => Option(p.getLocationString)).filter(_.nonEmpty)
-                          catch case _: Exception => None
-                        .orNull
+                    val containerName = getContainerName(model, nav, symbolName)
                     val qualKey = Option(containerName).filter(_.nonEmpty)
                       .map(c => s"$c.$symbolName").getOrElse(symbolName)
                       .stripSuffix("$")
@@ -179,62 +166,29 @@ class SymbolProvider(projectManager: IntellijProjectManager):
     indicator.start()
     indicator
 
-  private def getContainerName(element: PsiElement): String =
-    // Try to derive container FQN from the element's own FQN
-    // e.g., for "io.circe.Json", containerName = "io.circe"
-    element match
-      case named: PsiNamedElement =>
-        val name = named.getName
-        PsiUtils.getQualifiedNameOf(named) match
-          case Some(fqn) if fqn.endsWith("." + name) =>
-            return fqn.stripSuffix("." + name)
-          case _ => ()
-      case _ => ()
-
-    // Try PsiMethod.getContainingClass
-    element match
-      case method: PsiMethod =>
-        try
-          val cls = method.getContainingClass
-          if cls != null then
-            val fqn = cls.getQualifiedName
-            if fqn != null && fqn.nonEmpty then return fqn
-            val name = cls.getName
-            if name != null && name.nonEmpty then return name
-        catch case _: Exception => ()
-      case _ => ()
-
-    // For stub-based elements (from index), the parent chain may be incomplete.
-    // Resolve through the file's full PSI tree to find the enclosing class/object.
+  /** Get container name for a workspace symbol using IntelliJ's APIs.
+    * model.getFullName gives the FQN (e.g., "pkg.MyClass.method"),
+    * and we strip the symbol's own name to get the container. */
+  private def getContainerName(model: ChooseByNameModel, nav: NavigationItem, symbolName: String): String =
+    // Primary: derive from model's full name (e.g., "pkg.MyClass.method" → "pkg.MyClass")
     try
-      val psiFile = element.getContainingFile
-      if psiFile != null then
-        val offset = element.getTextOffset
-        if offset >= 0 then
-          val elementInFile = psiFile.findElementAt(offset)
-          if elementInFile != null then
-            var p = elementInFile.getParent
-            while p != null && p != psiFile do
-              if ScalaTypes.isClassLike(p) || ScalaTypes.isTypeDefinition(p) then
-                PsiUtils.getQualifiedNameOf(p) match
-                  case Some(fqn) if fqn.nonEmpty => return fqn
-                  case _ =>
-                    p match
-                      case named: PsiNamedElement =>
-                        val name = named.getName
-                        if name != null && name.nonEmpty then return name
-                      case _ => ()
-              p = p.getParent
+      val fullName = model.getFullName(nav)
+      if fullName != null && fullName.nonEmpty then
+        val suffix = "." + symbolName
+        if fullName.endsWith(suffix) then
+          return fullName.stripSuffix(suffix)
+        // Full name might be just the symbol name (top-level class) — no container
     catch case _: Exception => ()
 
-    // Walk up the PSI tree for the nearest significant parent
-    var parent = element.getParent
-    while parent != null do
-      parent match
-        case named: PsiNamedElement if isSignificantElement(named) =>
-          PsiUtils.getQualifiedNameOf(named) match
-            case Some(fqn) => return fqn
-            case None => return named.getName
-        case _ =>
-          parent = parent.getParent
+    // Fallback: NavigationItem presentation's location string
+    try
+      val pres = nav.getPresentation
+      if pres != null then
+        val loc = pres.getLocationString
+        if loc != null && loc.nonEmpty then
+          // locationString is often "(package.name)" — strip parens
+          val trimmed = loc.stripPrefix("(").stripSuffix(")")
+          if trimmed.nonEmpty then return trimmed
+    catch case _: Exception => ()
+
     null
