@@ -264,8 +264,11 @@ object PsiUtils:
     else if ScalaTypes.isTrait(element) then SymbolKind.Interface
     else if ScalaTypes.isObject(element) then SymbolKind.Module
     else if ScalaTypes.isFunction(element) then SymbolKind.Method
-    else if ScalaTypes.isValue(element) || ScalaTypes.isPatternDefinition(element) then SymbolKind.Variable
+    else if ScalaTypes.isValue(element) || ScalaTypes.isPatternDefinition(element) then SymbolKind.Field
     else if ScalaTypes.isVariable(element) || ScalaTypes.isVariableDefinition(element) then SymbolKind.Variable
+    // Binding patterns from StructureView — check isVal/isVar to distinguish
+    else if ScalaTypes.isBindingPattern(element) then
+      if ScalaTypes.isVar(element) then SymbolKind.Variable else SymbolKind.Field
     else if ScalaTypes.isTypeAlias(element) then SymbolKind.TypeParameter
     else if ScalaTypes.isPackaging(element) then SymbolKind.Package
     else if element.isInstanceOf[PsiMethod] then SymbolKind.Method
