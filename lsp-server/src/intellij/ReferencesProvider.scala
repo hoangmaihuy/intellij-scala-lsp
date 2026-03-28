@@ -1,18 +1,19 @@
 package org.jetbrains.scalalsP.intellij
 
-import com.intellij.find.findUsages.FindUsagesHandlerFactory
+import com.intellij.find.findUsages.{FindUsagesHandlerBase, FindUsagesHandlerFactory, FindUsagesOptions}
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.psi.*
-import com.intellij.psi.search.{GlobalSearchScope, PsiNonJavaFileReferenceProcessor, PsiSearchHelper}
+import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.search.searches.ReferencesSearch
+import com.intellij.usages.impl.rules.{UsageType, UsageTypeProvider}
 import org.eclipse.lsp4j.{Location, Position}
 
 import scala.jdk.CollectionConverters.*
 
 /**
- * Implements textDocument/references using IntelliJ's ReferencesSearch,
- * with multi-resolve, allScope, secondary elements (companions/bean properties),
- * text occurrence search, and usage type classification.
+ * Implements textDocument/references by delegating to IntelliJ's FindUsagesHandler,
+ * which handles structural search, text occurrences, secondary elements (companions),
+ * SAM types, overriding members, and compiler indices.
  */
 class ReferencesProvider(projectManager: IntellijProjectManager):
 
@@ -64,65 +65,28 @@ class ReferencesProvider(projectManager: IntellijProjectManager):
     val project = projectManager.getProject
     val scope = GlobalSearchScope.projectScope(project)
 
-    // Collect secondary elements (companions, bean properties) via ScalaFindUsagesHandlerFactory
-    val allTargets = effectiveTargets ++ discoverSecondaryElements(effectiveTargets)
-    val uniqueTargets = allTargets.distinctBy(t => (t.getClass.getName, t.getTextOffset, Option(t.getContainingFile).map(_.getVirtualFile)))
-
-    System.err.println(s"[References] Searching references for ${uniqueTargets.size} target(s)")
-
     val resultsBuffer = scala.collection.mutable.LinkedHashMap[(String, Int, Int), ReferenceResult]()
 
-    // Structural search for each target
-    for target <- uniqueTargets do
+    for target <- effectiveTargets do
       val targetName = target match
         case n: PsiNamedElement => n.getName
         case _ => "?"
       System.err.println(s"[References] Target: ${target.getClass.getSimpleName} '$targetName'")
 
-      try
-        ReferencesSearch.search(target, scope, false).forEach: (ref: PsiReference) =>
-          val element = ref.getElement
-          val unwrapped = PsiUtils.unwrapSyntheticElement(element)
-          PsiUtils.elementToLocation(unwrapped).foreach: loc =>
-            val key = (loc.getUri, loc.getRange.getStart.getLine, loc.getRange.getStart.getCharacter)
-            if !resultsBuffer.contains(key) then
-              val usageType = PsiUtils.getUsageType(unwrapped)
-              resultsBuffer(key) = ReferenceResult(loc, usageType)
-          true
-      catch
-        case e: Exception =>
-          System.err.println(s"[References] ReferencesSearch partially failed: ${e.getClass.getSimpleName}: ${e.getMessage}")
-
-    // Text occurrence search for named targets
-    for target <- uniqueTargets do
-      target match
-        case named: PsiNamedElement =>
-          val name = named.getName
-          if name != null && name.nonEmpty then
-            try
-              val processor: PsiNonJavaFileReferenceProcessor =
-                ((file: PsiFile, startOffset: Int, endOffset: Int) => {
-                  val elementAtOffset = file.findElementAt(startOffset)
-                  if elementAtOffset != null then
-                    PsiUtils.elementToLocation(elementAtOffset).foreach: loc =>
-                      val key = (loc.getUri, loc.getRange.getStart.getLine, loc.getRange.getStart.getCharacter)
-                      if !resultsBuffer.contains(key) then
-                        resultsBuffer(key) = ReferenceResult(loc, ReferenceResult.TextOccurrence)
-                  true
-                }): PsiNonJavaFileReferenceProcessor
-              PsiSearchHelper.getInstance(project).processUsagesInNonJavaFiles(named, name, processor, scope)
-            catch
-              case e: Exception =>
-                System.err.println(s"[References] Text search failed for '$name': ${e.getClass.getSimpleName}: ${e.getMessage}")
-        case _ => // skip non-named elements
+      val handler = findHandler(target)
+      handler match
+        case Some(h) =>
+          processViaHandler(h, target, scope, resultsBuffer)
+        case None =>
+          processViaReferencesSearch(target, scope, resultsBuffer)
 
     // Add declarations if requested
     if includeDeclaration then
-      for target <- uniqueTargets do
+      for target <- effectiveTargets do
         PsiUtils.elementToLocation(target).foreach: loc =>
           val key = (loc.getUri, loc.getRange.getStart.getLine, loc.getRange.getStart.getCharacter)
           if !resultsBuffer.contains(key) then
-            resultsBuffer(key) = ReferenceResult(loc, ReferenceResult.Read)
+            resultsBuffer(key) = ReferenceResult(loc, "Declaration")
 
     val allResults = resultsBuffer.values.toSeq
     if allResults.size > ResultLimit then
@@ -132,35 +96,84 @@ class ReferencesProvider(projectManager: IntellijProjectManager):
       System.err.println(s"[References] Found ${allResults.size} references")
       allResults
 
-  /**
-   * Discover secondary elements (companion objects, bean properties) via
-   * ScalaFindUsagesHandlerFactory reflection.
-   */
-  private def discoverSecondaryElements(targets: Seq[PsiElement]): Seq[PsiElement] =
+  /** Find a FindUsagesHandler for the target via registered factories. */
+  private def findHandler(target: PsiElement): Option[FindUsagesHandlerBase] =
     val project = projectManager.getProject
     try
       val factories = FindUsagesHandlerFactory.EP_NAME.getExtensionList(project).asScala
-      val scalaFactory = factories.find(_.getClass.getName.contains("ScalaFindUsagesHandlerFactory"))
-      scalaFactory match
-        case Some(factory) =>
-          targets.flatMap: target =>
-            try
-              if factory.canFindUsages(target) then
-                val handler = factory.createFindUsagesHandler(target, false)
-                if handler != null then
-                  handler.getSecondaryElements.toSeq
-                else
-                  Seq.empty
-              else
-                Seq.empty
-            catch
-              case e: Exception =>
-                System.err.println(s"[References] Secondary element discovery failed: ${e.getClass.getSimpleName}: ${e.getMessage}")
-                Seq.empty
-        case None =>
-          System.err.println("[References] ScalaFindUsagesHandlerFactory not found")
-          Seq.empty
+      factories.iterator.flatMap: factory =>
+        try
+          if factory.canFindUsages(target) then
+            Option(factory.createFindUsagesHandler(target, false))
+          else None
+        catch case e: Exception =>
+          System.err.println(s"[References] Factory ${factory.getClass.getSimpleName} failed: ${e.getMessage}")
+          None
+      .nextOption()
+    catch case e: Exception =>
+      System.err.println(s"[References] Failed to load FindUsagesHandlerFactory extensions: ${e.getMessage}")
+      None
+
+  /** Delegate to FindUsagesHandler.processElementUsages for comprehensive search. */
+  private def processViaHandler(
+    handler: FindUsagesHandlerBase,
+    target: PsiElement,
+    scope: GlobalSearchScope,
+    resultsBuffer: scala.collection.mutable.LinkedHashMap[(String, Int, Int), ReferenceResult],
+  ): Unit =
+    val options = new FindUsagesOptions(projectManager.getProject)
+    options.isUsages = true
+    options.isSearchForTextOccurrences = true
+    options.searchScope = scope
+
+    try
+      val processor: com.intellij.util.Processor[com.intellij.usageView.UsageInfo] =
+        (usageInfo: com.intellij.usageView.UsageInfo) =>
+          val element = usageInfo.getElement
+          if element != null then
+            PsiUtils.elementToLocation(element).foreach: loc =>
+              val key = (loc.getUri, loc.getRange.getStart.getLine, loc.getRange.getStart.getCharacter)
+              if !resultsBuffer.contains(key) then
+                val usageType = classifyUsage(usageInfo)
+                resultsBuffer(key) = ReferenceResult(loc, usageType)
+          true
+
+      // processElementUsages searches primary + secondary elements internally
+      handler.processElementUsages(target, processor, options)
     catch
       case e: Exception =>
-        System.err.println(s"[References] Failed to load FindUsagesHandlerFactory extensions: ${e.getClass.getSimpleName}: ${e.getMessage}")
-        Seq.empty
+        System.err.println(s"[References] processElementUsages failed: ${e.getClass.getSimpleName}: ${e.getMessage}")
+
+  /** Fallback: direct ReferencesSearch for non-Scala targets. */
+  private def processViaReferencesSearch(
+    target: PsiElement,
+    scope: GlobalSearchScope,
+    resultsBuffer: scala.collection.mutable.LinkedHashMap[(String, Int, Int), ReferenceResult],
+  ): Unit =
+    try
+      ReferencesSearch.search(target, scope, false).forEach: (ref: PsiReference) =>
+        val element = ref.getElement
+        PsiUtils.elementToLocation(element).foreach: loc =>
+          val key = (loc.getUri, loc.getRange.getStart.getLine, loc.getRange.getStart.getCharacter)
+          if !resultsBuffer.contains(key) then
+            resultsBuffer(key) = ReferenceResult(loc, "Unclassified")
+        true
+    catch
+      case e: Exception =>
+        System.err.println(s"[References] ReferencesSearch fallback failed: ${e.getClass.getSimpleName}: ${e.getMessage}")
+
+  /** Classify a UsageInfo using IntelliJ's UsageTypeProvider extensions. */
+  private def classifyUsage(usageInfo: com.intellij.usageView.UsageInfo): String =
+    try
+      val providers = UsageTypeProvider.EP_NAME.getExtensionList.asScala
+      val element = usageInfo.getElement
+      if element != null then
+        providers.iterator.flatMap: provider =>
+          Option(provider.getUsageType(element))
+        .nextOption() match
+          case Some(ut) => ut.toString
+          case None => UsageType.UNCLASSIFIED.toString
+      else
+        UsageType.UNCLASSIFIED.toString
+    catch
+      case _: Exception => "Unclassified"
