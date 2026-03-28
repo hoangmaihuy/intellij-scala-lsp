@@ -5,12 +5,20 @@ import com.intellij.openapi.project.{DumbService, Project, ProjectManager}
 import com.intellij.openapi.projectRoots.ProjectJdkTable
 import com.intellij.openapi.vfs.newvfs.impl.VfsRootAccess
 import java.nio.file.Path
-import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.{ConcurrentHashMap, Executors, TimeUnit}
+import java.util.concurrent.atomic.AtomicInteger
 import scala.jdk.CollectionConverters.*
 
 class ProjectRegistry:
   private val projects = new ConcurrentHashMap[String, Project]()
+  private val refCounts = new ConcurrentHashMap[String, AtomicInteger]()
   private val CACHE_DIR = s"${System.getProperty("user.home")}/.cache/intellij-scala-lsp"
+  private val GRACE_PERIOD_SECONDS = 30L
+
+  private val closeScheduler = Executors.newSingleThreadScheduledExecutor: r =>
+    val t = new Thread(r, "project-close-scheduler")
+    t.setDaemon(true)
+    t
 
   def getProject(path: String): Option[Project] =
     Option(projects.get(canonicalize(path)))
@@ -20,6 +28,24 @@ class ProjectRegistry:
     val project = projects.computeIfAbsent(canonical, _ => doOpenProject(canonical))
     writeProjectList()
     project
+
+  /** Open/reuse a project and increment its reference count. */
+  def acquireProject(path: String): Project =
+    val canonical = canonicalize(path)
+    refCounts.computeIfAbsent(canonical, _ => new AtomicInteger(0)).incrementAndGet()
+    try
+      openProject(path)
+    catch case e: Exception =>
+      refCounts.get(canonical).decrementAndGet()
+      throw e
+
+  /** Decrement reference count; schedule close after grace period if no references remain. */
+  def releaseProject(path: String): Unit =
+    val canonical = canonicalize(path)
+    val count = refCounts.get(canonical)
+    if count != null && count.decrementAndGet() <= 0 then
+      closeScheduler.schedule((() => closeIfUnreferenced(canonical)): Runnable,
+        GRACE_PERIOD_SECONDS, TimeUnit.SECONDS)
 
   /** List all open project paths */
   def listProjects(): Seq[String] = projects.keys().asScala.toSeq.sorted
@@ -31,8 +57,10 @@ class ProjectRegistry:
   /** For testing — unregister a project without closing it (to avoid disposing test-managed projects) */
   private[scalalsP] def unregisterForTesting(path: String): Unit =
     projects.remove(canonicalize(path))
+    refCounts.remove(canonicalize(path))
 
   def closeAll(): Unit =
+    closeScheduler.shutdownNow()
     projects.values().asScala.foreach: project =>
       try
         ApplicationManager.getApplication.invokeAndWait: () =>
@@ -40,7 +68,22 @@ class ProjectRegistry:
       catch case e: Exception =>
         System.err.println(s"[ProjectRegistry] Error closing ${project.getName}: ${e.getMessage}")
     projects.clear()
+    refCounts.clear()
     writeProjectList()
+
+  private def closeIfUnreferenced(canonical: String): Unit =
+    val count = refCounts.get(canonical)
+    if count == null || count.get() <= 0 then
+      val project = projects.remove(canonical)
+      refCounts.remove(canonical)
+      if project != null then
+        System.err.println(s"[ProjectRegistry] Closing unused project: $canonical")
+        try
+          ApplicationManager.getApplication.invokeAndWait: () =>
+            ProjectManager.getInstance().closeAndDispose(project)
+        catch case e: Exception =>
+          System.err.println(s"[ProjectRegistry] Error closing $canonical: ${e.getMessage}")
+      writeProjectList()
 
   /** Persist open project paths to disk so --list-projects can read them */
   private def writeProjectList(): Unit =

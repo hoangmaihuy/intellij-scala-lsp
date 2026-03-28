@@ -68,6 +68,7 @@ public final class DaemonServer {
     }
 
     private void handleConnection(Socket socket) {
+        String projectPath = null;
         try {
             InputStream rawIn = socket.getInputStream();
             OutputStream out = socket.getOutputStream();
@@ -89,7 +90,7 @@ public final class DaemonServer {
                 return;
             }
 
-            String projectPath = extractProjectPath(firstMessage);
+            projectPath = extractProjectPath(firstMessage);
             System.err.println("[DaemonServer] Session for project: " + projectPath);
 
             // Replay consumed bytes + remaining stream for lsp4j
@@ -98,8 +99,8 @@ public final class DaemonServer {
                 rawIn
             );
 
-            // Open or get cached project
-            var project = registry.openProject(projectPath);
+            // Open or get cached project (with reference counting)
+            var project = registry.acquireProject(projectPath);
 
             // Create per-session project manager sharing the Project
             var projectManager = new IntellijProjectManager(scala.Option.apply(registry), true);
@@ -119,6 +120,9 @@ public final class DaemonServer {
                 e.printStackTrace(System.err);
             }
         } finally {
+            if (projectPath != null) {
+                registry.releaseProject(projectPath);
+            }
             activeSessions.decrementAndGet();
             try { socket.close(); } catch (IOException ignored) {}
         }
@@ -130,12 +134,16 @@ public final class DaemonServer {
         try {
             OutputStream out = socket.getOutputStream();
             try {
-                // Reuse existing project from registry, or open a new one
-                var project = registry.openProject(projectPath);
-                ProjectImporter.importSbtProjectWithExisting(project, Path.of(projectPath));
-                String result = "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"success\":true}}";
-                writeJsonRpcMessage(out, result);
-                System.err.println("[DaemonServer] Import complete for: " + projectPath);
+                // Reuse existing project from registry, or open a new one (with reference counting)
+                var project = registry.acquireProject(projectPath);
+                try {
+                    ProjectImporter.importSbtProjectWithExisting(project, Path.of(projectPath));
+                    String result = "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"success\":true}}";
+                    writeJsonRpcMessage(out, result);
+                    System.err.println("[DaemonServer] Import complete for: " + projectPath);
+                } finally {
+                    registry.releaseProject(projectPath);
+                }
             } catch (Exception e) {
                 System.err.println("[DaemonServer] Import failed: " + e.getMessage());
                 e.printStackTrace(System.err);
