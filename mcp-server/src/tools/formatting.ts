@@ -1,20 +1,21 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { LspClient } from '../lsp-client.js';
-import { FileManager } from '../file-manager.js';
+import { SessionManager } from '../session-manager.js';
 import { applyWorkspaceEdit } from '../workspace-edit.js';
 import { withToolLogging } from '../tool-logging.js';
 import { toPosition } from '../utils.js';
 import { DocumentFormattingParams, DocumentRangeFormattingParams, TextEdit, ExecuteCommandParams } from 'vscode-languageserver-protocol';
 
-export function registerFormattingTools(mcp: McpServer, lsp: LspClient, fileManager: FileManager): void {
+export function registerFormattingTools(mcp: McpServer, sessionManager: SessionManager): void {
   mcp.tool('format', 'Format Scala code using IntelliJ code style. Formats the entire file, or a specific line range if startLine and endLine are provided. Applies changes to disk immediately.',
     {
+      projectPath: z.string().describe('Absolute path to the project root'),
       filePath: z.string().describe('Absolute path to the file'),
       startLine: z.number().optional().describe('Start line (1-indexed, optional)'),
       endLine: z.number().optional().describe('End line (1-indexed, optional)'),
     },
-    withToolLogging('format', async ({ filePath, startLine, endLine }) => {
+    withToolLogging('format', async ({ projectPath, filePath, startLine, endLine }) => {
+      const { lsp, fileManager } = await sessionManager.getSession(projectPath);
       const uri = await fileManager.ensureOpen(filePath);
 
       let edits: TextEdit[];
@@ -44,8 +45,12 @@ export function registerFormattingTools(mcp: McpServer, lsp: LspClient, fileMana
   );
 
   mcp.tool('organize_imports', 'Remove unused imports and sort remaining imports in a Scala file. Run after adding or removing code to keep imports clean.',
-    { filePath: z.string().describe('Absolute path to the file') },
-    withToolLogging('organize_imports', async ({ filePath }) => {
+    {
+      projectPath: z.string().describe('Absolute path to the project root'),
+      filePath: z.string().describe('Absolute path to the file'),
+    },
+    withToolLogging('organize_imports', async ({ projectPath, filePath }) => {
+      const { lsp, fileManager } = await sessionManager.getSession(projectPath);
       const uri = await fileManager.ensureOpen(filePath);
       await lsp.request<unknown>('workspace/executeCommand', {
         command: 'scala.organizeImports', arguments: [{ uri }],

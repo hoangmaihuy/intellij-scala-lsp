@@ -1,19 +1,23 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { LspClient } from '../lsp-client.js';
+import { SessionManager } from '../session-manager.js';
 import { uriToPath } from '../utils.js';
 import { withToolLogging } from '../tool-logging.js';
 import { SymbolInformation, SymbolKind, WorkspaceSymbolParams } from 'vscode-languageserver-protocol';
 
 export function registerWorkspaceTools(
   mcp: McpServer,
-  lsp: LspClient,
+  sessionManager: SessionManager,
 ): void {
   mcp.tool(
     'workspace_symbols',
     'Search for symbols (classes, traits, methods, objects, vals, etc.) by name across the entire project. Returns kind, container, file path, and line. Use for discovery when you don\'t know the exact location.',
-    { query: z.string().describe('Search query (e.g. "MyClass", "process") — fuzzy matched against symbol names') },
-    withToolLogging('workspace_symbols', async ({ query }) => {
+    {
+      projectPath: z.string().describe('Absolute path to the project root'),
+      query: z.string().describe('Search query (e.g. "MyClass", "process") — fuzzy matched against symbol names'),
+    },
+    withToolLogging('workspace_symbols', async ({ projectPath, query }) => {
+      const { lsp } = await sessionManager.getSession(projectPath);
       const result = await lsp.request<SymbolInformation[]>(
         'workspace/symbol',
         { query } as WorkspaceSymbolParams,

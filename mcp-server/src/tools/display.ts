@@ -1,8 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { LspClient } from '../lsp-client.js';
-import { FileManager } from '../file-manager.js';
-import { SymbolResolver } from '../symbol-resolver.js';
+import { SessionManager } from '../session-manager.js';
 import { uriToPath, toPosition } from '../utils.js';
 import { withToolLogging } from '../tool-logging.js';
 import {
@@ -14,21 +12,21 @@ import * as fs from 'fs';
 
 export function registerDisplayTools(
   mcp: McpServer,
-  lsp: LspClient,
-  fileManager: FileManager,
-  symbolResolver: SymbolResolver,
+  sessionManager: SessionManager,
 ): void {
 
   mcp.tool(
     'hover',
     'Get type signature, documentation, supertypes, subtypes, and type definition location for a symbol. Use to understand what a symbol is without reading its full source. Prefer symbolName; use filePath+line+column for positional context.',
     {
+      projectPath: z.string().describe('Absolute path to the project root'),
       symbolName: z.string().optional().describe('Symbol name (e.g. "MyClass", "MyClass.myMethod")'),
       filePath: z.string().optional().describe('Absolute path to the file (use with line+column)'),
       line: z.number().optional().describe('Line number, 1-indexed (use with filePath+column)'),
       column: z.number().optional().describe('Column number, 1-indexed (use with filePath+line)'),
     },
     withToolLogging('hover', async (args) => {
+      const { lsp, fileManager, symbolResolver } = await sessionManager.getSession(args.projectPath);
       // Resolve to URI + position
       let uri: string;
       let position: { line: number; character: number };
@@ -123,9 +121,11 @@ export function registerDisplayTools(
     'diagnostics',
     'Get compiler errors and warnings for a file. Returns each diagnostic with severity (ERROR/WARNING/INFO/HINT), location, message, and the source line. Run after every edit to catch type errors early.',
     {
+      projectPath: z.string().describe('Absolute path to the project root'),
       filePath: z.string().describe('Absolute path to the file'),
     },
-    withToolLogging('diagnostics', async ({ filePath }) => {
+    withToolLogging('diagnostics', async ({ projectPath, filePath }) => {
+      const { lsp, fileManager } = await sessionManager.getSession(projectPath);
       const uri = await fileManager.ensureOpen(filePath);
       const diags = await lsp.request<Diagnostic[]>('workspace/executeCommand', {
         command: 'scala.pullDiagnostics',
@@ -160,9 +160,11 @@ export function registerDisplayTools(
     'document_symbols',
     'List all symbols in a file as a hierarchical outline (classes, methods, fields, traits with nesting). Use to understand file structure before navigating into specific symbols.',
     {
+      projectPath: z.string().describe('Absolute path to the project root'),
       filePath: z.string().describe('Absolute path to the file'),
     },
-    withToolLogging('document_symbols', async ({ filePath }) => {
+    withToolLogging('document_symbols', async ({ projectPath, filePath }) => {
+      const { lsp, fileManager } = await sessionManager.getSession(projectPath);
       const uri = await fileManager.ensureOpen(filePath);
       const result = await lsp.request<DocumentSymbol[] | SymbolInformation[]>(
         'textDocument/documentSymbol',
