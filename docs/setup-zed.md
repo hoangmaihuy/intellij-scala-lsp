@@ -14,13 +14,13 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ## Install
 
 ```bash
-intellij-scala-lsp --setup-zed
+scallij --setup-zed
 ```
 
 This:
 1. Creates a Zed extension at `~/.local/share/zed/extensions/intellij-scala-lsp/`
 2. Configures `~/.config/zed/settings.json` with the LSP server settings
-3. Sets `intellij-scala-lsp` as the Scala language server (disables Metals)
+3. Sets `scallij` as the Scala language server (disables Metals)
 
 After setup:
 1. Open Zed
@@ -85,10 +85,10 @@ Make sure you installed the dev extension via `Cmd+Shift+P` → "zed: install de
 
 ### Language server not starting
 
-Check that `intellij-scala-lsp` is on your `PATH`:
+Check that `scallij` is on your `PATH`:
 
 ```bash
-which intellij-scala-lsp
+which scallij
 ```
 
 If not, the `PATH` in the Zed settings may need updating.

@@ -3,12 +3,12 @@
 ## Install
 
 ```bash
-intellij-scala-lsp --setup-vscode
+scallij --setup-vscode
 ```
 
 This creates a VS Code extension at `~/.vscode/extensions/intellij-scala-lsp/` that:
 - Activates on `.scala` and `.sc` files
-- Starts the LSP server via the `intellij-scala-lsp` launcher
+- Starts the LSP server via the `scallij` launcher
 - Shows a status bar item with server state (Starting → Indexing → Ready)
 - Logs all LSP requests to the "IntelliJ Scala LSP" output channel
 
@@ -38,7 +38,7 @@ In VS Code settings (`Cmd+,`):
 
 | Setting | Description | Default |
 |---|---|---|
-| `intellijScalaLsp.launcher` | Path to the `intellij-scala-lsp` launcher | Auto-detected from `$PATH` |
+| `intellijScalaLsp.launcher` | Path to the `scallij` launcher | Auto-detected from `$PATH` |
 
 ## First Launch
 
@@ -62,7 +62,7 @@ Subsequent VS Code windows reuse the running daemon instantly.
 For very large projects, the default timeout may not be enough. Start the daemon manually first:
 
 ```bash
-intellij-scala-lsp --daemon /path/to/project
+scallij --daemon /path/to/project
 ```
 
 Then reload VS Code.

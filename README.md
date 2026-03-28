@@ -20,22 +20,22 @@ Requirements: **macOS** or **Linux**, **socat** (`brew install socat`), **python
 
 ```bash
 # Start daemon with project pre-warming
-intellij-scala-lsp --daemon /path/to/project1 /path/to/project2
+scallij --daemon /path/to/project1 /path/to/project2
 
 # Import a project (auto-detects Mill or sbt)
-intellij-scala-lsp --import /path/to/project
+scallij --import /path/to/project
 
 # Stop the daemon
-intellij-scala-lsp --stop
+scallij --stop
 
 # List projects open in the daemon
-intellij-scala-lsp --list-projects
+scallij --list-projects
 
 # Download LSP JARs and SDK
-intellij-scala-lsp --install
+scallij --install
 
 # Update to latest version (launcher checks daily automatically)
-intellij-scala-lsp --update
+scallij --update
 ```
 
 Running without flags proxies stdio to the daemon (auto-starts if needed) — this is how editors connect.
@@ -62,7 +62,7 @@ See the setup guides for details:
 - [Claude Code](docs/setup-claude-code.md) — MCP server (12 tools) or LSP plugin (9 ops)
 - [VS Code](docs/setup-vscode.md)
 - [Zed](docs/setup-zed.md)
-- **Neovim** — use `cmd = { "intellij-scala-lsp" }` in your LSP config
+- **Neovim** — use `cmd = { "scallij" }` in your LSP config
 
 ## Features
 
@@ -90,7 +90,7 @@ See [docs/architecture.md](docs/architecture.md) for the daemon lifecycle, LSP p
 sbt lsp-server/compile                            # Build
 sbt lsp-server/test                               # Run tests
 sbt "lsp-server/runLsp --daemon"                   # Build and run
-./launcher/intellij-scala-lsp --setup-claude-code-mcp-dev  # Dev setup
+./launcher/scallij --setup-claude-code-mcp-dev  # Dev setup
 ```
 
 ## Version Compatibility
