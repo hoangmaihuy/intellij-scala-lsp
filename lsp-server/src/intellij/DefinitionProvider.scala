@@ -83,15 +83,9 @@ class DefinitionProvider(projectManager: IntellijProjectManager):
             case None =>
               Option(ref.resolve()).toSeq
 
-          val refName = element match
-            case n: com.intellij.psi.PsiNamedElement => n.getName
-            case _ => element.getText.trim.split("\\W").headOption.getOrElse("")
-          val locations = resolvedTargets.flatMap: target =>
-            targetToLocation(target).orElse(fallbackToContainer(target, refName))
-          if locations.nonEmpty then locations
-          else navigateElement(element)
+          resolvedTargets.flatMap(targetToLocation)
         else
-          navigateElement(element)
+          Seq.empty
       case None =>
         Seq.empty
 
@@ -104,84 +98,6 @@ class DefinitionProvider(projectManager: IntellijProjectManager):
     PsiUtils.elementToLocation(effective).orElse:
       // If direct location fails, try resolving library source
       PsiUtils.resolveLibraryElement(effective).flatMap(PsiUtils.elementToLocation)
-
-  /** When a resolved target has no VirtualFile, fall back to container class. */
-  private def fallbackToContainer(target: PsiElement, refName: String): Option[Location] =
-    val containingClass = target match
-      case m: com.intellij.psi.PsiMethod => Option(m.getContainingClass)
-      case _ => None
-
-    val cls = containingClass.orElse:
-      var p = target.getParent
-      var depth = 0
-      var found: Option[com.intellij.psi.PsiClass] = None
-      while p != null && depth < 10 && found.isEmpty do
-        p match
-          case c: com.intellij.psi.PsiClass => found = Some(c)
-          case _ => ()
-        p = p.getParent
-        depth += 1
-      found
-
-    val fromClass = cls.flatMap: c =>
-      PsiUtils.elementToLocation(c).orElse:
-        PsiUtils.resolveLibraryElement(c).flatMap(PsiUtils.elementToLocation)
-
-    if fromClass.isDefined then return fromClass
-
-    if refName.nonEmpty then findRealElementByName(refName)
-    else None
-
-  /** Find a real (non-synthetic) element by name via IntelliJ's symbol index. */
-  private def findRealElementByName(name: String): Option[Location] =
-    import com.intellij.navigation.{ChooseByNameContributor, ChooseByNameContributorEx, NavigationItem}
-    import com.intellij.util.indexing.FindSymbolParameters
-
-    try
-      val project = projectManager.getProject
-      val contributors =
-        ChooseByNameContributor.CLASS_EP_NAME.getExtensionList.asScala ++
-        ChooseByNameContributor.SYMBOL_EP_NAME.getExtensionList.asScala
-
-      var result: Option[Location] = None
-      val iter = contributors.iterator
-      while result.isEmpty && iter.hasNext do
-        iter.next() match
-          case ex: ChooseByNameContributorEx =>
-            val params = FindSymbolParameters.wrap(name, project, true)
-            ex.processElementsWithName(
-              name,
-              ((item: NavigationItem) => {
-                if result.isEmpty then
-                  item match
-                    case psi: PsiElement =>
-                      val unwrapped = PsiUtils.unwrapSyntheticElement(psi)
-                      val hasVf = unwrapped.getContainingFile != null &&
-                        unwrapped.getContainingFile.getVirtualFile != null
-                      if hasVf then
-                        unwrapped match
-                          case n: com.intellij.psi.PsiNamedElement if n.getName == name =>
-                            PsiUtils.elementToLocation(unwrapped).foreach: loc =>
-                              result = Some(loc)
-                          case _ => ()
-                    case _ => ()
-                result.isEmpty
-              }): com.intellij.util.Processor[NavigationItem],
-              params,
-            )
-          case _ => ()
-      result
-    catch
-      case e: Exception =>
-        System.err.println(s"[Definition] fallback search failed for '$name': ${e.getMessage}")
-        None
-
-  private def navigateElement(element: PsiElement): Seq[Location] =
-    element match
-      case named: com.intellij.psi.PsiNamedElement =>
-        PsiUtils.elementToLocation(named).toSeq
-      case _ =>
-        Seq.empty
 
   private def nameOf(e: PsiElement): String = e match
     case n: com.intellij.psi.PsiNamedElement => n.getName
