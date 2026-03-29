@@ -1549,6 +1549,9 @@ sys.stdout.write(data.decode())
         com.intellij.idea.Main scala-lsp-import "$PROJECT_PATH"
     fi
     ;;
+  --stdio)
+    # vscode-languageclient passes --stdio automatically; fall through to connect mode
+    ;&
   --*)
     log "ERROR: Unknown option: $1"
     log "Run: scalij --help"
