@@ -406,7 +406,12 @@ do_install() {
   if [ -f "$CACHE_DIR/version" ] && [ -d "$CACHE_DIR/lsp-server/lib" ]; then
     local cached_version
     cached_version=$(cat "$CACHE_DIR/version")
-    log "LSP server v${cached_version} already installed, skipping JAR download."
+    if [ "$LSP_VERSION" != "dev" ] && [ "$cached_version" != "$LSP_VERSION" ]; then
+      log "LSP server v${cached_version} installed, but launcher expects v${LSP_VERSION}. Updating..."
+      download_lsp_jars
+    else
+      log "LSP server v${cached_version} already installed, skipping JAR download."
+    fi
   else
     download_lsp_jars
   fi
