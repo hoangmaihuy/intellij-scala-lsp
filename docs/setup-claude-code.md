@@ -14,7 +14,7 @@ There are two ways to connect Claude Code to intellij-scala-lsp:
 ## MCP Server (Recommended)
 
 ```bash
-scallij --setup-claude-code-mcp
+scalij --setup-claude-code-mcp
 ```
 
 This adds the MCP server to `~/.claude/settings.json`:
@@ -51,7 +51,7 @@ Inside Claude Code, run `/mcp` to check the server is connected. Then try:
 ## LSP Plugin
 
 ```bash
-scallij --setup-claude-code-lsp
+scalij --setup-claude-code-lsp
 ```
 
 This installs the LSP plugin to Claude Code. Restart Claude Code (or run `/reload-plugins`) after setup.
@@ -75,7 +75,7 @@ This writes to `.claude/settings.json` in the project. Commit this file so teamm
 
 ### Team Setup
 
-1. **Each developer** runs `scallij --setup-claude-code-lsp` once
+1. **Each developer** runs `scalij --setup-claude-code-lsp` once
 2. **One developer** runs `claude plugin install intellij-scala-lsp@intellij-scala-lsp --scope project` and commits `.claude/settings.json`
 3. **Everyone else** gets the plugin activated automatically
 
@@ -90,7 +90,7 @@ On first launch, the daemon:
 
 Subsequent sessions connect to the already-running daemon instantly. The `startupTimeout` is 300s by default.
 
-Pre-warm projects: `scallij --daemon /path/to/project`
+Pre-warm projects: `scalij --daemon /path/to/project`
 
 ## Troubleshooting
 
@@ -98,7 +98,7 @@ Pre-warm projects: `scallij --daemon /path/to/project`
 
 ```bash
 # Test the launcher directly
-scallij --daemon
+scalij --daemon
 ```
 
 Common issues:
@@ -112,18 +112,18 @@ Common issues:
 lsof -i :5007
 ```
 
-If not running: `scallij --daemon`
+If not running: `scalij --daemon`
 
 ### Port conflict
 
 ```bash
-LSP_PORT=5008 scallij --daemon
+LSP_PORT=5008 scalij --daemon
 ```
 
 ### Memory issues
 
 ```bash
-LSP_HEAP_SIZE=4g scallij --daemon
+LSP_HEAP_SIZE=4g scalij --daemon
 ```
 
 ### Diagnostics not appearing

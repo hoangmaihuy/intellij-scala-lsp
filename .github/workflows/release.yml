@@ -55,14 +55,14 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           IJ_BUILD=$(grep 'intellijBuild' version.sbt | grep -o '"[^"]*"' | tr -d '"')
-          sed -i "s/^LSP_VERSION=\"dev\"/LSP_VERSION=\"${VERSION}\"/" launcher/scallij
-          sed -i "s/^INTELLIJ_BUILD=\"[^\"]*\"/INTELLIJ_BUILD=\"${IJ_BUILD}\"/" launcher/scallij
+          sed -i "s/^LSP_VERSION=\"dev\"/LSP_VERSION=\"${VERSION}\"/" launcher/scalij
+          sed -i "s/^INTELLIJ_BUILD=\"[^\"]*\"/INTELLIJ_BUILD=\"${IJ_BUILD}\"/" launcher/scalij
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             intellij-scala-lsp-*.tar.gz
-            launcher/scallij
+            launcher/scalij
             launcher/install.sh
           generate_release_notes: true

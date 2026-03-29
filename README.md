@@ -20,22 +20,22 @@ Requirements: **macOS** or **Linux**, **socat** (`brew install socat`), **python
 
 ```bash
 # Start daemon with project pre-warming
-scallij --daemon /path/to/project1 /path/to/project2
+scalij --daemon /path/to/project1 /path/to/project2
 
 # Import a project (auto-detects Mill or sbt)
-scallij --import /path/to/project
+scalij --import /path/to/project
 
 # Stop the daemon
-scallij --stop
+scalij --stop
 
 # List projects open in the daemon
-scallij --list-projects
+scalij --list-projects
 
 # Download LSP JARs and SDK
-scallij --install
+scalij --install
 
 # Update to latest version (launcher checks daily automatically)
-scallij --update
+scalij --update
 ```
 
 Running without flags proxies stdio to the daemon (auto-starts if needed) — this is how editors connect.
@@ -62,7 +62,7 @@ See the setup guides for details:
 - [Claude Code](docs/setup-claude-code.md) — MCP server (12 tools) or LSP plugin (9 ops)
 - [VS Code](docs/setup-vscode.md)
 - [Zed](docs/setup-zed.md)
-- **Neovim** — use `cmd = { "scallij" }` in your LSP config
+- **Neovim** — use `cmd = { "scalij" }` in your LSP config
 
 ## Features
 
@@ -90,7 +90,7 @@ See [docs/architecture.md](docs/architecture.md) for the daemon lifecycle, LSP p
 sbt lsp-server/compile                            # Build
 sbt lsp-server/test                               # Run tests
 sbt "lsp-server/runLsp --daemon"                   # Build and run
-./launcher/scallij --setup-claude-code-mcp-dev  # Dev setup
+./launcher/scalij --setup-claude-code-mcp-dev  # Dev setup
 ```
 
 ## Version Compatibility

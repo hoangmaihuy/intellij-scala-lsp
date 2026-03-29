@@ -1,6 +1,6 @@
 # MCP Tools
 
-The MCP server exposes 12 tools that translate to LSP requests against the scallij daemon. All line and column numbers are **1-indexed**.
+The MCP server exposes 12 tools that translate to LSP requests against the scalij daemon. All line and column numbers are **1-indexed**.
 
 ## Navigation Tools
 

@@ -1,5 +1,5 @@
 #!/bin/bash
-# scallij — smart launcher for IntelliJ Scala LSP server
+# scalij — smart launcher for IntelliJ Scala LSP server
 # Handles: install, run, update, stop, and SDK resolution
 set -euo pipefail
 
@@ -29,7 +29,7 @@ fi
 mkdir -p "$CACHE_DIR"
 
 # --- Logging ---
-log() { echo "[scallij] $*" >&2; }
+log() { echo "[scalij] $*" >&2; }
 
 # --- Platform detection ---
 detect_platform() {
@@ -294,9 +294,9 @@ assemble_classpath_and_flags() {
   if [ ! -d "$LSP_LIB_DIR" ] || [ -z "$(ls "$LSP_LIB_DIR"/*.jar 2>/dev/null)" ]; then
     if [ "$DEV_MODE" = true ]; then
       log "ERROR: LSP server JARs not found at $LSP_LIB_DIR"
-      log "Run: scallij --dev  OR  cd $PROJECT_ROOT && sbt 'lsp-server/packageArtifact'"
+      log "Run: scalij --dev  OR  cd $PROJECT_ROOT && sbt 'lsp-server/packageArtifact'"
     else
-      log "ERROR: LSP server JARs not found. Run: scallij --install"
+      log "ERROR: LSP server JARs not found. Run: scalij --install"
     fi
     exit 1
   fi
@@ -402,7 +402,7 @@ download_lsp_jars() {
 }
 
 do_install() {
-  log "Installing scallij..."
+  log "Installing scalij..."
   if [ -f "$CACHE_DIR/version" ] && [ -d "$CACHE_DIR/lsp-server/lib" ]; then
     local cached_version
     cached_version=$(cat "$CACHE_DIR/version")
@@ -423,10 +423,10 @@ do_install() {
   log "Installation complete!"
   log ""
   log "Set up your editor:"
-  log "  Claude Code:  scallij --setup-claude-code-mcp"
-  log "  VS Code:      scallij --setup-vscode"
-  log "  Zed:          scallij --setup-zed"
-  log "  Neovim:       cmd = { \"scallij\" }"
+  log "  Claude Code:  scalij --setup-claude-code-mcp"
+  log "  VS Code:      scalij --setup-vscode"
+  log "  Zed:          scalij --setup-zed"
+  log "  Neovim:       cmd = { \"scalij\" }"
 }
 
 # --- Update ---
@@ -453,7 +453,7 @@ check_for_updates() {
       | python3 -c "import json,sys; print(json.load(sys.stdin).get('tag_name','').lstrip('v'))" 2>/dev/null) || return
     if [ -n "$latest" ] && [ "$latest" != "$LSP_VERSION" ]; then
       log "Update available: v${LSP_VERSION} -> v${latest}"
-      log "Run: scallij --update"
+      log "Run: scalij --update"
     fi
   ) &
 }
@@ -482,7 +482,7 @@ do_update() {
   local self_path
   self_path="$(realpath "$0")"
   local tmp_path="${self_path}.tmp.$$"
-  curl -fsSL -o "$tmp_path" "https://github.com/${GITHUB_REPO}/releases/download/v${latest}/scallij"
+  curl -fsSL -o "$tmp_path" "https://github.com/${GITHUB_REPO}/releases/download/v${latest}/scalij"
   chmod +x "$tmp_path"
   mv -f "$tmp_path" "$self_path"
   # Download new JARs
@@ -702,7 +702,7 @@ setup_mcp() {
     if [ "$DEV_MODE" = true ]; then
       echo "Run: cd $mcp_dir && npm install && npm run build"
     else
-      echo "Run: scallij --install"
+      echo "Run: scalij --install"
     fi
     exit 1
   fi
@@ -939,7 +939,7 @@ const net = require("net");
 const fs = require("fs");
 const vscode = require("vscode");
 
-const LAUNCHER = "$SCRIPT_DIR/scallij";
+const LAUNCHER = "$SCRIPT_DIR/scalij";
 let client, outputChannel, statusBarItem;
 
 function log(msg) {
@@ -1289,11 +1289,11 @@ LANGTOML
 # Handle --version and --help before setting up logging (they should be quiet)
 case "${1:-}" in
   --version)
-    echo "scallij $LSP_VERSION (IntelliJ $INTELLIJ_BUILD)"
+    echo "scalij $LSP_VERSION (IntelliJ $INTELLIJ_BUILD)"
     exit 0
     ;;
   --help)
-    echo "Usage: scallij [OPTIONS]"
+    echo "Usage: scalij [OPTIONS]"
     echo ""
     echo "Options:"
     echo "  --dev [projects...]       Rebuild LSP server and start daemon (local dev)"
@@ -1331,7 +1331,7 @@ case "${1:-}" in
     exit 0
     ;;
   --setup-claude-code-lsp)
-    setup_claude_code "scallij"
+    setup_claude_code "scalij"
     exit 0
     ;;
   --setup-claude-code-lsp-dev)
@@ -1340,11 +1340,11 @@ case "${1:-}" in
       echo "Use --setup-claude-code-lsp for installed users."
       exit 1
     fi
-    setup_claude_code "$SCRIPT_DIR/scallij"
+    setup_claude_code "$SCRIPT_DIR/scalij"
     exit 0
     ;;
   --setup-vscode)
-    setup_vscode "scallij"
+    setup_vscode "scalij"
     exit 0
     ;;
   --setup-vscode-dev)
@@ -1357,7 +1357,7 @@ case "${1:-}" in
     exit 0
     ;;
   --setup-zed)
-    setup_zed "scallij" ""
+    setup_zed "scalij" ""
     exit 0
     ;;
   --setup-zed-dev)
@@ -1366,14 +1366,14 @@ case "${1:-}" in
       echo "Use --setup-zed for installed users."
       exit 1
     fi
-    setup_zed "$SCRIPT_DIR/scallij" "$PROJECT_ROOT/zed-extension"
+    setup_zed "$SCRIPT_DIR/scalij" "$PROJECT_ROOT/zed-extension"
     exit 0
     ;;
   --import)
     PROJECT_PATH="${2:-}"
     if [ -z "$PROJECT_PATH" ]; then
       echo "ERROR: --import requires a project path argument."
-      echo "Usage: scallij --import <project-path>"
+      echo "Usage: scalij --import <project-path>"
       exit 1
     fi
     # Resolve to absolute path
@@ -1546,7 +1546,7 @@ sys.stdout.write(data.decode())
     ;;
   --*)
     log "ERROR: Unknown option: $1"
-    log "Run: scallij --help"
+    log "Run: scalij --help"
     exit 1
     ;;
   *)
