@@ -58,7 +58,7 @@ jobs:
         id: sdk
         run: |
           # sbt-idea-plugin downloads SDK to ~/.intellij-scala-lspPluginIC/sdk/<build>/
-          IJ_BUILD=$(grep '^INTELLIJ_BUILD=' launcher/scallij | cut -d'"' -f2)
+          IJ_BUILD=$(grep '^INTELLIJ_BUILD=' launcher/scalij | cut -d'"' -f2)
           SDK_BASE="$HOME/.intellij-scala-lspPluginIC/sdk/$IJ_BUILD"
           # On macOS, the SDK has a Contents/ subdirectory
           if [ -d "$SDK_BASE/Contents/lib" ]; then
@@ -75,23 +75,23 @@ jobs:
 
       - name: 'Test: --version'
         run: |
-          output=$(./launcher/scallij --version)
+          output=$(./launcher/scalij --version)
           echo "$output"
-          echo "$output" | grep -q "scallij"
+          echo "$output" | grep -q "scalij"
 
       - name: 'Test: --help'
         run: |
-          output=$(./launcher/scallij --help)
+          output=$(./launcher/scalij --help)
           echo "$output"
-          echo "$output" | grep -q "Usage: scallij"
+          echo "$output" | grep -q "Usage: scalij"
 
       - name: 'Test: unknown flag rejected'
         run: |
-          if ./launcher/scallij --unknown-flag 2>/dev/null; then
+          if ./launcher/scalij --unknown-flag 2>/dev/null; then
             echo "FAIL: unknown flag should exit non-zero"
             exit 1
           fi
-          stderr=$(./launcher/scallij --unknown-flag 2>&1 || true)
+          stderr=$(./launcher/scalij --unknown-flag 2>&1 || true)
           echo "$stderr"
           echo "$stderr" | grep -q "Unknown option"
 
@@ -99,14 +99,14 @@ jobs:
         env:
           INTELLIJ_HOME: ${{ steps.sdk.outputs.sdk_dir }}
         run: |
-          output=$(./launcher/scallij --install 2>&1)
+          output=$(./launcher/scalij --install 2>&1)
           echo "$output"
           echo "$output" | grep -q "skipping JAR download"
           echo "$output" | grep -q "IntelliJ:"
 
       - name: 'Test: --dev starts daemon'
         run: |
-          ./launcher/scallij --dev &
+          ./launcher/scalij --dev &
           # Wait for port file
           for i in $(seq 1 120); do
             if [ -f "$HOME/.cache/intellij-scala-lsp/daemon.port" ]; then
@@ -122,12 +122,12 @@ jobs:
           fi
 
       - name: 'Test: --list-projects'
-        run: ./launcher/scallij --list-projects
+        run: ./launcher/scalij --list-projects
 
       - name: 'Test: --stop'
         run: |
           # --stop exits 0 when daemon is running and gets killed
-          ./launcher/scallij --stop
+          ./launcher/scalij --stop
           # Verify daemon is actually gone
           sleep 2
           if [ -f "$HOME/.cache/intellij-scala-lsp/daemon.port" ]; then
