@@ -14,7 +14,24 @@ This project exposes IntelliJ's analysis engine over LSP, bringing its performan
 curl -fsSL https://github.com/hoangmaihuy/intellij-scala-lsp/releases/latest/download/install.sh | bash
 ```
 
-Requirements: **macOS** or **Linux**, **socat** (`brew install socat`), **python3**.
+Requirements: **macOS** or **Linux**. The installer will auto-install **socat** and **python3** if missing.
+
+## Getting Started
+
+```bash
+# 1. Install the launcher and download LSP JARs
+curl -fsSL https://github.com/hoangmaihuy/intellij-scala-lsp/releases/latest/download/install.sh | bash
+
+# 2. Start the daemon and pre-warm your project
+scalij --daemon /path/to/your/project
+
+# 3. Set up your editor
+scalij --setup-claude-code-mcp   # Claude Code (recommended)
+scalij --setup-vscode            # VS Code
+scalij --setup-zed               # Zed
+```
+
+After setup, open your editor — Scala intelligence (completions, go-to-definition, references, diagnostics) is available immediately.
 
 ## Usage
 
