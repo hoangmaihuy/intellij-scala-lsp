@@ -8,24 +8,19 @@ IntelliJ-Scala's static analysis engine is significantly faster than compiler-ba
 
 This project exposes IntelliJ's analysis engine over LSP, bringing its performance to any editor.
 
-## Install
-
-```bash
-curl -fsSL https://github.com/hoangmaihuy/intellij-scala-lsp/releases/latest/download/install.sh | bash
-```
-
-Requirements: **macOS** or **Linux**. The installer will auto-install **socat** and **python3** if missing.
-
 ## Getting Started
 
 ```bash
 # 1. Install the launcher and download LSP JARs
 curl -fsSL https://github.com/hoangmaihuy/intellij-scala-lsp/releases/latest/download/install.sh | bash
 
-# 2. Start the daemon and pre-warm your project
-scalij --daemon /path/to/your/project
+# 2. Start the daemon
+scalij --daemon
 
-# 3. Set up your editor
+# 3. Import your project (auto-detects sbt or Mill)
+scalij --import /path/to/your/project
+
+# 4. Set up your editor
 scalij --setup-claude-code-mcp   # Claude Code (recommended)
 scalij --setup-vscode            # VS Code
 scalij --setup-zed               # Zed
@@ -83,7 +78,7 @@ See the setup guides for details:
 
 ## Features
 
-30+ LSP methods covering navigation, completion, refactoring, diagnostics, and more. For Claude Code, the MCP server exposes these as 22 AI-friendly tools.
+30+ LSP methods covering navigation, completion, refactoring, diagnostics, and more. For Claude Code, the MCP server exposes these as 12 AI-friendly tools.
 
 - [LSP Features](docs/lsp-features.md) — full list of supported LSP methods
 - [MCP Tools](docs/mcp-tools.md) — Claude Code tool reference with parameters and behavior
