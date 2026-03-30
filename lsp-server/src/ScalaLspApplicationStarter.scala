@@ -1,6 +1,7 @@
 package org.jetbrains.scalalsP
 
 import com.intellij.openapi.application.ApplicationStarter
+import com.intellij.openapi.util.registry.Registry
 import java.io.PrintStream
 
 // IntelliJ ApplicationStarter extension for the LSP server.
@@ -21,6 +22,11 @@ class ScalaLspApplicationStarter extends ApplicationStarter:
     val restArgs = if args.size() > 1 then
       (1 until args.size()).map(args.get).toList
     else List.empty
+
+    // Disable external system auto-import (BSP, Gradle, Maven, etc.)
+    // We manage sbt/mill imports explicitly via ProjectRegistry.refreshExternalProject()
+    // so auto-import would only cause unwanted BSP processes (e.g. MillBspMain)
+    Registry.get("external.system.auto.import.disabled").setValue(true)
 
     // Platform is fully initialized — signal bootstrap complete for ScalaLspServer
     BootstrapState.bootstrapComplete.countDown()

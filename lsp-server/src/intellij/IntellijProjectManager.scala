@@ -110,33 +110,6 @@ class IntellijProjectManager(registry: Option[ProjectRegistry] = None, daemonMod
 
     System.err.println(s"[ProjectManager] Project opened: ${project.getName}")
 
-  private def linkBspProject(projectPath: Path): Unit =
-    System.err.println("[ProjectManager] BSP configuration detected, linking BSP project...")
-    try
-      // Use reflection to call BspOpenProjectProvider.doLinkProject()
-      // because BSP classes are in the Scala plugin, not on compile classpath
-      val bspProviderClass = Class.forName("org.jetbrains.bsp.project.importing.BspOpenProjectProvider")
-      val provider = bspProviderClass.getDeclaredConstructor().newInstance()
-
-      val vf = LocalFileSystem.getInstance().findFileByPath(projectPath.toString)
-      if vf == null then
-        System.err.println(s"[ProjectManager] Cannot find virtual file for $projectPath")
-        return
-
-      // doLinkProject(VirtualFile, Project) triggers BSP import
-      val doLinkMethod = bspProviderClass.getMethod("doLinkProject",
-        classOf[VirtualFile], classOf[Project])
-      ApplicationManager.getApplication.invokeAndWait: () =>
-        doLinkMethod.invoke(provider, vf, project)
-
-      System.err.println("[ProjectManager] BSP project linked and import triggered")
-    catch
-      case e: ClassNotFoundException =>
-        System.err.println("[ProjectManager] BSP support not available (Scala plugin not loaded?)")
-      case e: Exception =>
-        System.err.println(s"[ProjectManager] BSP auto-import failed: ${e.getMessage}")
-        e.printStackTrace(System.err)
-
   def waitForSmartMode(): Unit =
     val p = getProject
     System.err.println("[ProjectManager] Waiting for indexing to complete...")
