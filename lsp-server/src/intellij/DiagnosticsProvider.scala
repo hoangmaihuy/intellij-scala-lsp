@@ -51,7 +51,8 @@ class DiagnosticsProvider(projectManager: IntellijProjectManager):
 
   def trackOpen(uri: String): Unit =
     openFiles.put(uri, true)
-    scheduleAnalysis(uri, delayMs = 100) // Analyze shortly after open
+    // Don't auto-analyze on open — wait for didChange/didSave to avoid
+    // expensive runMainPasses on files opened transiently (e.g., by go-to-definition)
 
   def trackClose(uri: String): Unit =
     openFiles.remove(uri)
@@ -63,6 +64,7 @@ class DiagnosticsProvider(projectManager: IntellijProjectManager):
     * cancel the previous scheduled run, ensuring rapid edits don't overwhelm the analyzer. */
   def scheduleAnalysis(uri: String, delayMs: Long = 1000): Unit =
     if client == null || !openFiles.contains(uri) then return
+    if !isProjectFile(uri) then return
     cancelPendingAnalysis(uri)
     val future = analysisExecutor.schedule(
       (() => runAnalysisAndPublish(uri)): Runnable,
@@ -73,6 +75,14 @@ class DiagnosticsProvider(projectManager: IntellijProjectManager):
 
   private def cancelPendingAnalysis(uri: String): Unit =
     pendingAnalysis.remove(uri).foreach(_.cancel(false))
+
+  /** Check if a URI belongs to a project workspace (not a JAR source or external file). */
+  private def isProjectFile(uri: String): Boolean =
+    if !uri.startsWith("file://") then return false
+    val path = java.net.URI.create(uri).getPath
+    projectManager.getAllProjects.exists: project =>
+      val basePath = project.getBasePath
+      basePath != null && path.startsWith(basePath)
 
   /** Run analysis passes and publish results to the client. */
   private def runAnalysisAndPublish(uri: String): Unit =
