@@ -233,7 +233,9 @@ object PsiUtils:
     element match
       case named: PsiNameIdentifierOwner =>
         Option(named.getNameIdentifier) match
-          case Some(nameId) => elementToRange(document, nameId)
+          case Some(nameId) =>
+            try elementToRange(document, nameId)
+            catch case _: NullPointerException => elementToRange(document, element)
           case None => elementToRange(document, element)
       case _ =>
         elementToRange(document, element)
