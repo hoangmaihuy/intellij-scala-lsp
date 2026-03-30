@@ -330,7 +330,7 @@ assemble_classpath_and_flags() {
   fi
 
   # --- JVM flags ---
-  local heap="${LSP_HEAP_SIZE:-2g}"
+  local heap="${LSP_HEAP_SIZE:-4g}"
   local config_dir="$CACHE_DIR/config"
   local system_dir="$CACHE_DIR/system"
   mkdir -p "$config_dir/options" "$system_dir"

@@ -90,7 +90,7 @@ See the setup guides for details:
 | `INTELLIJ_HOME` | Path to IntelliJ installation |
 | `JAVA_HOME` | Path to JDK (falls back to IntelliJ's bundled JBR) |
 | `LSP_PORT` | TCP port for the daemon (default: 5007) |
-| `LSP_HEAP_SIZE` | JVM heap size (default: `2g`) |
+| `LSP_HEAP_SIZE` | JVM heap size (default: `4g`) |
 
 ## Architecture
 
