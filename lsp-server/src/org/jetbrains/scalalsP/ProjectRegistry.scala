@@ -107,8 +107,12 @@ class ProjectRegistry:
     refreshExternalProject(project, projectPath)
     registerMissingJdks(project)
     System.err.println(s"[ProjectRegistry] Waiting for indexing: ${project.getName}")
-    DumbService.getInstance(project).waitForSmartMode()
-    System.err.println(s"[ProjectRegistry] Indexing complete: ${project.getName}")
+    val timeoutMs = 300000L // 5 minutes
+    val completed = DumbService.getInstance(project).waitForSmartMode(timeoutMs)
+    if completed then
+      System.err.println(s"[ProjectRegistry] Indexing complete: ${project.getName}")
+    else
+      System.err.println(s"[ProjectRegistry] WARNING: Indexing timed out after ${timeoutMs / 1000}s for ${project.getName}, continuing in dumb mode")
     project
 
   /** Register a JDK so sbt resolution can find a Java VM executable. */
