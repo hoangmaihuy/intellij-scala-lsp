@@ -1,6 +1,7 @@
 package org.jetbrains.scalalsP.intellij
 
 import com.intellij.openapi.application.{ApplicationManager, ReadAction}
+import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.{DumbService, Project, ProjectManager}
 import com.intellij.openapi.vfs.{LocalFileSystem, VirtualFile}
 import com.intellij.psi.{PsiDocumentManager, PsiFile, PsiManager}
@@ -175,12 +176,23 @@ class IntellijProjectManager(registry: Option[ProjectRegistry] = None, daemonMod
   def getPsiDocumentManager: PsiDocumentManager =
     PsiDocumentManager.getInstance(getProject)
 
+  private val SmartModeTimeoutMs = 60000L // 60 seconds
+
   /** Run a read action that waits for smart mode (indexing complete) before executing.
-    * This prevents IndexNotReadyException when accessing stub indexes. */
+    * Uses NonBlockingReadAction which is cancellable and respects write actions.
+    * Times out after SmartModeTimeoutMs to prevent the server from hanging indefinitely. */
   def smartReadAction[T](compute: () => T): T =
     try
-      DumbService.getInstance(getProject).runReadActionInSmartMode[T](() => compute())
+      val deadline = System.currentTimeMillis() + SmartModeTimeoutMs
+      val callable: java.util.concurrent.Callable[T] = () => compute()
+      ReadAction.nonBlocking(callable)
+        .inSmartMode(getProject)
+        .expireWith(getProject)
+        .expireWhen(() => System.currentTimeMillis() > deadline)
+        .executeSynchronously()
     catch
+      case _: ProcessCanceledException =>
+        throw RuntimeException("Request timed out waiting for smart mode (indexing)")
       case _: IllegalStateException =>
         // Fallback for test context where DumbService may not be fully initialized
         ReadAction.compute[T, RuntimeException](() => compute())
