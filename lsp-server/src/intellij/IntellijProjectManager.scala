@@ -3,7 +3,7 @@ package org.jetbrains.scalalsP.intellij
 import com.intellij.openapi.application.{ApplicationManager, ReadAction}
 import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.{DumbService, Project, ProjectManager}
-import com.intellij.openapi.vfs.{LocalFileSystem, VirtualFile}
+import com.intellij.openapi.vfs.{LocalFileSystem, VirtualFile, VfsUtil}
 import com.intellij.psi.{PsiDocumentManager, PsiFile, PsiManager}
 import org.jetbrains.scalalsP.ProjectRegistry
 
@@ -116,6 +116,37 @@ class IntellijProjectManager(registry: Option[ProjectRegistry] = None, daemonMod
     System.err.println("[ProjectManager] Waiting for indexing to complete...")
     DumbService.getInstance(p).waitForSmartMode()
     System.err.println("[ProjectManager] Indexing complete")
+
+  /** Refresh the project's .idea folder in the VFS and wait for re-indexing.
+    *
+    * Called when --import has updated .idea/libraries/&#42;.xml in a separate
+    * process.  In headless mode IntelliJ runs no local filesystem watcher,
+    * so the running server never detects those changes on its own.
+    * An explicit VFS refresh fires the storage-change events that IntelliJ
+    * needs to reload library and module definitions, triggering re-indexing. */
+  def reloadProjectDependencies(): Unit =
+    val p = getProject
+    val basePath = p.getBasePath
+    if basePath == null then return
+    System.err.println(s"[ProjectManager] Reloading project dependencies from .idea: $basePath")
+
+    // Synchronously refresh the .idea directory so IntelliJ's VFS sees the
+    // new/changed XML files written by the --import process.
+    ApplicationManager.getApplication.invokeAndWait((() => {
+      val ideaPath = s"$basePath/.idea"
+      val ideaDir = LocalFileSystem.getInstance().refreshAndFindFileByPath(ideaPath)
+      if ideaDir != null then
+        VfsUtil.markDirtyAndRefresh(false, true, true, ideaDir)
+      else {
+        val rootDir = LocalFileSystem.getInstance().refreshAndFindFileByPath(basePath)
+        if rootDir != null then VfsUtil.markDirtyAndRefresh(false, false, false, rootDir)
+      }
+    }): Runnable)
+
+    // Wait for indexing triggered by the VFS events above.
+    System.err.println("[ProjectManager] Waiting for re-indexing after dependency reload...")
+    DumbService.getInstance(p).waitForSmartMode()
+    System.err.println("[ProjectManager] Re-indexing complete")
 
   def closeProject(): Unit =
     val p = project

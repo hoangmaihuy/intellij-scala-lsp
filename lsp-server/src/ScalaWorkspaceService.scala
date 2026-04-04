@@ -79,6 +79,12 @@ class ScalaWorkspaceService(projectManager: IntellijProjectManager, diagnosticsP
       case "scala.reformat" =>
         executeOnFile(args): psiFile =>
           CodeStyleManager.getInstance(projectManager.getProject).reformat(psiFile)
+      case "scala.reloadProject" =>
+        val future: CompletableFuture[AnyRef] = supplyAsync:
+          projectManager.reloadProjectDependencies()
+          null
+        future.whenComplete((_, _) => logDone())
+        return future
       case "scala.pullDiagnostics" =>
         if args != null && !args.isEmpty then
           val uri = args.get(0) match
@@ -253,8 +259,26 @@ class ScalaWorkspaceService(projectManager: IntellijProjectManager, diagnosticsP
 
   override def didChangeWatchedFiles(params: DidChangeWatchedFilesParams): Unit =
     if params.getChanges == null || params.getChanges.isEmpty then return
-    // Collect changed virtual files and trigger async VFS refresh so IntelliJ picks up external changes
-    val changedFiles = params.getChanges.asScala.flatMap: change =>
+    val changes = params.getChanges.asScala
+
+    // When .idea/libraries/*.xml or *.iml files change, the running server's
+    // project model is stale — --import wrote them in a separate process and
+    // IntelliJ has no filesystem watcher in headless mode.  Trigger a full
+    // dependency reload so the new external libraries become visible.
+    val ideaFilesChanged = changes.exists: change =>
+      val uri = change.getUri
+      val path = if uri.startsWith("file://") then java.net.URI.create(uri).getPath else uri
+      path.contains("/.idea/") && (path.endsWith(".xml") || path.endsWith(".iml"))
+
+    if ideaFilesChanged then
+      System.err.println("[WorkspaceService] .idea files changed — reloading project dependencies...")
+      java.util.concurrent.CompletableFuture.runAsync: () =>
+        try projectManager.reloadProjectDependencies()
+        catch case e: Exception =>
+          System.err.println(s"[WorkspaceService] Dependency reload failed: ${e.getMessage}")
+
+    // Lightweight VFS refresh for individual source files (existing behaviour)
+    val changedFiles = changes.flatMap: change =>
       val uri = change.getUri
       projectManager.findVirtualFile(uri)
     .toArray

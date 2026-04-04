@@ -97,7 +97,7 @@ class ScalaLspServer(
 
       // Execute commands
       val executeCommandOptions = ExecuteCommandOptions(
-        java.util.List.of("scala.organizeImports", "scala.reformat", "scala.gotoLocation", "scala.pullDiagnostics", "scala.referencesWithTypes")
+        java.util.List.of("scala.organizeImports", "scala.reformat", "scala.gotoLocation", "scala.pullDiagnostics", "scala.referencesWithTypes", "scala.reloadProject")
       )
       capabilities.setExecuteCommandProvider(executeCommandOptions)
 
