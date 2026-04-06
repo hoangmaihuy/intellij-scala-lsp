@@ -37,9 +37,37 @@ async function resolveTargets(
       seen.add(key);
       return true;
     });
-    return deduped.map(s => ({ uri: s.location.uri, position: s.location.range.start, label: s.name, matchQuality: s.matchQuality }));
+    return deduped.map(s => {
+      const position = refinePosition(s.location, s.name);
+      return { uri: s.location.uri, position, label: s.name, matchQuality: s.matchQuality };
+    });
   }
   return [];
+}
+
+/**
+ * workspace/symbol returns range.start at column 0 (beginning of line), which can land on
+ * a modifier keyword (e.g. `private` in `private[builder] object RawJsonOps`). IntelliJ then
+ * resolves to the wrong PSI element (e.g. the `builder` package qualifier).
+ * Scan the source line to find the actual column of the identifier.
+ */
+function refinePosition(location: Location, symbolName: string): Position {
+  const simpleName = symbolName.replace(/\$$/, '').split(/\.|::/).pop()!;
+  const filePath = uriToPath(location.uri);
+  const startPos = location.range.start;
+  // Only refine when column is 0 — a non-zero column is already precise
+  if (startPos.character !== 0) return startPos;
+  try {
+    const content = fs.readFileSync(filePath, 'utf-8');
+    const line = content.split('\n')[startPos.line];
+    if (line) {
+      const col = line.indexOf(simpleName);
+      if (col !== -1) return { line: startPos.line, character: col };
+    }
+  } catch {
+    // fall through to original position
+  }
+  return startPos;
 }
 
 const navigationParams = {

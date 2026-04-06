@@ -696,7 +696,7 @@ setup_mcp() {
   fi
 
   # In dev mode, build from source; in installed mode, dist/ is pre-built
-  if [ "$DEV_MODE" = true ]; then
+  if [ "$DEV_MODE" = true ] && [ -f "$mcp_dir/tsconfig.json" ]; then
     echo "Building MCP server..."
     (cd "$mcp_dir" && npm install --silent && npm run build --silent)
   fi
