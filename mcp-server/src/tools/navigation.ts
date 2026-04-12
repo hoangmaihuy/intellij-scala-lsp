@@ -91,7 +91,7 @@ export function registerNavigationTools(
 
   mcp.tool(
     'definition',
-    'Read the full source code where a symbol is defined (returns the enclosing class/method body with line numbers, up to 3 matches). Use this instead of Read for Scala files. Prefer symbolName (e.g. "MyClass", "pkg.MyClass.method"); use filePath+line+column to disambiguate overloads or resolve from a usage site.',
+    'Read the full source code where a symbol is defined (returns the enclosing class/method body with line numbers, up to 10 matches sorted by relevance). Use this instead of Read for Scala files. Prefer symbolName (e.g. "MyClass", "pkg.MyClass.method"); use filePath+line+column to disambiguate overloads or resolve from a usage site.',
     navigationParams,
     withToolLogging('definition', async (args) => {
       const { lsp, fileManager, symbolResolver } = await sessionManager.getSession(args.projectPath);
@@ -100,23 +100,31 @@ export function registerNavigationTools(
         return { content: [{ type: 'text' as const, text: `No symbol found matching '${args.symbolName}'. Try with filePath+line+column instead to resolve from a usage site.` }] };
       }
 
-      // resolveTargets already filters: exact matches only when available
-      let effectiveTargets = targets;
       const results: string[] = [];
 
-      if (args.symbolName && effectiveTargets.every(t => t.matchQuality === 'suffix')) {
+      if (args.symbolName && targets.every(t => t.matchQuality === 'suffix')) {
         results.push(`Note: No exact match for '${args.symbolName}'. Showing suffix matches. Use filePath+line+column from a usage site for external/library symbols.`);
       }
 
-      // Cap at 3 full results; list the rest as summaries
-      const MAX_FULL = 3;
-      if (effectiveTargets.length > MAX_FULL) {
-        const extras = effectiveTargets.slice(MAX_FULL);
-        effectiveTargets = effectiveTargets.slice(0, MAX_FULL);
-        results.push(`Showing ${MAX_FULL} of ${MAX_FULL + extras.length} matches. Other matches:\n${extras.map(t => `  - ${t.label}`).join('\n')}`);
+      // Score and sort targets by relevance
+      const scored = sortByScore(targets, (t) => {
+        const filePath = uriToPath(t.uri);
+        let score = 0;
+        if (filePath.startsWith(args.projectPath)) score += 100;
+        if (t.matchQuality === 'exact') score += 50;
+        else if (t.matchQuality === 'companion') score += 40;
+        else if (t.matchQuality === 'suffix') score += 10;
+        return score;
+      });
+
+      const detailed = scored.slice(0, MAX_DETAILED_RESULTS);
+      const remaining = scored.slice(MAX_DETAILED_RESULTS);
+
+      if (remaining.length > 0) {
+        results.push(`Showing ${detailed.length} of ${scored.length} matches.`);
       }
 
-      for (const target of effectiveTargets) {
+      for (const target of detailed) {
         const defResult = await lsp.request<Location | Location[]>('textDocument/definition', {
           textDocument: { uri: target.uri },
           position: target.position,
@@ -154,6 +162,16 @@ export function registerNavigationTools(
           const source = addLineNumbers(sourceLines.join('\n'), fullRange.start.line + 1);
 
           results.push(`---\nSymbol: ${target.label}\nFile: ${defPath}\nRange: L${fullRange.start.line + 1}-L${fullRange.end.line + 1}\n\n${source}`);
+        }
+      }
+
+      // Summary for remaining
+      if (remaining.length > 0) {
+        results.push(`\n--- Additional locations (${remaining.length}) ---`);
+        for (const t of remaining) {
+          const filePath = uriToPath(t.uri);
+          const line = t.position.line + 1;
+          results.push(`  ${filePath}:${line}`);
         }
       }
 
