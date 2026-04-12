@@ -291,7 +291,7 @@ export function registerNavigationTools(
 
   mcp.tool(
     'implementations',
-    'Find all implementations of a trait, abstract class, or abstract method. Returns full source code of each implementation (up to 10 in full, then summaries). Prefer symbolName; use filePath+line+column to disambiguate.',
+    'Find all implementations of a trait, abstract class, or abstract method. Returns full source code of each implementation (up to 10 sorted by relevance, then summaries). Prefer symbolName; use filePath+line+column to disambiguate.',
     navigationParams,
     withToolLogging('implementations', async (args) => {
       const { lsp, fileManager, symbolResolver } = await sessionManager.getSession(args.projectPath);
@@ -300,53 +300,86 @@ export function registerNavigationTools(
         return { content: [{ type: 'text' as const, text: `No symbol found matching '${args.symbolName}'. Try with filePath+line+column instead.` }] };
       }
 
-      const allImpls: string[] = [];
+      // Gather all implementation locations
+      const allImpls: Location[] = [];
       for (const target of targets) {
         const impls = await lsp.request<Location[]>('textDocument/implementation', {
           textDocument: { uri: target.uri },
           position: target.position,
         } as ImplementationParams);
 
-        if (!impls || impls.length === 0) continue;
-
-        const implArray = Array.isArray(impls) ? impls : [impls];
-        for (let idx = 0; idx < implArray.length; idx++) {
-          const impl = implArray[idx];
-          const filePath = uriToPath(impl.uri);
-          await fileManager.ensureOpen(filePath);
-
-          if (idx >= 10) {
-            // Beyond 10: show just location summary
-            const content = fs.readFileSync(filePath, 'utf-8');
-            const firstLine = content.split('\n')[impl.range.start.line] || '';
-            allImpls.push(`---\n${filePath}:L${impl.range.start.line + 1}\n${firstLine.trim()}`);
-            continue;
-          }
-
-          // Get full symbol range via documentSymbol
-          const docSymbols = await lsp.request<DocumentSymbol[] | SymbolInformation[]>(
-            'textDocument/documentSymbol',
-            { textDocument: { uri: impl.uri } } as DocumentSymbolParams,
-          );
-
-          let fullRange = impl.range;
-          if (docSymbols && Array.isArray(docSymbols)) {
-            const enclosing = findEnclosingSymbol(docSymbols, impl.range.start);
-            if (enclosing) fullRange = enclosing;
-          }
-
-          const content = fs.readFileSync(filePath, 'utf-8');
-          const lines = content.split('\n');
-          const sourceLines = lines.slice(fullRange.start.line, fullRange.end.line + 1);
-          const source = addLineNumbers(sourceLines.join('\n'), fullRange.start.line + 1);
-          allImpls.push(`---\n${filePath}:L${fullRange.start.line + 1}-L${fullRange.end.line + 1}\n\n${source}`);
+        if (impls) {
+          const implArray = Array.isArray(impls) ? impls : [impls];
+          allImpls.push(...implArray);
         }
       }
 
-      if (allImpls.length === 0) {
+      // Deduplicate by URI+line+column (multiple targets may return same implementation)
+      const seen = new Set<string>();
+      const uniqueImpls = allImpls.filter(loc => {
+        const key = `${loc.uri}:${loc.range.start.line}:${loc.range.start.character}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+
+      if (uniqueImpls.length === 0) {
         return { content: [{ type: 'text' as const, text: `No implementations found for '${args.symbolName || targets[0]?.label}'` }] };
       }
-      return { content: [{ type: 'text' as const, text: `Found ${allImpls.length} implementation(s):\n\n${allImpls.join('\n\n')}` }] };
+
+      // Score and sort by relevance
+      const sorted = sortByScore(uniqueImpls, (loc) =>
+        scoreLocation(loc, args.projectPath),
+      );
+
+      const detailed = sorted.slice(0, MAX_DETAILED_RESULTS);
+      const remaining = sorted.slice(MAX_DETAILED_RESULTS);
+
+      const output: string[] = [];
+      if (remaining.length > 0) {
+        output.push(`Found ${uniqueImpls.length} implementation(s) (showing details for top ${detailed.length}):\n`);
+      } else {
+        output.push(`Found ${uniqueImpls.length} implementation(s):\n`);
+      }
+
+      for (const impl of detailed) {
+        const filePath = uriToPath(impl.uri);
+        await fileManager.ensureOpen(filePath);
+
+        // Get full symbol range via documentSymbol
+        const docSymbols = await lsp.request<DocumentSymbol[] | SymbolInformation[]>(
+          'textDocument/documentSymbol',
+          { textDocument: { uri: impl.uri } } as DocumentSymbolParams,
+        );
+
+        let fullRange = impl.range;
+        if (docSymbols && Array.isArray(docSymbols)) {
+          const enclosing = findEnclosingSymbol(docSymbols, impl.range.start);
+          if (enclosing) fullRange = enclosing;
+        }
+
+        let content: string;
+        try {
+          content = fs.readFileSync(filePath, 'utf-8');
+        } catch {
+          output.push(`---\n${filePath}:L${impl.range.start.line + 1} (file unreadable)`);
+          continue;
+        }
+        const lines = content.split('\n');
+        const sourceLines = lines.slice(fullRange.start.line, fullRange.end.line + 1);
+        const source = addLineNumbers(sourceLines.join('\n'), fullRange.start.line + 1);
+        output.push(`---\n${filePath}:L${fullRange.start.line + 1}-L${fullRange.end.line + 1}\n\n${source}`);
+      }
+
+      // Summary for remaining
+      if (remaining.length > 0) {
+        output.push(`\n--- Additional locations (${remaining.length}) ---`);
+        for (const impl of remaining) {
+          output.push(`  ${formatLocationSummary(impl)}`);
+        }
+      }
+
+      return { content: [{ type: 'text' as const, text: output.join('\n\n') }] };
     }),
   );
 
