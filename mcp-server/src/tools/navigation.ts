@@ -125,17 +125,20 @@ export function registerNavigationTools(
       }
 
       for (const target of detailed) {
-        const defResult = await lsp.request<Location | Location[]>('textDocument/definition', {
-          textDocument: { uri: target.uri },
-          position: target.position,
-        } as DefinitionParams);
+        let defLocations: Location[];
 
-        const defLocations = Array.isArray(defResult) ? defResult : defResult ? [defResult] : [];
-        if (defLocations.length === 0) {
-          // If called via symbolName, the symbol location IS the definition
-          if (args.symbolName) {
-            defLocations.push({ uri: target.uri, range: { start: target.position, end: target.position } });
-          } else {
+        if (args.symbolName) {
+          // When using symbolName, the resolved target IS the definition location.
+          // Don't call textDocument/definition as IntelliJ may return usages instead.
+          defLocations = [{ uri: target.uri, range: { start: target.position, end: target.position } }];
+        } else {
+          // When using filePath+line+column, we're at a usage site — resolve to definition
+          const defResult = await lsp.request<Location | Location[]>('textDocument/definition', {
+            textDocument: { uri: target.uri },
+            position: target.position,
+          } as DefinitionParams);
+          defLocations = Array.isArray(defResult) ? defResult : defResult ? [defResult] : [];
+          if (defLocations.length === 0) {
             results.push(`No definition found at ${target.label}`);
             continue;
           }
