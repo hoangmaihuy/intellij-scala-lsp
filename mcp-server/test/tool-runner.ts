@@ -18,6 +18,12 @@ interface RegisteredTool {
  */
 export class TestToolRunner {
   private tools = new Map<string, RegisteredTool>();
+  private defaultProjectPath?: string;
+
+  /** Set a default projectPath that will be injected into all tool calls */
+  setDefaultProjectPath(projectPath: string): void {
+    this.defaultProjectPath = projectPath;
+  }
 
   /** McpServer.tool() compatible method — captures the handler */
   tool(name: string, ...rest: unknown[]): unknown {
@@ -38,7 +44,12 @@ export class TestToolRunner {
       throw new Error(`Tool '${name}' not registered. Available: ${[...this.tools.keys()].join(', ')}`);
     }
 
-    const result = await tool.handler(args);
+    // Inject default projectPath if not provided
+    const finalArgs = this.defaultProjectPath && !args.projectPath
+      ? { projectPath: this.defaultProjectPath, ...args }
+      : args;
+
+    const result = await tool.handler(finalArgs);
     const textContent = result.content
       .filter((c): c is { type: 'text'; text: string } => c.type === 'text')
       .map(c => c.text)

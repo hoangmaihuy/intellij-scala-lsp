@@ -11,6 +11,7 @@ import * as os from 'os';
 import { LspClient } from '../src/lsp-client.js';
 import { FileManager } from '../src/file-manager.js';
 import { SymbolResolver } from '../src/symbol-resolver.js';
+import { LspSession, SessionManager } from '../src/session-manager.js';
 import { applyWorkspaceEdit } from '../src/workspace-edit.js';
 import { registerTools } from '../src/tools/register.js';
 import { pathToUri } from '../src/utils.js';
@@ -84,12 +85,14 @@ export async function createSession(projectDir: string): Promise<TestSession> {
   const symbolResolver = new SymbolResolver(lsp, fileManager);
 
   const tools = new TestToolRunner();
-  registerTools(
-    tools as any,
-    lsp,
-    fileManager,
-    symbolResolver,
-  );
+  tools.setDefaultProjectPath(projectDir);
+  // Create a mock SessionManager that returns the existing session
+  const session: LspSession = { lsp, fileManager, symbolResolver };
+  const mockSessionManager = {
+    getSession: async () => session,
+    closeAll: async () => {},
+  } as unknown as SessionManager;
+  registerTools(tools as any, mockSessionManager);
 
   // Give the daemon time to finish analysis after session connects
   await new Promise(r => setTimeout(r, 3000));
