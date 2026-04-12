@@ -5,6 +5,12 @@ import { FileManager } from '../file-manager.js';
 import { SymbolResolver } from '../symbol-resolver.js';
 import { uriToPath, addLineNumbers, toPosition } from '../utils.js';
 import { withToolLogging } from '../tool-logging.js';
+import {
+  scoreLocation,
+  sortByScore,
+  formatLocationSummary,
+  MAX_DETAILED_RESULTS,
+} from '../result-scoring.js';
 import * as fs from 'fs';
 import {
   Location, DocumentSymbol, SymbolInformation,
@@ -157,7 +163,7 @@ export function registerNavigationTools(
 
   mcp.tool(
     'references',
-    'Find all usages of a symbol across the codebase (excludes the declaration). Returns locations grouped by file with 2 lines of surrounding context. Prefer symbolName; use filePath+line+column to disambiguate overloads or resolve from a usage site.',
+    'Find all usages of a symbol across the codebase (excludes the declaration). Returns locations grouped by file with 2 lines of surrounding context for top results. Prefer symbolName; use filePath+line+column to disambiguate overloads or resolve from a usage site.',
     navigationParams,
     withToolLogging('references', async (args) => {
       const { lsp, fileManager, symbolResolver } = await sessionManager.getSession(args.projectPath);
@@ -172,7 +178,8 @@ export function registerNavigationTools(
         ? targets.filter(t => t.matchQuality === 'exact' || t.matchQuality === 'companion')
         : targets;
 
-      const allRefs: string[] = [];
+      // Pass 1: Gather all reference locations
+      const allLocations: Location[] = [];
       for (const target of effectiveTargets) {
         const refs = await lsp.request<Location[]>('textDocument/references', {
           textDocument: { uri: target.uri },
@@ -180,46 +187,87 @@ export function registerNavigationTools(
           context: { includeDeclaration: false },
         } as ReferenceParams);
 
-        if (!refs || refs.length === 0) continue;
-
-        const byFile = new Map<string, Location[]>();
-        for (const ref of refs) {
-          const arr = byFile.get(ref.uri) || [];
-          arr.push(ref);
-          byFile.set(ref.uri, arr);
-        }
-
-        for (const [uri, fileRefs] of byFile) {
-          const filePath = uriToPath(uri);
-          const content = fs.readFileSync(filePath, 'utf-8');
-          const lines = content.split('\n');
-          const locs = fileRefs.map(r => `L${r.range.start.line + 1}:C${r.range.start.character + 1}`);
-
-          const shownLines = new Set<number>();
-          for (const ref of fileRefs) {
-            const refLine = ref.range.start.line;
-            for (let i = Math.max(0, refLine - 2); i <= Math.min(lines.length - 1, refLine + 2); i++) {
-              shownLines.add(i);
-            }
-          }
-          const sortedLines = [...shownLines].sort((a, b) => a - b);
-          const chunks: string[] = [];
-          let prevLine = -2;
-          for (const ln of sortedLines) {
-            if (ln > prevLine + 1) chunks.push('...');
-            const num = String(ln + 1).padStart(4);
-            chunks.push(`${num}|${lines[ln]}`);
-            prevLine = ln;
-          }
-
-          allRefs.push(`---\n${filePath}\nReferences: ${fileRefs.length} at ${locs.join(', ')}\n\n${chunks.join('\n')}`);
-        }
+        if (refs) allLocations.push(...refs);
       }
 
-      if (allRefs.length === 0) {
+      // Deduplicate by URI+line+column (multiple targets may return same reference)
+      const seen = new Set<string>();
+      const uniqueLocations = allLocations.filter(loc => {
+        const key = `${loc.uri}:${loc.range.start.line}:${loc.range.start.character}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+
+      if (uniqueLocations.length === 0) {
         return { content: [{ type: 'text' as const, text: `No references found for '${args.symbolName || targets[0]?.label}'` }] };
       }
-      return { content: [{ type: 'text' as const, text: allRefs.join('\n\n') }] };
+
+      // Score and sort by relevance
+      const sorted = sortByScore(uniqueLocations, (loc) =>
+        scoreLocation(loc, args.projectPath),
+      );
+
+      const detailed = sorted.slice(0, MAX_DETAILED_RESULTS);
+      const remaining = sorted.slice(MAX_DETAILED_RESULTS);
+
+      const output: string[] = [];
+      if (remaining.length > 0) {
+        output.push(`Found ${uniqueLocations.length} reference(s) (showing details for top ${detailed.length}):\n`);
+      } else {
+        output.push(`Found ${uniqueLocations.length} reference(s):\n`);
+      }
+
+      // Pass 2: Fetch context only for top results
+      const byFile = new Map<string, Location[]>();
+      for (const ref of detailed) {
+        const arr = byFile.get(ref.uri) || [];
+        arr.push(ref);
+        byFile.set(ref.uri, arr);
+      }
+
+      for (const [uri, fileRefs] of byFile) {
+        const filePath = uriToPath(uri);
+        const locs = fileRefs.map(r => `L${r.range.start.line + 1}:C${r.range.start.character + 1}`);
+
+        let content: string;
+        try {
+          content = fs.readFileSync(filePath, 'utf-8');
+        } catch {
+          output.push(`---\n${filePath}\nReferences: ${fileRefs.length} at ${locs.join(', ')} (file unreadable)`);
+          continue;
+        }
+        const lines = content.split('\n');
+
+        const shownLines = new Set<number>();
+        for (const ref of fileRefs) {
+          const refLine = ref.range.start.line;
+          for (let i = Math.max(0, refLine - 2); i <= Math.min(lines.length - 1, refLine + 2); i++) {
+            shownLines.add(i);
+          }
+        }
+        const sortedLines = [...shownLines].sort((a, b) => a - b);
+        const chunks: string[] = [];
+        let prevLine = -2;
+        for (const ln of sortedLines) {
+          if (ln > prevLine + 1) chunks.push('...');
+          const num = String(ln + 1).padStart(4);
+          chunks.push(`${num}|${lines[ln]}`);
+          prevLine = ln;
+        }
+
+        output.push(`---\n${filePath}\nReferences: ${fileRefs.length} at ${locs.join(', ')}\n\n${chunks.join('\n')}`);
+      }
+
+      // Summary for remaining
+      if (remaining.length > 0) {
+        output.push(`\n--- Additional locations (${remaining.length}) ---`);
+        for (const ref of remaining) {
+          output.push(`  ${formatLocationSummary(ref)}`);
+        }
+      }
+
+      return { content: [{ type: 'text' as const, text: output.join('\n\n') }] };
     }),
   );
 
