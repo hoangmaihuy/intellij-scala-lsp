@@ -130,22 +130,25 @@ class IntellijProjectManager(registry: Option[ProjectRegistry] = None, daemonMod
     if basePath == null then return
     System.err.println(s"[ProjectManager] Reloading project dependencies from .idea: $basePath")
 
-    // Synchronously refresh the .idea directory so IntelliJ's VFS sees the
+    // Refresh the .idea directory so IntelliJ's VFS sees the
     // new/changed XML files written by the --import process.
-    ApplicationManager.getApplication.invokeAndWait((() => {
-      val ideaPath = s"$basePath/.idea"
-      val ideaDir = LocalFileSystem.getInstance().refreshAndFindFileByPath(ideaPath)
-      if ideaDir != null then
-        VfsUtil.markDirtyAndRefresh(false, true, true, ideaDir)
-      else {
-        val rootDir = LocalFileSystem.getInstance().refreshAndFindFileByPath(basePath)
-        if rootDir != null then VfsUtil.markDirtyAndRefresh(false, false, false, rootDir)
-      }
-    }): Runnable)
+    // Use async=true to avoid EDT deadlock, with completion callback for synchronization
+    import java.io.File
+    import java.util.concurrent.CountDownLatch
+    import scala.jdk.CollectionConverters.*
+    val latch = CountDownLatch(1)
+    val ideaFile = new File(s"$basePath/.idea")
+    val callback: Runnable = () => latch.countDown()
+    if ideaFile.exists() then
+      LocalFileSystem.getInstance().refreshIoFiles(Seq(ideaFile).asJava, true, true, callback)
+    else
+      LocalFileSystem.getInstance().refreshIoFiles(Seq(new File(basePath)).asJava, true, false, callback)
+    // Wait for refresh to complete with timeout
+    latch.await(10, TimeUnit.SECONDS)
 
     // Wait for indexing triggered by the VFS events above.
     System.err.println("[ProjectManager] Waiting for re-indexing after dependency reload...")
-    DumbService.getInstance(p).waitForSmartMode()
+    waitForSmartMode()
     System.err.println("[ProjectManager] Re-indexing complete")
 
   def closeProject(): Unit =

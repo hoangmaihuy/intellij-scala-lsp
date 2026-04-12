@@ -89,32 +89,27 @@ class ReloadProjectDependenciesTest extends ScalaLspTestBase:
       catsMonad.isDefined)
 
   // ----- scala.reloadProject execute command -----
-  // TODO: These tests deadlock due to EDT/invokeAndWait interaction.
-  // The executeCommand returns a CompletableFuture that runs reloadProjectDependencies
-  // on a background thread, which calls invokeAndWait. When the test waits on the
-  // future, it blocks the EDT, causing invokeAndWait to hang.
-  // See: https://github.com/hoangmaihuy/intellij-scala-lsp/issues/22
 
-  // def testScalaReloadProjectCommandIsRegistered(): Unit =
-  //   val ws = workspaceService
-  //   val params = ExecuteCommandParams()
-  //   params.setCommand("scala.reloadProject")
-  //   params.setArguments(java.util.List.of())
-  //   val result = ws.executeCommand(params).get(30, TimeUnit.SECONDS)
-  //   assertNull("scala.reloadProject should return null", result)
+  def testScalaReloadProjectCommandIsRegistered(): Unit =
+    val ws = workspaceService
+    val params = ExecuteCommandParams()
+    params.setCommand("scala.reloadProject")
+    params.setArguments(java.util.List.of())
+    val result = ws.executeCommand(params).get(30, TimeUnit.SECONDS)
+    assertNull("scala.reloadProject should return null", result)
 
-  // def testScalaReloadProjectAfterImportExposesNewDeps(): Unit =
-  //   configureScalaFile("object Dummy:\n  val x = 1\n")
-  //   addCatsJarToModule()
-  //   val ws = workspaceService
-  //   val params = ExecuteCommandParams()
-  //   params.setCommand("scala.reloadProject")
-  //   params.setArguments(java.util.List.of())
-  //   ws.executeCommand(params).get(30, TimeUnit.SECONDS)
-  //   val result = workspaceSymbols("Monad")
-  //   val catsMonad = result.find(s =>
-  //     s.getName == "Monad" && Option(s.getContainerName).exists(_.contains("cats")))
-  //   assertTrue("cats.Monad should be visible after scala.reloadProject command", catsMonad.isDefined)
+  def testScalaReloadProjectAfterImportExposesNewDeps(): Unit =
+    configureScalaFile("object Dummy:\n  val x = 1\n")
+    addCatsJarToModule()
+    val ws = workspaceService
+    val params = ExecuteCommandParams()
+    params.setCommand("scala.reloadProject")
+    params.setArguments(java.util.List.of())
+    ws.executeCommand(params).get(30, TimeUnit.SECONDS)
+    val result = workspaceSymbols("Monad")
+    val catsMonad = result.find(s =>
+      s.getName == "Monad" && Option(s.getContainerName).exists(_.contains("cats")))
+    assertTrue("cats.Monad should be visible after scala.reloadProject command", catsMonad.isDefined)
 
   // ----- Non-.idea watched-file changes are unaffected -----
 
