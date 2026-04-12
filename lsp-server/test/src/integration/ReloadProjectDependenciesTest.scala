@@ -10,17 +10,15 @@ import org.junit.Assert.*
 import java.util.concurrent.TimeUnit
 import scala.jdk.CollectionConverters.*
 
-/**
- * Reproduces: when --import updates .idea/libraries/*.xml in a separate process,
- * the running LSP server keeps returning old external dependencies because:
- *   1. No filesystem watcher runs in headless mode
- *   2. There is no mechanism to refresh the project model
- *
- * The fix adds:
- *   - reloadProjectDependencies() on IntellijProjectManager (VFS refresh + re-index)
- *   - Auto-trigger from didChangeWatchedFiles when .idea/** paths are reported
- *   - scala.reloadProject execute command for explicit triggering
- */
+// Reproduces: when --import updates .idea/libraries/*.xml in a separate process,
+// the running LSP server keeps returning old external dependencies because:
+//   1. No filesystem watcher runs in headless mode
+//   2. There is no mechanism to refresh the project model
+//
+// The fix adds:
+//   - reloadProjectDependencies() on IntellijProjectManager (VFS refresh + re-index)
+//   - Auto-trigger from didChangeWatchedFiles when .idea/** paths are reported
+//   - scala.reloadProject execute command for explicit triggering
 class ReloadProjectDependenciesTest extends ScalaLspTestBase:
 
   private def workspaceSymbols(query: String) =
@@ -70,11 +68,9 @@ class ReloadProjectDependenciesTest extends ScalaLspTestBase:
 
   // ----- didChangeWatchedFiles triggers reload -----
 
-  /**
-   * When the LSP client reports that a .idea/libraries/*.xml file changed
-   * (because --import wrote it), didChangeWatchedFiles must trigger a
-   * dependency reload — not just a plain VFS refresh of that single file.
-   */
+  // When the LSP client reports that a .idea/libraries/*.xml file changed
+  // (because --import wrote it), didChangeWatchedFiles must trigger a
+  // dependency reload — not just a plain VFS refresh of that single file.
   def testDidChangeWatchedFilesOnIdeaXmlTriggersReload(): Unit =
     configureScalaFile("object Dummy:\n  val x = 1\n")
     addCatsJarToModule()
