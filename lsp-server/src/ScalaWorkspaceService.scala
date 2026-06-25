@@ -10,7 +10,7 @@ import org.eclipse.lsp4j.services.{LanguageClient, WorkspaceService}
 import org.jetbrains.scalalsP.intellij.{DiagnosticsProvider, IntellijProjectManager, PsiUtils, ScalaTypes, SymbolProvider}
 
 import java.util
-import java.util.concurrent.{CompletableFuture, ExecutorService, Executors}
+import java.util.concurrent.{CompletableFuture, ExecutorService, Executors, SynchronousQueue, ThreadFactory, ThreadPoolExecutor, TimeUnit}
 import scala.jdk.CollectionConverters.*
 
 // Handles workspace LSP requests.
@@ -20,14 +20,27 @@ class ScalaWorkspaceService(projectManager: IntellijProjectManager, diagnosticsP
   private var client: LanguageClient = uninitialized
   private val symbolProvider = SymbolProvider(projectManager)
 
-  // Dedicated thread pool — same rationale as ScalaTextDocumentService.lspExecutor
-  private val lspExecutor: ExecutorService = Executors.newCachedThreadPool: r =>
-    val t = Thread(r, "lsp-workspace-handler")
-    t.setDaemon(true)
-    t
+  // Dedicated thread pool — same rationale (and same bounded/reclaimed design) as
+  // ScalaTextDocumentService.lspExecutor. Must be shut down via dispose() on session end.
+  private val lspExecutor: ExecutorService =
+    val factory: ThreadFactory = r =>
+      val t = Thread(r, "lsp-workspace-handler")
+      t.setDaemon(true)
+      t
+    new ThreadPoolExecutor(
+      0, 256, 60L, TimeUnit.SECONDS,
+      new SynchronousQueue[Runnable](),
+      factory,
+      new ThreadPoolExecutor.CallerRunsPolicy()
+    )
 
   private def supplyAsync[T](f: => T): CompletableFuture[T] =
     CompletableFuture.supplyAsync((() => f): java.util.function.Supplier[T], lspExecutor)
+
+  /** Release the workspace-handler thread pool. Called on session end to prevent thread leaks. */
+  def dispose(): Unit =
+    lspExecutor.shutdownNow()
+    ()
 
   private def cancellableAsync[T](f: java.util.concurrent.atomic.AtomicBoolean => T): CompletableFuture[T] =
     CancellableAsync(lspExecutor)(f)

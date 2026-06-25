@@ -223,3 +223,14 @@ class ScalaLspServer(
 
   override def getWorkspaceService: WorkspaceService = workspaceService
 
+  /**
+   * Release all per-session resources owned by this server (request-handler thread pools and the
+   * diagnostics analysis scheduler). MUST be called when the client connection ends, otherwise the
+   * executors leak threads on every reconnect until the daemon wedges. The injected projectManager
+   * is owned by the caller (DaemonServer) and disposed separately.
+   */
+  def dispose(): Unit =
+    textDocumentService.dispose()
+    workspaceService.dispose()
+    diagnosticsProvider.dispose()
+

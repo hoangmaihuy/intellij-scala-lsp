@@ -34,6 +34,14 @@ class IntellijProjectManager(registry: Option[ProjectRegistry] = None, daemonMod
   private val pendingCloses = scala.collection.concurrent.TrieMap[String, ScheduledFuture[?]]()
   private val CloseDelayMinutes = 5L
 
+  /**
+   * Release the per-session close-scheduler thread. Called on session end to prevent thread leaks.
+   * Does NOT close the underlying Project — in daemon mode that is owned by the shared ProjectRegistry.
+   */
+  def dispose(): Unit =
+    closeScheduler.shutdownNow()
+    ()
+
   /** For testing only — allows injecting a project from test fixtures */
   private[scalalsP] def setProjectForTesting(p: Project): Unit =
     project = p

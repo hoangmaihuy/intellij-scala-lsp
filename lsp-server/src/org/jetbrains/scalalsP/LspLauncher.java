@@ -48,32 +48,46 @@ public final class LspLauncher {
         // Create endpoint from the Java wrapper (no bridge methods)
         Endpoint localEndpoint = ServiceEndpoints.toEndpoint(javaServer);
 
-        Launcher<LanguageClient> launcher = new Launcher.Builder<LanguageClient>() {
-            @Override
-            protected Map<String, JsonRpcMethod> getSupportedMethods() {
-                return allMethods;
-            }
+        // lsp4j defaults to an unbounded Executors.newCachedThreadPool() that it never shuts down.
+        // Supply our own daemon-threaded pool and shut it down when the connection ends, so the
+        // per-connection RPC threads don't leak across reconnects.
+        java.util.concurrent.ExecutorService rpcExecutor =
+            java.util.concurrent.Executors.newCachedThreadPool(r -> {
+                Thread t = new Thread(r, "lsp4j-rpc");
+                t.setDaemon(true);
+                return t;
+            });
+        try {
+            Launcher<LanguageClient> launcher = new Launcher.Builder<LanguageClient>() {
+                @Override
+                protected Map<String, JsonRpcMethod> getSupportedMethods() {
+                    return allMethods;
+                }
 
-            @Override
-            protected RemoteEndpoint createRemoteEndpoint(MessageJsonHandler jsonHandler) {
-                var outConsumer = new StreamMessageConsumer(out, jsonHandler);
-                var wrappedConsumer = wrapMessageConsumer(outConsumer);
-                return new RemoteEndpoint(wrappedConsumer, localEndpoint);
+                @Override
+                protected RemoteEndpoint createRemoteEndpoint(MessageJsonHandler jsonHandler) {
+                    var outConsumer = new StreamMessageConsumer(out, jsonHandler);
+                    var wrappedConsumer = wrapMessageConsumer(outConsumer);
+                    return new RemoteEndpoint(wrappedConsumer, localEndpoint);
+                }
             }
+                .setLocalService(javaServer)
+                .setRemoteInterface(LanguageClient.class)
+                .setInput(in)
+                .setOutput(out)
+                .setExecutorService(rpcExecutor)
+                .create();
+
+            LanguageClient client = launcher.getRemoteProxy();
+            server.connect(client);
+
+            System.err.println("[ScalaLsp] LSP server started, listening on stdin/stdout");
+            System.err.println("[ScalaLsp] Waiting for LSP messages on stdin...");
+            launcher.startListening().get();
+            System.err.println("[ScalaLsp] LSP listener stopped");
+        } finally {
+            rpcExecutor.shutdownNow();
         }
-            .setLocalService(javaServer)
-            .setRemoteInterface(LanguageClient.class)
-            .setInput(in)
-            .setOutput(out)
-            .create();
-
-        LanguageClient client = launcher.getRemoteProxy();
-        server.connect(client);
-
-        System.err.println("[ScalaLsp] LSP server started, listening on stdin/stdout");
-        System.err.println("[ScalaLsp] Waiting for LSP messages on stdin...");
-        launcher.startListening().get();
-        System.err.println("[ScalaLsp] LSP listener stopped");
     }
 
     /**
