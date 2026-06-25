@@ -29,6 +29,11 @@ class DiagnosticsProvider(projectManager: IntellijProjectManager):
     t
   private val pendingAnalysis = scala.collection.concurrent.TrieMap[String, ScheduledFuture[?]]()
 
+  /** Release the analysis scheduler thread. Called on session end to prevent thread leaks. */
+  def dispose(): Unit =
+    analysisExecutor.shutdownNow()
+    ()
+
   def connect(client: LanguageClient): Unit =
     this.client = client
 

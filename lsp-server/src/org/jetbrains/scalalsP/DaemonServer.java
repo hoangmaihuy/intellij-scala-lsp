@@ -69,6 +69,8 @@ public final class DaemonServer {
 
     private void handleConnection(Socket socket) {
         String projectPath = null;
+        ScalaLspServer server = null;
+        IntellijProjectManager projectManager = null;
         try {
             InputStream rawIn = socket.getInputStream();
             OutputStream out = socket.getOutputStream();
@@ -103,11 +105,11 @@ public final class DaemonServer {
             var project = registry.acquireProject(projectPath);
 
             // Create per-session project manager sharing the Project
-            var projectManager = new IntellijProjectManager(scala.Option.apply(registry), true);
+            projectManager = new IntellijProjectManager(scala.Option.apply(registry), true);
             projectManager.setProjectForSession(project);
 
             // Create per-session LSP server in daemon mode
-            var server = new ScalaLspServer(projectPath, projectManager, true);
+            server = new ScalaLspServer(projectPath, projectManager, true);
 
             // Wire to lsp4j using same pattern as LspLauncher
             LspLauncher.startAndAwait(server, replayedIn, out);
@@ -120,6 +122,14 @@ public final class DaemonServer {
                 e.printStackTrace(System.err);
             }
         } finally {
+            // Release per-session executors (request-handler pools, diagnostics + close schedulers).
+            // Without this, every connection/reconnect leaks threads until the daemon wedges.
+            if (server != null) {
+                try { server.dispose(); } catch (Exception ignored) {}
+            }
+            if (projectManager != null) {
+                try { projectManager.dispose(); } catch (Exception ignored) {}
+            }
             if (projectPath != null) {
                 registry.releaseProject(projectPath);
             }

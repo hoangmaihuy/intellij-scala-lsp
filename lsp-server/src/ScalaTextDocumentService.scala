@@ -6,7 +6,7 @@ import org.eclipse.lsp4j.services.{LanguageClient, TextDocumentService}
 import org.jetbrains.scalalsP.intellij.*
 
 import java.util
-import java.util.concurrent.{CompletableFuture, ExecutorService, Executors}
+import java.util.concurrent.{CompletableFuture, ExecutorService, Executors, SynchronousQueue, ThreadFactory, ThreadPoolExecutor, TimeUnit}
 import scala.jdk.CollectionConverters.*
 
 // Handles all textDocument LSP requests by delegating to IntelliJ-backed providers.
@@ -17,14 +17,31 @@ class ScalaTextDocumentService(projectManager: IntellijProjectManager, val diagn
 
   // Dedicated thread pool for LSP request handlers. Using the common ForkJoinPool causes deadlocks
   // when all threads block in smartReadAction (waiting for smart mode) or invokeAndWait (waiting for EDT).
-  // A cached pool grows as needed and reclaims idle threads, preventing thread starvation.
-  private val lspExecutor: ExecutorService = Executors.newCachedThreadPool: r =>
-    val t = Thread(r, "lsp-request-handler")
-    t.setDaemon(true)
-    t
+  // Behaves like a cached pool (grows as needed, reclaims idle threads after 60s) but is bounded:
+  // when IntelliJ stalls (indexing / read-action contention) requests block for minutes, which defeats
+  // an unbounded cached pool's idle reclaim and lets it spawn threads without limit until the daemon
+  // wedges. The cap keeps the anti-starvation headroom while preventing runaway; CallerRunsPolicy
+  // applies back-pressure (runs the task inline) instead of failing once the cap is reached.
+  // Must be shut down via dispose() when the session ends, or the pool leaks across reconnects.
+  private val lspExecutor: ExecutorService =
+    val factory: ThreadFactory = r =>
+      val t = Thread(r, "lsp-request-handler")
+      t.setDaemon(true)
+      t
+    new ThreadPoolExecutor(
+      0, 256, 60L, TimeUnit.SECONDS,
+      new SynchronousQueue[Runnable](),
+      factory,
+      new ThreadPoolExecutor.CallerRunsPolicy()
+    )
   /** Run a supplier on the dedicated LSP executor, returning a CompletableFuture. */
   private def supplyAsync[T](f: => T): CompletableFuture[T] =
     CompletableFuture.supplyAsync((() => f): java.util.function.Supplier[T], lspExecutor)
+
+  /** Release the request-handler thread pool. Called on session end to prevent thread leaks. */
+  def dispose(): Unit =
+    lspExecutor.shutdownNow()
+    ()
 
   private val requestCounter = new java.util.concurrent.atomic.AtomicLong(0)
 
