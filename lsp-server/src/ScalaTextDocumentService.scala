@@ -9,7 +9,7 @@ import com.intellij.openapi.progress.{EmptyProgressIndicator, ProcessCanceledExc
 import com.intellij.openapi.util.Computable
 
 import java.util
-import java.util.concurrent.{CompletableFuture, ExecutorService, Executors, SynchronousQueue, ThreadFactory, ThreadPoolExecutor, TimeUnit}
+import java.util.concurrent.{CompletableFuture, ExecutorService, Executors, LinkedBlockingQueue, ThreadFactory, ThreadPoolExecutor, TimeUnit}
 import scala.jdk.CollectionConverters.*
 
 // Handles all textDocument LSP requests by delegating to IntelliJ-backed providers.
@@ -18,25 +18,31 @@ class ScalaTextDocumentService(projectManager: IntellijProjectManager, val diagn
   import scala.compiletime.uninitialized
   private var client: LanguageClient = uninitialized
 
-  // Dedicated thread pool for LSP request handlers. Using the common ForkJoinPool causes deadlocks
-  // when all threads block in smartReadAction (waiting for smart mode) or invokeAndWait (waiting for EDT).
-  // Behaves like a cached pool (grows as needed, reclaims idle threads after 60s) but is bounded:
-  // when IntelliJ stalls (indexing / read-action contention) requests block for minutes, which defeats
-  // an unbounded cached pool's idle reclaim and lets it spawn threads without limit until the daemon
-  // wedges. The cap keeps the anti-starvation headroom while preventing runaway; CallerRunsPolicy
-  // applies back-pressure (runs the task inline) instead of failing once the cap is reached.
-  // Must be shut down via dispose() when the session ends, or the pool leaks across reconnects.
+  // Dedicated, concurrency-capped thread pool for LSP request handlers. Using the common ForkJoinPool
+  // causes deadlocks when threads block in smartReadAction (waiting for smart mode) or invokeAndWait
+  // (waiting for EDT). Parallelism is capped on purpose: one editor interaction makes the client fire a
+  // burst of per-file requests (semanticTokens, inlayHint, codeLens, documentHighlight, foldingRange,
+  // documentSymbol, ...), each running a heavy analysis on its own handler thread (semanticTokens parses
+  // and builds the stub tree; inlayHint/highlight re-traverse the file). With unbounded concurrency the
+  // burst fans out into many such analyses at once and saturates every core, so each runs many times
+  // slower and the daemon appears to hang. Capping to half the cores bounds the fan-out (excess requests
+  // queue) and leaves headroom for the rest of the system.
+  // allowCoreThreadTimeOut lets idle handlers die, so the pool doesn't leak across reconnects.
+  // CallerRunsPolicy applies back-pressure (runs the task inline) once the queue also fills.
+  private val MaxConcurrentRequests: Int = math.max(2, Runtime.getRuntime.availableProcessors / 2)
   private val lspExecutor: ExecutorService =
     val factory: ThreadFactory = r =>
       val t = Thread(r, "lsp-request-handler")
       t.setDaemon(true)
       t
-    new ThreadPoolExecutor(
-      0, 256, 60L, TimeUnit.SECONDS,
-      new SynchronousQueue[Runnable](),
+    val pool = new ThreadPoolExecutor(
+      MaxConcurrentRequests, MaxConcurrentRequests, 60L, TimeUnit.SECONDS,
+      new LinkedBlockingQueue[Runnable](256),
       factory,
       new ThreadPoolExecutor.CallerRunsPolicy()
     )
+    pool.allowCoreThreadTimeOut(true)
+    pool
   /** Run a supplier on the dedicated LSP executor under a cancellable progress indicator.
     *
     * The returned future's cancel() — which lsp4j invokes when the client sends `$/cancelRequest` —
