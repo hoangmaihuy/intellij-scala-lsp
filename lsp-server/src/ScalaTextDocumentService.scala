@@ -5,6 +5,9 @@ import org.eclipse.lsp4j.jsonrpc.messages.{Either as LspEither, Either3 as LspEi
 import org.eclipse.lsp4j.services.{LanguageClient, TextDocumentService}
 import org.jetbrains.scalalsP.intellij.*
 
+import com.intellij.openapi.progress.{EmptyProgressIndicator, ProcessCanceledException, ProgressManager}
+import com.intellij.openapi.util.Computable
+
 import java.util
 import java.util.concurrent.{CompletableFuture, ExecutorService, Executors, SynchronousQueue, ThreadFactory, ThreadPoolExecutor, TimeUnit}
 import scala.jdk.CollectionConverters.*
@@ -34,9 +37,29 @@ class ScalaTextDocumentService(projectManager: IntellijProjectManager, val diagn
       factory,
       new ThreadPoolExecutor.CallerRunsPolicy()
     )
-  /** Run a supplier on the dedicated LSP executor, returning a CompletableFuture. */
+  /** Run a supplier on the dedicated LSP executor under a cancellable progress indicator.
+    *
+    * The returned future's cancel() — which lsp4j invokes when the client sends `$/cancelRequest` —
+    * cancels the indicator. The IntelliJ read action driving the work (see smartReadAction, which binds
+    * to this indicator via wrapProgress) then observes ProgressManager.checkCanceled() and aborts
+    * mid-analysis. Without this, a superseded per-file request (e.g. an outdated semanticTokens or
+    * inlayHint that the client has already cancelled) keeps burning CPU until it runs to completion. */
   private def supplyAsync[T](f: => T): CompletableFuture[T] =
-    CompletableFuture.supplyAsync((() => f): java.util.function.Supplier[T], lspExecutor)
+    val indicator = new EmptyProgressIndicator()
+    val future: CompletableFuture[T] = new CompletableFuture[T]:
+      override def cancel(mayInterruptIfRunning: Boolean): Boolean =
+        indicator.cancel()
+        super.cancel(mayInterruptIfRunning)
+    val task: Runnable = () =>
+      if !indicator.isCanceled then
+        try
+          val computable: Computable[T] = () => f
+          future.complete(ProgressManager.getInstance().runProcess(computable, indicator))
+        catch
+          case _: ProcessCanceledException => future.cancel(false)
+          case e: Throwable                => future.completeExceptionally(e)
+    lspExecutor.execute(task)
+    future
 
   /** Release the request-handler thread pool. Called on session end to prevent thread leaks. */
   def dispose(): Unit =

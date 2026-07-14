@@ -1,7 +1,7 @@
 package org.jetbrains.scalalsP.intellij
 
 import com.intellij.openapi.application.{ApplicationManager, ReadAction}
-import com.intellij.openapi.progress.ProcessCanceledException
+import com.intellij.openapi.progress.{ProcessCanceledException, ProgressManager}
 import com.intellij.openapi.project.{DumbService, Project, ProjectManager}
 import com.intellij.openapi.vfs.{LocalFileSystem, VirtualFile, VfsUtil}
 import com.intellij.psi.{PsiDocumentManager, PsiFile, PsiManager}
@@ -227,11 +227,17 @@ class IntellijProjectManager(registry: Option[ProjectRegistry] = None, daemonMod
     try
       val deadline = System.currentTimeMillis() + SmartModeTimeoutMs
       val callable: java.util.concurrent.Callable[T] = () => compute()
-      ReadAction.nonBlocking(callable)
+      val readAction = ReadAction.nonBlocking(callable)
         .inSmartMode(getProject)
         .expireWith(getProject)
         .expireWhen(() => System.currentTimeMillis() > deadline)
-        .executeSynchronously()
+      // Bind to the caller's progress indicator (set by ScalaTextDocumentService.supplyAsync) so that
+      // when the client cancels the request via `$/cancelRequest`, this read action is cancelled and
+      // aborts instead of running the analysis to completion.
+      val withProgress = Option(ProgressManager.getInstance().getProgressIndicator()) match
+        case Some(indicator) => readAction.wrapProgress(indicator)
+        case None            => readAction
+      withProgress.executeSynchronously()
     catch
       case _: ProcessCanceledException =>
         throw RuntimeException("Request timed out waiting for smart mode (indexing)")
