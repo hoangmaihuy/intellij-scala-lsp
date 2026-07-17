@@ -1,6 +1,5 @@
 package org.jetbrains.scalalsP.intellij
 
-import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.fileEditor.FileDocumentManager
 
 /**
@@ -30,15 +29,22 @@ class DocumentSyncManager(projectManager: IntellijProjectManager):
 
   private def reloadFromDisk(uri: String): Unit =
     projectManager.findVirtualFile(uri).foreach: vf =>
-      // Use invokeLater instead of invokeAndWait to avoid blocking lsp4j message threads.
-      // invokeAndWait can deadlock when EDT is busy with a write action triggered by another
-      // LSP request (e.g., formatting). Async dispatch is safe because disk is always the
-      // source of truth — if a subsequent request sees slightly stale data, the next
-      // notification will trigger another reload.
-      ApplicationManager.getApplication.invokeLater: () =>
-        vf.refresh(false, false)
-        val fdm = FileDocumentManager.getInstance()
-        val document = fdm.getDocument(vf)
-        if document != null then
-          fdm.reloadFromDisk(document)
-          projectManager.getPsiDocumentManager.commitDocument(document)
+      // Async VFS refresh. A synchronous refresh(false, ...) fires its events inside a
+      // non-cancellable EDT write action; when that write action stalls while acquiring the write
+      // lock, every LSP request parks in NonBlockingReadAction.blockUntilWriteActionIsDone behind it
+      // and the daemon wedges (serving nothing). refresh(asynchronous = true, ...) runs the refresh
+      // off the EDT and invokes the post-runnable on the EDT once it completes, so the document
+      // reload still sees fresh VFS state without blocking. Mirrors the async-refresh fix for
+      // reloadProjectDependencies. Disk is the source of truth, so a request racing ahead of the
+      // reload sees at worst slightly stale data that the next notification corrects.
+      val reloadDocument: Runnable = () =>
+        // The post-runnable runs on the EDT after the async refresh completes — which may be after the
+        // project has been closed (e.g. during shutdown/teardown). Guard against touching a disposed
+        // project (getPsiDocumentManager would throw "No project is open").
+        if projectManager.isProjectOpen && vf.isValid then
+          val fdm = FileDocumentManager.getInstance()
+          val document = fdm.getDocument(vf)
+          if document != null then
+            fdm.reloadFromDisk(document)
+            projectManager.getPsiDocumentManager.commitDocument(document)
+      vf.refresh(true, false, reloadDocument)

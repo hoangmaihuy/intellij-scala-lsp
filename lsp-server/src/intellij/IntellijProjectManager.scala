@@ -61,6 +61,12 @@ class IntellijProjectManager(registry: Option[ProjectRegistry] = None, daemonMod
     if p == null then throw IllegalStateException("No project is open")
     p
 
+  /** Non-throwing check: a project is set and not yet disposed. Use to guard deferred/async
+    * callbacks that may run after the project has been closed (e.g. async VFS refresh post-runnables). */
+  def isProjectOpen: Boolean =
+    val p = project
+    p != null && !p.isDisposed
+
   def getAllProjects: Seq[Project] =
     projects.values.toSeq.distinct
 
